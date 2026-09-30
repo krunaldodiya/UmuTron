@@ -1,8 +1,8 @@
 from pathlib import Path
 import tempfile
 import unittest
-from steam_library.providers import Credentials, IGDB, SteamGridDB, NoRedirects
-from steam_library.metadata import allowed, plain
+from game_library.providers import Credentials, IGDB, SteamGridDB, NoRedirects
+from game_library.metadata import allowed, plain
 
 
 class ProviderTests(unittest.TestCase):

@@ -1,39 +1,29 @@
-# Product and interface specification
+# Standalone game library and launcher
 
-## Scope
+## Contract
 
-Manage non-Steam game metadata locally and sync manually to Steam. Existing purchased Steam games are outside editing scope. Never launch a game, alter its files (including steam_appid.txt), choose a compatibility tool, or change a Proton prefix.
+Manage installed-game executables, metadata and artwork; Play explicitly through UMU and Proton. No game-client account/library is required. No shortcut synchronization, compatibility mapping edits or client-library writes. Keep third-party runtime/legal attribution accurate.
 
-## Screens
+## Interface
 
-1. Library: header with search, Add Game and access to Settings. Responsive cover cards show title and Not synced / Changes pending / Synced status. A helpful empty state offers Add Game. Include an accessible list option.
-2. Add Game: search by name or provider ID first, select a match, then choose the executable and review/save. Metadata matching must not execute or inspect game binaries.
-3. Details: artwork hero, title and status; tabs for Overview, Artwork and Steam settings. Overview contains editable description, release date, developers, publishers and genres. Steam settings includes editable executable, working directory and arguments. Missing files show a Relink action without deleting metadata.
-4. Sync preview: list exact additions/updates, selected Steam account and artwork changes. Explicit confirmation is required. Steam must be fully closed; never close it automatically. Errors leave local work intact.
-5. Settings: appearance, private provider credentials, backup/restore and undo. ZIP export; import preview with duplicate/conflict choices. Restoration never syncs automatically. Missing game paths can be repaired later.
+Home: compact cards with 0/3–3/3 readiness count, title and Play/Stop. Details: full checklist (metadata, executable, direct launch), Overview, Artwork, Game files and Direct Play tabs. Metadata lookup starts with IGDB search or manual entry. Settings contains General backup/restore/appearance, Providers, and Proton Manager.
 
-## Appearance and usability
+Save/import/metadata selection are local data operations. Play requires saved settings and a visible launch review. Only explicit Play executes the runner. Stop warns about unsaved in-game progress. A strict shared launch lock blocks duplicate or cross-game launches. The active entry retains Stop through navigation; other Play controls explain which game is active. UI remains responsive during launch, output and downloads. Demo Play is always disabled.
 
-Light, Dark and Follow System modes, persisted locally. Prefer native GTK/libadwaita styling and controls. Do not force a dark-only palette. Keyboard navigation, meaningful focus order, readable contrast and labelled icon actions are required. Status must include text, not color alone. Network work runs outside the UI thread with loading, retry, empty and error states. Prevent duplicate operations. Keep library navigation fast by caching thumbnails and preserving scroll position.
+## Process and launch safety
 
-Save only affects the local library. Save & Sync saves then opens the sync preview. Sync to Steam handles already saved changes. No background or automatic Steam synchronization.
+Validated argv, cwd and allowlisted environment; never shell expansion or root execution. Direct arguments are a list, distinct from preserved legacy argument text. Catalog IDs never become UMU GAMEID/STORE identifiers. Default prefix is dedicated to the local UUID. Existing unrelated prefixes are refused. No modifications/deletion of game files or saves by the app.
 
-## Identity and data safety
+A Linux subreaper supervisor holds the launch lock until owned descendants end. Detached children are adopted and tracked by PID/start time. Stop signals only verified descendants and escalates after a grace interval. No killall or shared wineserver control. Session state permits app reconnect after an unexpected desktop exit. Normal close asks users to finish/stop first.
 
-Each entry has a stable local UUID. The Steam store ID used to look up metadata is separate from the non-Steam shortcut ID used to launch and track a game. Changing a title or executable must retain an existing shortcut ID. Detect existing shortcuts before adding duplicates. Preserve unrelated shortcuts and compatibility settings.
+## Runners
 
-Before Steam writes, keep restorable backups and validate existing files. Refuse malformed input rather than overwrite it. Undo must detect subsequent Steam changes before restoring. Development uses temporary fixture libraries, never the owner's live library.
+Use installed runners or UMU automatic tokens. Default selection is an app preference; per-game overrides are separate. Official GE-Proton/UMU-Proton release pages are cached, paginated and architecture-filtered. Available is distinct from Installed. Explicit installs run off the UI thread, provide progress/cancel/retry, verify published hashes, enforce bounded extraction and finalize atomically. No runner replacement/removal is supported. Downloads, cache and prefixes stay out of portable metadata ZIPs.
 
-ZIP backups contain metadata, artwork and portable application settings only. Exclude binaries, saves, Steam credentials and account authentication. Validate archive paths, sizes and schema. Offer merge/replace conflict previews; never blindly extract an archive. Imported Steam mappings require review for the destination account.
+## Compatibility and preservation
 
-## Architecture
+Version-1 library schema gains optional validated launch settings. Historical metadata/identity fields remain accepted; direct launch edits are excluded from legacy sync digests. Migration copies validated data/artwork/credentials to new branded directories while preserving originals. Old ZIPs remain importable; import clears legacy machine mapping and never executes anything. No games or game-client settings are migrated, erased or reconfigured.
 
-Native Python GTK 4/libadwaita UI with separate local-library, metadata-provider, archive and Steam adapters. Core modules must remain testable without a display or Steam installation. Store full metadata locally; standard Steam shortcuts do not support description/release-info display. Missing remote artwork is an explicit supported state. Public source and tests must contain no personal paths, credentials or downloaded game artwork.
+## Verification
 
-## Approved refinements
-
-Steam and IGDB provide metadata; SteamGridDB provides selectable community artwork. Each provider has an independent ID namespace. IGN is excluded. Optional provider credentials live outside portable backups and public source. Store lookups do not require credentials; missing provider credentials produce an actionable settings message.
-
-Library cards are compact to show more games. Detail headers remain compact while tabs scroll; footer actions remain visible. The isolated demo is available after each meaningful checkpoint for user review. Do not restart a demo with unsaved user edits without notice.
-
-Delete game removes a local entry after confirmation. Game binaries and existing Steam shortcuts remain untouched. Demo launches start empty; synthetic samples are generated only by the isolated UI test harness.
+Tests remain isolated. Exercise argv/environment boundaries, legacy libraries/archives, prefix ownership, rapid/concurrent launch attempts, crash/exit/Stop, detached descendants, instance locks, release/cache/pagination, hashes, cancellation, archive escapes and native UI/navigation. Do not launch real games during development. Document unverified compatibility instead of promising universal game support.

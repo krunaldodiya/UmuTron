@@ -2,8 +2,9 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
-from steam_library.library import Library
+from game_library.library import Library
 
 
 class LibraryTests(unittest.TestCase):
@@ -64,7 +65,7 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(self.lib.games()[0]['title'], 'Original')
 
     def test_provider_credentials_excluded_from_export(self):
-        from steam_library.providers import Credentials
+        from game_library.providers import Credentials
         credentials=Credentials(self.lib.root/'private')
         credentials.save({'steamgriddb_key':'test-secret-must-not-export'})
         archive=self.root/'backup.zip'; self.lib.export_zip(archive)
@@ -99,3 +100,17 @@ class LibraryTests(unittest.TestCase):
         self.lib.delete(game['id'])
         self.assertEqual(self.lib.games(),[])
         self.assertEqual(executable.read_bytes(),b'inert fixture')
+
+    def test_first_run_copies_legacy_and_preserves_original_and_defaults(self):
+        legacy=Library(self.root/'steam-library-metadata-manager')
+        game=legacy.new_game();game.update(title='Legacy',executable='/inert/old.exe')
+        legacy.save(game);legacy.set_default_proton('GE-Latest')
+        original=legacy.path.read_bytes()
+        with patch.dict('os.environ',{'XDG_DATA_HOME':str(self.root)}):
+            current=Library()
+        self.assertEqual(current.games()[0]['id'],game['id'])
+        self.assertEqual(legacy.path.read_bytes(),original)
+        current.set_default_proton('UMU-Latest')
+        archive=self.root/'defaults.zip';current.export_zip(archive)
+        restored=Library(self.root/'restored-defaults');restored.import_zip(archive)
+        self.assertEqual(restored.data['settings']['default_proton'],'UMU-Latest')

@@ -1,4 +1,4 @@
-"""Local library and portable backups. This module never writes to Steam."""
+"""Local library and portable backups. This module never launches games."""
 from copy import deepcopy
 from hashlib import sha256
 import json
@@ -56,7 +56,7 @@ def image_extension(data):
 
 
 def digest(game):
-    content = {k:v for k,v in game.items() if k != 'sync'}
+    content = {k:v for k,v in game.items() if k not in ('sync','launch')}
     return sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
 
 
@@ -65,6 +65,8 @@ def validate_game(game):
     source=game.get('metadata_source',{})
     if not isinstance(source,dict) or set(source)-{'provider','id'} or (source and (source.get('provider') not in ('steam','igdb') or type(source.get('id')) is not int or source['id']<=0)):
         raise ValueError('Invalid metadata source.')
+    from .launcher import validate_settings
+    validate_settings(game.get('launch',{}))
     UUID(game['id'])
     for key in TEXT_FIELDS:
         if not isinstance(game.get(key), str) or len(game[key]) > 100000 or '\x00' in game[key]:
@@ -85,15 +87,29 @@ def validate_game(game):
 
 class Library:
     def __init__(self, root=None):
-        self.root = Path(root or Path(os.environ.get('XDG_DATA_HOME',Path.home()/'.local/share'))/'steam-library-metadata-manager')
+        self.root = Path(root or Path(os.environ.get('XDG_DATA_HOME',Path.home()/'.local/share'))/'game-library-launcher')
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.art_dir = self.root/'artwork'; self.art_dir.mkdir(exist_ok=True)
         self.path = self.root/'library.json'
+        if root is None and not self.path.exists():
+            self._migrate_legacy()
         self.data = {'version':1, 'games':[], 'settings':{'theme':'system'}}
         if self.path.exists():
             if self.path.stat().st_size > 20*1024*1024: raise ValueError('Library is too large.')
             self.data = json.loads(self.path.read_text())
             self._validate(self.data)
+
+    def _migrate_legacy(self):
+        legacy=Path(os.environ.get('XDG_DATA_HOME',Path.home()/'.local/share'))/'steam-library-metadata-manager'
+        source=legacy/'library.json'
+        if not source.is_file(): return
+        if source.stat().st_size>20*1024*1024: raise ValueError('Legacy library is too large.')
+        data=json.loads(source.read_text()); self._validate(data)
+        for name in {n for g in data['games'] for n in g['artwork'].values()}:
+            content=(legacy/'artwork'/name).read_bytes()
+            if len(content)>MAX_IMAGE or sha256(content).hexdigest()+image_extension(content)!=name: raise ValueError('Legacy artwork is invalid.')
+            atomic_write(self.art_dir/name,content)
+        atomic_write(self.path,json.dumps(data,indent=2,ensure_ascii=False).encode())
 
     @staticmethod
     def _validate(data):
@@ -106,13 +122,15 @@ class Library:
             ids.add(game['id'])
         if not isinstance(data.get('settings'),dict) or data['settings'].get('theme','system') not in ('system','light','dark'):
             raise ValueError('Invalid appearance settings.')
+        runner=data['settings'].get('default_proton','')
+        if not isinstance(runner,str) or len(runner)>4096 or '\x00' in runner:raise ValueError('Invalid default runner.')
 
     def _write(self):
         atomic_write(self.path, json.dumps(self.data,indent=2,ensure_ascii=False).encode())
 
     @staticmethod
     def new_game():
-        return dict(id=str(uuid4()), metadata_app_id=None, metadata_source={}, artwork={}, sync=None,
+        return dict(id=str(uuid4()), metadata_app_id=None, metadata_source={}, artwork={}, sync=None, launch={},
                     **{k:'' for k in TEXT_FIELDS})
 
     def games(self): return deepcopy(self.data['games'])
@@ -137,6 +155,10 @@ class Library:
     def set_theme(self, theme):
         if theme not in ('system','light','dark'): raise ValueError('Unknown theme.')
         self.data['settings']['theme']=theme; self._write()
+
+    def set_default_proton(self,value):
+        if not isinstance(value,str) or len(value)>4096 or '\x00' in value:raise ValueError('Invalid default runner.')
+        self.data['settings']['default_proton']=value;self._write()
 
     def mark_synced(self, game_id, account, shortcut_id):
         game = next(g for g in self.games() if g['id']==game_id)
@@ -163,7 +185,7 @@ class Library:
 
     def export_zip(self, destination):
         manifest=deepcopy(self.data)
-        manifest['settings']={'theme':self.data['settings'].get('theme','system')}
+        manifest['settings']={'theme':self.data['settings'].get('theme','system'),'default_proton':self.data['settings'].get('default_proton','UMU-Latest')}
         for game in manifest['games']: game['sync']=None
         fd,temp=tempfile.mkstemp(suffix='.zip',dir=Path(destination).parent); os.close(fd)
         try:
@@ -218,6 +240,7 @@ class Library:
         previous=deepcopy(self.data)
         self.data['games']=list(merged.values())
         self.data['settings']['theme']=data['settings'].get('theme','system')
+        self.data['settings']['default_proton']=data['settings'].get('default_proton','UMU-Latest')
         try: self._write()
         except Exception:
             self.data=previous; raise

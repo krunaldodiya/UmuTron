@@ -1,96 +1,71 @@
-# Steam Library Metadata Manager
+# Game Library Launcher
 
-A native Linux desktop app for organizing **non-Steam game metadata and artwork**, then syncing supported shortcut fields to Steam when you choose.
+A native Linux desktop library for managing installed games, metadata and artwork, and playing directly through **UMU + Proton**. No game-client installation, account or library is required.
 
-**Version 0.1 — initial working preview.** Core and native GUI tests pass with isolated Steam fixtures. Live Steam metadata lookup is verified. Real-library sync and authenticated IGDB/SteamGridDB requests still need user acceptance testing; provider credentials are not bundled.
+![Library](docs/screenshots/library-dark.png)
 
-![Library in dark mode](docs/screenshots/library-dark.png)
+## Version 0.2
 
-## What it does
+- Compact game cards, search, light/dark/system appearance, detailed metadata and artwork.
+- IGDB metadata search and optional community artwork from SGDB; manual entry/local images work without provider accounts.
+- Explicit **Play** / **Stop**, strict one-game-at-a-time protection, preparing/download/running/finished/error status and bounded output.
+- Per-game executable, working directory, argument list, Proton override and dedicated prefix.
+- Settings → **Proton Manager**: installed runners, default selection, official GE-Proton/UMU-Proton releases, paginated history, checksum-verified installation, cancellation/retry.
+- Portable ZIP export/import with conflict preview. Imported settings never execute automatically.
 
-- Compact cover library with search and clear sync status.
-- Editable titles, descriptions, release dates, companies, genres and executable locations.
-- Steam lookup by name or store ID; optional IGDB metadata and SteamGridDB artwork selection.
-- Cover, landscape, hero, logo and icon previews, with local PNG/JPEG selection.
-- Light, Dark and Follow System themes.
-- **Save** keeps changes local. **Save & Sync** opens a change preview before writing to Steam.
-- ZIP export/import of metadata, artwork and appearance, with keep/replace conflict choices.
-- Missing-file warnings and relinking while retaining existing Steam shortcut identity.
-- Backed-up Steam sync and guarded undo/recovery of the most recent change.
+This app does not install games, manage purchased-client libraries or synchronize client shortcuts. Deleting an entry keeps game files, saves and prefixes.
 
-It does **not** launch games, install games, change game files or select Proton. Choose compatibility tools in Steam. Full descriptions and release information are shown in this app; standard Steam non-Steam shortcuts cannot display all of that metadata.
+## Install and run
 
-## Run on Ubuntu
-
-Tested on Ubuntu 26.04, GTK 4 and libadwaita. Use **system Python**, not a Python environment that lacks the system GUI bindings.
-
-Native dependencies: `python3`, `python3-gi`, `python3-cairo`, `gir1.2-gtk-4.0`, `gir1.2-adw-1`.
-
-```sh
-/usr/bin/python3 run.py
-```
-
-To install the app and launcher for your user:
+Ubuntu dependencies: system `python3`, `python3-gi`, `python3-cairo`, `gir1.2-gtk-4.0`, `gir1.2-adw-1`. Direct Play additionally requires [umu-run](https://github.com/Open-Wine-Components/umu-launcher) and an appropriate graphics driver. Install UMU from its official packaging instructions; the app reports a missing executable.
 
 ```sh
 /usr/bin/python3 tools/install.py
+/usr/bin/python3 run.py
 ```
 
-No root privileges are required by the installer. It copies application code to `~/.local/opt/steam-library-metadata-manager` and creates an applications-menu entry. Run the installer again after pulling an update. User data is kept separately.
-
-## Safe demo
-
-```sh
-/usr/bin/python3 run.py --demo
-```
-
-The demo starts empty and uses a mock Steam folder under `~/.cache/steam-library-metadata-manager-demo`. Even its Sync button writes only to that mock folder. Demo provider settings are separate from the real app. Never run the inert demo `.exe` files.
-
-## Providers
-
-| Source | Purpose | Setup |
-|---|---|---|
-| Steam | Search, game details and available official artwork | No API key |
-| IGDB | Search, descriptions, release/company/genre data and available cover/hero images | Your Twitch client ID and secret; the app obtains a temporary token |
-| SteamGridDB | Select community covers, heroes, logos and icons | Your SteamGridDB API key |
-
-Use **Settings → Providers** in the title bar. Credentials are stored in a permission-restricted local file, not encrypted; they are never included in ZIP backups. Steam uses public Store endpoints, which may change or be unavailable by region. Artwork is not guaranteed for every game. IGN is excluded from this version.
-
-Provider documentation: [IGDB](https://api-docs.igdb.com/), [SteamGridDB](https://www.steamgriddb.com/api/v2).
+The installer creates a user application/menu entry under `~/.local/opt/game-library-launcher`. Re-run after pulling updates. No administrator access is needed for the application installer. Use system Python for GTK.
 
 ## Workflow
 
-1. Choose **Add game**, search by title or provider ID, and select a metadata match. You can also enter details manually.
-2. Choose the executable in Steam settings, review/edit the details and choose artwork.
-3. Save locally. You may close and reopen the app without syncing.
-4. Exit Steam completely. Choose **Save & Sync** or **Sync saved version**, then choose your Steam account.
-5. Review the exact changes and confirm. Keep Steam closed until the operation completes.
-6. Reopen Steam and choose your desired compatibility tool there.
+1. Add a game; search IGDB with your own credentials or enter details manually.
+2. Set its executable and working directory in **Game files**. Review artwork and metadata.
+3. In **Direct Play**, use an installed Proton folder, the app default, `UMU-Latest`, or `GE-Latest`. Set optional arguments, **one argument per line**; spaces on a line remain in one argument.
+4. Save. Choose Play and review the executable's launch configuration. UMU may download official runtime/Proton assets at first use; output and preparation status remain visible.
+5. While a game is active its button becomes Stop. Other games cannot start. Stop asks about unsaved in-game progress and targets only this launch's owned processes. Keep the launcher open during normal play; after an unexpected app exit it can reconnect to the surviving supervisor.
 
-The app never writes purchased Steam game records. It edits only `shortcuts.vdf` and specific artwork files for the selected non-Steam shortcut. An existing matching executable is updated instead of duplicated. Ambiguous duplicates are refused. Metadata lookup IDs never replace Steam launch IDs.
+Compatibility is game-dependent. A running process or successful start is not proof that every game or every gameplay feature works.
 
-## Data and backups
+## Proton Manager
 
-- Library/artwork: `~/.local/share/steam-library-metadata-manager` (or `XDG_DATA_HOME`).
-- Provider configuration: `~/.config/steam-library-metadata-manager/providers.json` (or `XDG_CONFIG_HOME`), mode 0600.
-- Steam recovery journals: `steam-backups` within the library directory. These contain local paths and account mappings and are deliberately excluded from portable exports.
-- ZIP backups contain metadata, artwork and appearance, **not** game binaries, saves, Proton prefixes or credentials. Executable path strings are included for later relinking.
+Installed runners can be discovered in known compatibility-tool folders; detection is optional and does not require the associated client. New runners live in the app's own `proton-manager/runners` folder.
 
-Import validates archive paths, dimensions, sizes, checksums and schema. Imports clear Steam destination mappings and never synchronize automatically. Maximum import size is 512 MiB uncompressed; individual images are limited to 20 MiB, 8192 pixels per side and 32 megapixels. ZIPs are unencrypted; keep private backups private.
+Available downloads are **official stable GE-Proton and UMU-Proton releases for x86_64/aarch64**, from version 9 onward where a published checksum is available. Refresh loads 20 upstream releases per page; Load older versions continues that family's history. Older unsupported builds, other families and client-only releases are excluded. This is not a promise of every Proton build ever made. UMU resolves the release's required runtime when launching.
 
-Find ZIP export/import and Undo in **Settings → General**. Delete game removes only the local library entry; it keeps game files and existing Steam shortcuts.
+Downloads verify published SHA-256 and/or SHA-512 checksums. Extraction rejects unsafe paths/links/devices, limits expanded size, checks disk space, stages on the destination filesystem and never overwrites an existing runner. Cancel keeps installed runners intact; retry discards only stale app-owned installation staging directories. No uninstall/update action is offered. Downloads are temporary staging files; no personal installer archive location is assumed.
 
-Undo checks that Steam files still match the version this app wrote. If someone else changed them, it refuses to overwrite those changes. An interrupted sync is recorded for recovery; do not manually delete recovery journals. Steam does not share our lock, so keep it closed throughout sync/undo.
+## Providers and attribution
 
-## Development and verification
+Settings → Providers accepts your Twitch/IGDB credentials and optional community-artwork API key. Credentials are permission-restricted local files, not encrypted and not exported. IGDB and SteamGridDB are independent metadata/artwork services; SteamGridDB's service name is attribution, not client integration. Existing records fetched from the former public Steam Store provider retain their metadata/artwork, but new searches use IGDB. The old store adapter and sync feature were removed.
+
+UMU and Proton internally use Valve runtime components. Their licenses and upstream behavior still apply; this app does not remove or disguise that dependency. See [UMU documentation](https://github.com/Open-Wine-Components/umu-launcher), [GE-Proton releases](https://github.com/GloriousEggroll/proton-ge-custom/releases), [UMU-Proton releases](https://github.com/Open-Wine-Components/umu-proton/releases), [IGDB](https://api-docs.igdb.com/) and [SteamGridDB](https://www.steamgriddb.com/api/v2).
+
+## Data, migration and backup
+
+- Data/artwork: `~/.local/share/game-library-launcher`; config: `~/.config/game-library-launcher/providers.json`. XDG overrides are honored.
+- Existing metadata-manager version-1 libraries and credentials are copied on first use when no new library exists. Originals remain intact. UUIDs, paths, metadata, artwork and legacy identity fields are preserved. Legacy recovery journals remain in their original folder; no client files or shortcuts are changed.
+- Version-1 backups remain importable. Launch configuration is an optional validated extension. Old launch text becomes visible as structured Direct Play arguments when editing; it is never a shell expression.
+- Dedicated prefixes: `prefixes/<game UUID>`. Custom prefixes must be new/empty or previously created by this app; unrelated prefixes are refused. Reinstall/import does not delete prefixes or copy saved games.
+- ZIPs include metadata, artwork, appearance, default-runner selection and launch path/configuration strings. They exclude binaries, saves, prefixes, runner downloads, credentials and session logs. Review/relink paths after restoring on another PC.
+- Session journals are local/private. The supervisor holds a filesystem lock across app instances and tracks descendant start times, including orphaned processes. It does not inspect or stop games launched elsewhere.
+
+## Isolated demo and tests
 
 ```sh
+/usr/bin/python3 run.py --demo
 python3 -m unittest discover -s tests -v
-python3 -m compileall -q steam_library
-# Requires an active Linux desktop session; operates only on temporary fixtures:
+python3 -m compileall -q game_library
 /usr/bin/python3 tools/ui_smoke.py
 ```
 
-The GUI check exercises themes, editing, local-only save, explicit preview/confirmation, fixture sync, undo, ZIP restoration, filtering and detail scrolling. Screenshots use fictional artwork generated by the demo, not third-party game assets.
-
-See [design](docs/DESIGN.md), [milestones](docs/ROADMAP.md) and [validation notes](docs/VALIDATION.md).
+Demo Play is disabled. Tests use temporary mock runners, game files and archives. They never execute the user's games. See [design](docs/DESIGN.md) and [validation](docs/VALIDATION.md).

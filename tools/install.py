@@ -1,18 +1,18 @@
 #!/usr/bin/python3
-"""Install the desktop app for the current user; no root or Steam writes."""
+"""Install the desktop app for the current user; no root or game execution."""
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from steam_library.library import atomic_write
+from game_library.library import atomic_write
 
 source=Path(__file__).resolve().parents[1]
-target=Path.home()/'.local/opt/steam-library-metadata-manager'
-for item in (source/'steam_library').glob('*.py'):
-    atomic_write(target/'steam_library'/item.name,item.read_bytes())
+target=Path.home()/'.local/opt/game-library-launcher'
+for item in (source/'game_library').glob('*.py'):
+    atomic_write(target/'game_library'/item.name,item.read_bytes())
 atomic_write(target/'run.py',(source/'run.py').read_bytes())
-icon=Path.home()/'.local/share/icons/hicolor/scalable/apps/steam-library-metadata-manager.svg'
+icon=Path.home()/'.local/share/icons/hicolor/scalable/apps/game-library-launcher.svg'
 atomic_write(icon,(source/'assets/steam-library-metadata-manager.svg').read_bytes())
 # Desktop Exec escaping follows the desktop-entry specification (not shell quoting).
 def quoted(path):
@@ -21,10 +21,10 @@ def quoted(path):
 launch='/usr/bin/python3 '+quoted(target/'run.py')
 entry=f'''[Desktop Entry]
 Type=Application
-Name=Steam Library Metadata Manager
-Comment=Organize non-Steam game details and artwork; sync manually
+Name=Game Library Launcher
+Comment=Organize and play installed games with UMU and Proton
 Exec={launch}
-Icon=steam-library-metadata-manager
+Icon=game-library-launcher
 Terminal=false
 Categories=Game;
 StartupNotify=true
@@ -34,10 +34,12 @@ Actions=Demo;
 Name=Open isolated demo
 Exec={launch} --demo
 '''
-desktop=Path.home()/'.local/share/applications/steam-library-metadata-manager.desktop'
+desktop=Path.home()/'.local/share/applications/game-library-launcher.desktop'
 atomic_write(desktop,entry.encode())
 if shutil.which('desktop-file-validate'):
     subprocess.run(['desktop-file-validate',str(desktop)],check=True)
 if shutil.which('update-desktop-database'):
     subprocess.run(['update-desktop-database',str(desktop.parent)],check=True)
-print('Installed user application and menu entry. No Steam files changed.')
+legacy=Path.home()/'.local/share/applications/steam-library-metadata-manager.desktop'
+if legacy.is_file() and 'Steam Library Metadata Manager' in legacy.read_text():legacy.unlink()
+print('Installed user application and menu entry. Existing libraries and games were preserved.')

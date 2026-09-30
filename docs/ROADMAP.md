@@ -1,16 +1,13 @@
-# Version 0.1 milestones
+# Version 0.2 standalone launcher
 
-- [x] Public repository and product/UI specification.
-- [x] Stable local identity; metadata IDs separate from Steam shortcut identity.
-- [x] Local storage and sync status.
-- [x] Native compact library/details UI with Light, Dark and Follow System.
-- [x] Steam search/details and artwork; local image selection.
-- [x] Optional IGDB and SteamGridDB adapters and private provider settings.
-- [x] ZIP backup/import with validation and keep/replace conflicts.
-- [x] Shortcut parsing, duplicate detection and explicit change preview.
-- [x] Confirmed sync, backups and guarded undo/recovery, tested on mock libraries.
-- [x] Native UI smoke test and isolated interactive demo.
-- [ ] User acceptance of real-library sync (never performed automatically).
-- Optional: authenticated live IGDB/SteamGridDB checks when the user supplies credentials. Steam search works without these providers; this does not block the release.
+- [x] Native library, metadata/artwork, compact readiness indicators and backup/import.
+- [x] Remove client sync and old product branding; preserve legacy library/archive data.
+- [x] Explicit UMU Play/Stop with dedicated prefixes and structured arguments.
+- [x] Shared single-game guard and owned descendant supervision.
+- [x] Responsive launch status/output and navigation.
+- [x] Proton Manager: installed/default/override selection and official paginated releases.
+- [x] Staged, checksum-verified installs with cancel/retry and archive safeguards.
+- [x] Isolated core/process/installer tests and native GUI checks.
+- [ ] User review of the new standalone interface and manual real-game gameplay testing.
 
-IGN is excluded. No game launcher, Proton manager, automatic sync or purchased-Steam-game editing is planned.
+IGDB/SGDB live authenticated checks remain optional until user credentials are supplied. Real runner downloads/game execution are never automatic development tests. Other runner families and a Windows build are out of current scope.

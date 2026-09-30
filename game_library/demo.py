@@ -1,4 +1,4 @@
-"""An isolated, repeatable demo: no real games or Steam files are touched."""
+"""An isolated demo. Play is disabled; synthetic files never execute."""
 from pathlib import Path
 import os
 import cairo
@@ -6,9 +6,8 @@ from .library import Library
 
 
 def prepare_demo(seed=False):
-    root=Path(os.environ.get('XDG_CACHE_HOME',Path.home()/'.cache'))/'steam-library-metadata-manager-demo'
+    root=Path(os.environ.get('XDG_CACHE_HOME',Path.home()/'.cache'))/'game-library-launcher-demo'
     library=Library(root)
-    (root/'steam/userdata/123/config').mkdir(parents=True,exist_ok=True)
     if seed and not library.games():
         for index,(name,color) in enumerate((('Nebula Drift',(0.23,0.25,0.65)),('Echoes of the Valley',(0.12,0.45,0.36)),('Crimson Circuit',(0.65,0.18,0.3)))):
             surface=cairo.ImageSurface(cairo.FORMAT_ARGB32,360,540); c=cairo.Context(surface)
@@ -24,6 +23,6 @@ def prepare_demo(seed=False):
             c.set_font_size(12); c.move_to(28,510); c.show_text('DEMO LIBRARY / FICTIONAL GAME')
             image=root/f'demo-cover-{index}.png'; surface.write_to_png(str(image))
             executable=root/f'demo-{index}.exe'; executable.write_text('Inert demonstration file. Never execute.\n')
-            game=library.new_game(); game.update(title=name,executable=str(executable),description='A fictional entry for reviewing the interface. This demo never reads or changes your actual Steam library.',release_date='2026',developers='Demo Studio',genres='Adventure, Exploration')
+            game=library.new_game(); game.update(title=name,executable=str(executable),description='A fictional entry for reviewing the interface. This demo never runs games or changes your actual library.',release_date='2026',developers='Demo Studio',genres='Adventure, Exploration')
             game['artwork']['portrait']=library.add_image(image.read_bytes()); library.save(game)
     return library

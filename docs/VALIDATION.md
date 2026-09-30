@@ -1,29 +1,30 @@
-# Validation — version 0.1 preview
+# Validation — version 0.2.0
 
-## Observed on Ubuntu 26.04
+Observed on Ubuntu 26.04 on 2026-09-30 using system Python and native GTK/libadwaita.
 
-- 33 isolated standard-library unit tests pass.
-- Native GTK/libadwaita GUI smoke test passes: Light/Dark appearance, compact library cards, details editing, local-only Save, explicit Steam account/preview/confirmation, sync to a temporary mock Steam folder, undo, ZIP import/export, filtering settings navigation, metadata-first Add Game, local-only Delete, and scrolling lower detail fields at 920×640.
-- Native screenshots inspected in Light/Dark and detail views. Fixed an expanding header cover that originally squeezed the scroll viewport; added regression assertions for compact header height, useful viewport height and scrolling to lower fields.
-- Live Steam search returned matching titles. Steam app 620 details returned title and portrait/landscape/hero/logo images. Data was used for an in-memory integration check, not saved to the user's library or repository.
-- Application menu installer runs without root; desktop entry validates.
-- Public repository contains source, synthetic test data and fictional demo artwork screenshots only.
+## Executed checks
 
-## Safety and failure checks
+- `/usr/bin/python3 -m unittest discover -s tests -q`: 29 isolated tests pass.
+- `/usr/bin/python3 -m compileall -q game_library`: passes.
+- `ruff check game_library tests tools run.py --select F`: passes.
+- `/usr/bin/python3 tools/ui_smoke.py`: passes. Exercises light/dark library screens, compact cards, scrolling at 920×640, local Save/Delete, structured launch settings, active-game navigation, ZIP restore, metadata-first Add Game and Settings → Proton Manager with a synthetic available release. Screenshots are synthetic and were visually inspected.
 
-- Metadata lookup ID stays separate from non-Steam launch ID.
-- Relinking/renaming preserves an existing shortcut ID; missing mapped shortcuts reuse that ID.
-- Duplicate executable matching updates rather than duplicates; ambiguous or already-owned matches are refused.
-- Steam-running and file-change guards prevent unreviewed overwrite.
-- Unrelated shortcuts and compatibility configuration remain unchanged in fixtures.
-- Failed sync rolls back fixture files; interrupted sync/undo can be recovered through the backup journal.
-- No-op previews still check for external shortcut changes. Failure recovery preserves concurrent external edits instead of overwriting them.
-- Undo refuses subsequent external changes.
-- ZIP import rejects path traversal and corrupted artwork checksums; provider credentials are excluded; restored mappings reset to unsynced.
-- Provider requests are tested with controlled fixtures; authentication redirects are not followed. Private credentials are written with mode 0600 and never sent in query URLs.
+## Safety and lifecycle coverage
 
-## Limits, not acceptance claims
+Temporary executable fixtures exercise launch completion, failed start/nonzero exit, bounded logs, duplicate and cross-instance launch rejection, Stop, and detached descendants after a wrapper exits. No actual game runs in these tests. Arguments are argv values, never shell commands; foreign prefixes are refused. Stop targets owned PID identities only. Active-game entries cannot be deleted, and transitional preparation disables premature Stop.
 
-No real Steam library has been written by development or tests. Real Steam shortcut/artwork display is pending the user's explicit sync and review. IGDB and SteamGridDB adapters have contract/fixture tests but authenticated live requests remain unverified without the user's keys. Native GUI was exercised and screenshots inspected; a comprehensive screen-reader assessment was not performed. Tests show a nonfatal desktop-session IBUS connection warning; it did not prevent UI interactions.
+Runner tests exercise checksum failure, cancellation, staged installation, no overwrite, unsafe archives, safe internal links, interrupted-stage cleanup, architecture filtering and cached pagination. Downloads use official upstream repositories; test downloads use inert temporary archives, not real runner packages.
 
-The app is an initial working preview, not a claim of exhaustive compatibility. Keep Steam closed throughout actual sync/undo. Public Steam Store endpoints can change. Local credentials and ZIP backups are not encrypted. Normal application updates do not change the user's game files or Steam settings.
+Migration tests copy a version-1 library without changing its original and retain identities; ZIP tests cover launch/default-runner settings, artwork checksums and unsafe archives. Provider fixtures test credential handling and redirects. Portable exports omit credentials, binaries, prefixes, saves and session logs. Existing client shortcuts/files are not written.
+
+## Boundaries
+
+Actual UMU gameplay and full upstream runner downloads through this UI have not been accepted by these isolated checks. Compatibility varies by game, anti-cheat and hardware. Authenticated IGDB/SteamGridDB calls require the user's keys and remain outside fixture coverage. Legacy copied metadata remains usable without a fresh provider lookup. A comprehensive accessibility assessment was not performed. Native tests report harmless deprecated libadwaita test API calls.
+
+The launch supervisor survives an unexpected UI exit. Forced termination of the supervisor or OS is outside graceful Stop guarantees. This app does not track games launched elsewhere. Local credentials and ZIP backups are not encrypted. Backup ZIPs do not replace backups of game saves/prefixes.
+
+## Installed delivery
+
+User installer and desktop-entry validation passed. Installed code was byte-compared with source. First-run migration preserved all five existing game identities and verified copied artwork bytes against original files; the original library remained unchanged. The normal installed app was opened through a user systemd service and remained active with no startup error in its journal. This is process/startup evidence, not a claim that a real game was launched or visually accepted by the user.
+
+Installation: `~/.local/opt/game-library-launcher`; menu entry: `~/.local/share/applications/game-library-launcher.desktop`.

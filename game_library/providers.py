@@ -15,8 +15,11 @@ from . import metadata
 class Credentials:
     FIELDS=('igdb_client_id','igdb_client_secret','steamgriddb_key')
     def __init__(self,root=None):
-        self.root=Path(root or Path(os.environ.get('XDG_CONFIG_HOME',Path.home()/'.config'))/'steam-library-metadata-manager')
+        self.root=Path(root or Path(os.environ.get('XDG_CONFIG_HOME',Path.home()/'.config'))/'game-library-launcher')
         self.path=self.root/'providers.json'
+        if root is None and not self.path.exists():
+            legacy=Path(os.environ.get('XDG_CONFIG_HOME',Path.home()/'.config'))/'steam-library-metadata-manager/providers.json'
+            if legacy.is_file():self.save(json.loads(legacy.read_text()))
     def load(self):
         if not self.path.exists(): return {k:'' for k in self.FIELDS}
         data=json.loads(self.path.read_text())
@@ -34,7 +37,7 @@ class NoRedirects(HTTPRedirectHandler):
 
 def api_request(url,headers=None,data=None):
     # Endpoint values are created by adapters, never accepted from imported metadata.
-    request=Request(url,headers={'User-Agent':'SteamLibraryMetadataManager/0.1',**(headers or {})},data=data)
+    request=Request(url,headers={'User-Agent':'GameLibraryLauncher/0.2',**(headers or {})},data=data)
     try:
         with build_opener(NoRedirects).open(request,timeout=20) as response:
             body=response.read(4*1024*1024+1)

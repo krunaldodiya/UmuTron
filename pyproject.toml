@@ -1,7 +1,7 @@
 [project]
-name = "steam-library-metadata-manager"
-version = "0.1.0"
-description = "Local-first non-Steam metadata and artwork management for Linux"
+name = "game-library-launcher"
+version = "0.2.0"
+description = "Standalone installed-game library and UMU launcher for Linux"
 requires-python = ">=3.12"
 
 [tool.ruff]
