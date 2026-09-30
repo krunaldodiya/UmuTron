@@ -198,7 +198,8 @@ class Window(Adw.ApplicationWindow):
             content=box(spacing=8)
             content.append(self.picture(game['artwork'].get('portrait'),128,170))
             title=label(game['title'],'heading',width_chars=18,max_width_chars=18,ellipsize=Pango.EllipsizeMode.END,xalign=0); content.append(title)
-            state=label(self.library.status(game),'caption',xalign=0); content.append(state)
+            for done,text in self.progress_items(game):
+                content.append(label(('✓ ' if done else '○ ')+text,'caption',xalign=0))
             if not Path(game['executable']).is_file(): content.append(label('Relink needed','warning',xalign=0))
             tile.set_child(content); self.flow.append(tile)
 
@@ -224,6 +225,10 @@ class Window(Adw.ApplicationWindow):
         summary.append(label('Metadata stays here. Steam receives shortcut details and artwork.','dim-label',wrap=True,xalign=0))
         self.source_label=label(self.source_text(),'caption',xalign=0); summary.append(self.source_label)
         summary.append(button('Find metadata by name or provider ID',self.find_metadata))
+        self.progress_labels=[]
+        progress=box(False,12); summary.append(progress)
+        for _ in range(3):
+            item=label('', 'caption', xalign=0, wrap=True); progress.append(item); self.progress_labels.append(item)
         tabs=Gtk.Stack(transition_type=Gtk.StackTransitionType.CROSSFADE); self.detail_tabs=tabs
         tabs.set_vexpand(True); switcher=Gtk.StackSwitcher(stack=tabs,halign=Gtk.Align.CENTER)
         self.body.append(switcher); self.body.append(tabs)
@@ -255,10 +260,24 @@ class Window(Adw.ApplicationWindow):
         note=label('Save is local. Sync always asks first.','dim-label',xalign=0,hexpand=True); footer.append(note)
         delete=button('Delete game',self.delete_game,icon='user-trash-symbolic')
         delete.set_sensitive(any(g['id']==game['id'] for g in self.library.games())); footer.append(delete)
-        footer.append(button('Sync saved version',self.sync_saved))
+        footer.append(button('Sync',self.sync_saved))
         footer.append(button('Save',lambda:self.save_game(False)))
         footer.append(button('Save & Sync',lambda:self.save_game(True),'suggested-action'))
         self.body.append(footer); self.update_path_warning()
+        for widget in self.fields.values(): widget.connect('changed',lambda _:self.update_progress())
+        self.description.get_buffer().connect('changed',lambda _:self.update_progress())
+        self.update_progress()
+
+    def progress_items(self,game):
+        metadata=bool(game.get('metadata_source') or game.get('metadata_app_id') or (game['title'].strip() and game['description'].strip()))
+        executable=bool(game['executable'] and Path(game['executable']).is_file())
+        synced=self.library.status(game)=='Synced'
+        return zip((metadata,executable,synced),('Game metadata added','Game executable connected','Synced to Steam'))
+
+    def update_progress(self):
+        for item,(done,text) in zip(self.progress_labels,self.progress_items(self.collect())):
+            item.set_text(('✓ ' if done else '○ ')+text)
+            item.set_tooltip_text(('Complete: ' if done else 'Pending: ')+text)
 
     def source_text(self):
         source=self.game.get('metadata_source',{})
@@ -300,6 +319,7 @@ class Window(Adw.ApplicationWindow):
         self.choose_file('Choose game executable',selected)
 
     def render_artwork(self):
+        if 'arguments' in self.fields: self.update_progress()
         clear(self.art_page)
         self.art_page.append(label('Your artwork collection','title-2',xalign=0))
         self.art_page.append(button('Browse SteamGridDB artwork',self.find_sgdb))
@@ -500,6 +520,7 @@ class Window(Adw.ApplicationWindow):
     def save_game(self,sync=False):
         try:
             game=self.collect(); self.library.save(game); self.game=deepcopy(game); self.original=deepcopy(game)
+            self.update_progress()
             self.heading.set_title(game['title']); self.heading.set_subtitle(self.library.status(game)); self.notify('Saved locally. Steam has not been changed.')
             if sync: self.select_account(game)
         except Exception as e: self.error(e)

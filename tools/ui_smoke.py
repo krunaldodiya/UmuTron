@@ -68,6 +68,10 @@ with tempfile.TemporaryDirectory() as temp:
     adjustment.set_value(adjustment.get_upper()-adjustment.get_page_size()); settle()
     assert adjustment.get_value()>0, 'Detail scrollbar must reach lower fields'
     w.set_default_size(1120,800); w.detail_tabs.set_visible_child_name('overview'); settle()
+    assert any(b.get_label()=='Sync' for b in buttons(w))
+    assert len(w.progress_labels)==3
+    assert w.progress_labels[1].get_text().startswith('✓')
+    assert w.progress_labels[2].get_text().startswith('○')
     w.save_game(True)
     click_window('Choose Steam account','Steam account 123')
     pump_until(lambda:not w.busy)
@@ -75,6 +79,7 @@ with tempfile.TemporaryDirectory() as temp:
     click_window('Review Steam changes','Confirm sync to Steam')
     pump_until(lambda:not w.busy)
     assert library.status(library.games()[0])=='Synced'
+    assert w.progress_labels[2].get_text().startswith('✓')
     w.engine.undo(w.engine.latest_backup())
     assert not (library.root/'steam/userdata/123/config/shortcuts.vdf').exists()
     archive=Path(temp)/'backup.zip'; library.export_zip(archive)
