@@ -122,12 +122,13 @@ class SteamSync:
             changes.append('Set '+kind+' artwork')
             if kind=='icon': vdf.put(entry,'icon',vdf.text(str(account/output)))
         files[relative]={'before':original,'after':vdf.dumps(tree)}
+        guards={k:{'before':v['before']} for k,v in files.items()}
         files={k:v for k,v in files.items() if v['before']!=v['after']}
         if not matches: changes.insert(0,'Add non-Steam shortcut: '+game['title'])
         if adopted: changes.insert(0,'Update matching existing shortcut (preserve its launch ID).')
         if not changes: changes=['No shortcut field changes; record local metadata as synced.']
         return {'account':str(account),'shortcut_id':shortcut_id,'game_id':game['id'],
-                'game_digest':digest(game),'title':game['title'],'changes':changes,'files':files}
+                'game_digest':digest(game),'title':game['title'],'changes':changes,'files':files,'guards':guards}
 
     def _check(self, account, files, side):
         if self.running(): raise RuntimeError('Steam is running. Exit Steam before applying changes.')
@@ -140,16 +141,16 @@ class SteamSync:
             raise RuntimeError('An interrupted sync needs recovery. Use Undo last sync first.')
         game=next(g for g in self.library.games() if g['id']==plan['game_id'])
         if digest(game)!=plan['game_digest']: raise RuntimeError('Game details changed; preview again.')
-        account=Path(plan['account']); self._check(account,plan['files'],'before')
+        account=Path(plan['account']); self._check(account,plan['guards'],'before')
         self.backups.mkdir(exist_ok=True)
         backup=self.backups/(datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')+'-'+uuid4().hex+'.json')
-        journal={k:v for k,v in plan.items() if k!='files'}
+        journal={k:v for k,v in plan.items() if k not in ('files','guards')}
         journal['state']='prepared'
         journal['files']={k:{side:_encode(data) for side,data in item.items()} for k,item in plan['files'].items()}
         atomic_write(backup,json.dumps(journal,indent=2).encode())
         completed=[]
         try:
-            self._check(account,plan['files'],'before')
+            self._check(account,plan['guards'],'before')
             for relative,item in plan['files'].items():
                 target=_target(account,relative)
                 if self.running(): raise RuntimeError('Steam opened during sync; changes will be rolled back.')
@@ -158,7 +159,9 @@ class SteamSync:
                 else: atomic_write(target,item['after'])
                 completed.append(relative)
             self.library.mark_synced(plan['game_id'],account,plan['shortcut_id'])
-        except Exception:
+        except Exception as error:
+            if self.running() or any(_read(_target(account,r))!=plan['files'][r]['after'] for r in completed):
+                raise RuntimeError('Sync was interrupted and Steam or its files changed. Recovery was preserved without overwriting those changes. Close Steam and review Undo.') from error
             for relative in reversed(completed):
                 target=_target(account,relative); before=plan['files'][relative]['before']
                 if before is None: target.unlink(missing_ok=True)
@@ -194,10 +197,14 @@ class SteamSync:
         try:
             for relative,item in files.items():
                 target=_target(account,relative)
+                if self.running() or _read(target)!=item['after']:
+                    raise RuntimeError('Steam or its files changed during recovery. Recovery remains pending.')
                 if item['before'] is None: target.unlink(missing_ok=True)
                 else: atomic_write(target,item['before'])
                 completed.append(relative)
-        except Exception:
+        except Exception as error:
+            if self.running() or any(_read(_target(account,r))!=files[r]['before'] for r in completed):
+                raise RuntimeError('Recovery was interrupted by an external change. Existing files were preserved.') from error
             for relative in reversed(completed):
                 target=_target(account,relative); after=files[relative]['after']
                 if after is None: target.unlink(missing_ok=True)

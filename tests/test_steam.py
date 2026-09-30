@@ -119,3 +119,23 @@ class SteamTests(unittest.TestCase):
         self.engine.undo(backup)
         self.assertFalse((self.account/'config/shortcuts.vdf').exists())
         self.assertIsNone(self.engine.latest_backup())
+
+    def test_noop_preview_still_detects_external_shortcut_change(self):
+        self.engine.apply(self.engine.preview(self.game,self.account))
+        plan=self.engine.preview(self.lib.games()[0],self.account)
+        self.assertEqual(plan['files'],{})
+        target=self.account/'config/shortcuts.vdf'; target.write_bytes(b'external change')
+        with self.assertRaises(RuntimeError): self.engine.apply(plan)
+        self.assertEqual(target.read_bytes(),b'external change')
+
+    def test_failure_does_not_rollback_over_external_change(self):
+        target=self.account/'config/shortcuts.vdf'
+        plan=self.engine.preview(self.game,self.account)
+        def external_change(*args):
+            target.write_bytes(b'written by another process')
+            raise OSError('simulated failure')
+        with patch.object(self.lib,'mark_synced',side_effect=external_change):
+            with self.assertRaises(RuntimeError): self.engine.apply(plan)
+        self.assertEqual(target.read_bytes(),b'written by another process')
+        import json
+        self.assertEqual(json.loads(self.engine.latest_backup().read_text())['state'],'prepared')

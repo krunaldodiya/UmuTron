@@ -11,6 +11,6 @@
 - [x] Confirmed sync, backups and guarded undo/recovery, tested on mock libraries.
 - [x] Native UI smoke test and isolated interactive demo.
 - [ ] User acceptance of real-library sync (never performed automatically).
-- [ ] Authenticated live IGDB/SteamGridDB checks with the user's own credentials.
+- Optional: authenticated live IGDB/SteamGridDB checks when the user supplies credentials. Steam search works without these providers; this does not block the release.
 
 IGN is excluded. No game launcher, Proton manager, automatic sync or purchased-Steam-game editing is planned.
