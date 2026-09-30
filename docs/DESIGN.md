@@ -6,11 +6,11 @@ Manage non-Steam game metadata locally and sync manually to Steam. Existing purc
 
 ## Screens
 
-1. Library: header with search, Add Game, backup menu and appearance menu. Responsive cover cards show title and Not synced / Changes pending / Synced status. A helpful empty state offers Add Game. Include an accessible list option.
-2. Add Game: choose executable, search a name or store ID, review matching covers/titles/release dates, select a match, preview and save. Metadata matching must not execute or inspect game binaries.
+1. Library: header with search, Add Game and access to Settings. Responsive cover cards show title and Not synced / Changes pending / Synced status. A helpful empty state offers Add Game. Include an accessible list option.
+2. Add Game: search by name or provider ID first, select a match, then choose the executable and review/save. Metadata matching must not execute or inspect game binaries.
 3. Details: artwork hero, title and status; tabs for Overview, Artwork and Steam settings. Overview contains editable description, release date, developers, publishers and genres. Steam settings includes editable executable, working directory and arguments. Missing files show a Relink action without deleting metadata.
 4. Sync preview: list exact additions/updates, selected Steam account and artwork changes. Explicit confirmation is required. Steam must be fully closed; never close it automatically. Errors leave local work intact.
-5. Backup and restore: ZIP export; import preview with duplicate/conflict choices. Restoration never syncs automatically. Missing game paths can be repaired later.
+5. Settings: appearance, private provider credentials, backup/restore and undo. ZIP export; import preview with duplicate/conflict choices. Restoration never syncs automatically. Missing game paths can be repaired later.
 
 ## Appearance and usability
 
@@ -29,3 +29,11 @@ ZIP backups contain metadata, artwork and portable application settings only. Ex
 ## Architecture
 
 Native Python GTK 4/libadwaita UI with separate local-library, metadata-provider, archive and Steam adapters. Core modules must remain testable without a display or Steam installation. Store full metadata locally; standard Steam shortcuts do not support description/release-info display. Missing remote artwork is an explicit supported state. Public source and tests must contain no personal paths, credentials or downloaded game artwork.
+
+## Approved refinements
+
+Steam and IGDB provide metadata; SteamGridDB provides selectable community artwork. Each provider has an independent ID namespace. IGN is excluded. Optional provider credentials live outside portable backups and public source. Store lookups do not require credentials; missing provider credentials produce an actionable settings message.
+
+Library cards are compact to show more games. Detail headers remain compact while tabs scroll; footer actions remain visible. The isolated demo is available after each meaningful checkpoint for user review. Do not restart a demo with unsaved user edits without notice.
+
+Delete game removes a local entry after confirmation. Game binaries and existing Steam shortcuts remain untouched. Demo launches start empty; synthetic samples are generated only by the isolated UI test harness.
