@@ -1,12 +1,12 @@
-# Standalone game library, installer and launcher — 0.3
+# Standalone game library, installer and launcher — 0.3.1
 
 ## Contract
 Manage preinstalled executables or explicitly run a trusted Windows installer with UMU/Proton. No Steam client/account or sync integration is required. Steam's public catalogue is the credential-free default metadata source; IGDB and SteamGridDB remain optional with accurate attribution.
 
 ## Interface
-Home retains compact cards, search, readiness count and Play/Stop. Add Game explicitly offers Already installed and Install from installer. Details are read-only: hero, cover, logo, title, description and related information. Pencil opens Edit Metadata; controller opens Manage Game. Dialog Save commits locally; Cancel discards draft metadata/file settings. Late metadata results cannot modify a cancelled draft.
+Home retains compact cards, search, readiness count and Play/Stop. Add Game opens title/ID search with public Steam default and optional supported provider selection. Selecting a result fetches and saves metadata plus available artwork, creates a library entry and opens details; launch fields are not required. Manual metadata entry is a fallback. Metadata-only entries show Set up to play. Details are read-only: hero, cover, logo, title, description and related information. Pencil opens Edit Metadata; controller opens Manage Game. Dialog Save commits locally; Cancel discards draft metadata/file settings. Late metadata results cannot modify a cancelled draft.
 
-Manage Game contains executable, working directory, installer selection/status/logs/Run/Cancel/Confirm. Advanced launch settings are collapsed by default, with runner/default selection, dedicated prefix, structured arguments and Reset to defaults. Reset clears explicit overrides while retaining an installer’s pinned prefix/runner. Existing overrides stay valid; no broad configuration rewrite occurs.
+Manage Game offers Already installed, Existing Windows launcher / shortcut (.exe/.lnk), and Install from installer; it contains executable, working directory, installer selection/status/logs/Run/Cancel/Confirm. Advanced launch settings are collapsed by default, with runner/default selection, dedicated prefix, structured arguments and Reset to defaults. Reset clears explicit overrides while retaining an installer’s pinned prefix/runner. Existing overrides stay valid; no broad configuration rewrite occurs.
 
 Settings retains General backup/restore/appearance, Providers and the full Proton Manager. Metadata lookup/search/save/import never execute a game or installer.
 

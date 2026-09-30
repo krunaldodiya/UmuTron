@@ -9,7 +9,7 @@ from .launcher import ACTIVE, defaults, build_command, pid_identity
 def validate_installation(value):
     if not isinstance(value,dict) or set(value)-{'mode','installer','session_id','prefix','proton','confirmed'}:
         raise ValueError('Invalid installation settings.')
-    if value.get('mode','installed') not in ('installed','installer'):raise ValueError('Unknown game installation mode.')
+    if value.get('mode','installed') not in ('installed','installer','shortcut'):raise ValueError('Unknown game installation mode.')
     for key in ('installer','session_id','prefix','proton'):
         item=value.get(key,'')
         if not isinstance(item,str) or len(item)>4096 or '\x00' in item:raise ValueError('Invalid installer '+key+'.')

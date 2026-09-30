@@ -79,14 +79,33 @@ with tempfile.TemporaryDirectory() as temp:
     assert 'Providers' in error.get_body();error.emit('response','ok');w.metadata_provider.set_selected(0);click(dialog,'Search')
     pump_until(lambda:any(b.get_label()=='Select' for b in buttons(dialog)));click(dialog,'Select');pump_until(lambda:not w.busy)
     assert w.fields['title'].get_text()=='Catalogue fixture';w.cancel_editor();assert library.games()[0]['title']=='Nebula reviewed'
+    # Metadata-first Add Game saves artwork and opens details without configuration.
+    image=(library.art_dir/game['artwork']['portrait']).read_bytes()
+    metadata.fetch_game=lambda game_id:({'title':'Metadata only','description':'Fetched once','metadata_app_id':620},{'portrait':image,'hero':image,'logo':image},[])
+    before_add=len(library.games());w.add_game();settle()
+    add=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Find game metadata')
+    assert w.editor is None and w.metadata_provider.get_selected()==0
+    assert not any(b.get_label() in ('Already installed','Install from installer') for b in buttons(add))
+    screenshot('add-game-dark.png',add)
+    click(add,'Search');pump_until(lambda:any(b.get_label()=='Select' for b in buttons(add)))
+    click(add,'Select');pump_until(lambda:len(library.games())==before_add+1)
+    saved=w.game;assert saved['title']=='Metadata only' and saved['description']=='Fetched once'
+    assert saved['executable']=='' and saved['launch']=={} and saved['installation']=={}
+    assert set(saved['artwork'])=={'portrait','hero','logo'} and w.editor is None
+    assert not any(isinstance(i,Gtk.Entry) for i in widgets(w.body))
+    assert w.play_buttons[saved['id']].get_label()=='Set up to play'
+    w.demo=False;click(w,'Set up to play');assert w.editor.get_title()=='Manage Game';w.cancel_editor();w.demo=True
+    # Manual fallback remains optional, and cancellation creates no entry.
+    count=len(library.games());w.add_game();settle()
+    add=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Find game metadata')
+    click(add,'Enter details manually');assert w.editor.get_title()=='Edit Metadata';w.cancel_editor();assert len(library.games())==count
     metadata.search=original_search;metadata.fetch_game=original_fetch
-    # Add Game offers both paths. Save/cancel never execute the installer.
-    for mode,label_text in (('installed','Already installed'),('installer','Install from installer')):
-        w.add_game();settle();add=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Add Game');click(add,label_text);settle()
-        assert w.editor.get_title()=='Manage Game';assert w.install_mode.get_selected()==(mode=='installer')
-        assert not w.advanced.get_expanded()
-        w.fields['title'].set_text('New '+mode);w.fields['executable'].set_text(game['executable'])
-        w.installer_entry.set_text(str(Path(temp)/'setup.exe'))
+    # Launch choices occur afterwards in Manage Game, without executing anything.
+    for mode,index in (('installed',0),('shortcut',2),('installer',1)):
+        draft=library.new_game();draft.update(title='New '+mode,description='Metadata saved before launch setup');library.save(draft);w.show_game(draft);w.open_manage();settle()
+        w.install_mode.set_selected(index)
+        assert w.editor.get_title()=='Manage Game' and not w.advanced.get_expanded()
+        w.fields['executable'].set_text(game['executable']);w.installer_entry.set_text(str(Path(temp)/'setup.exe'))
         if mode=='installer':
             screenshot('installer-dark.png',w.editor);assert not w.install_button.get_sensitive()
         w.save_editor();assert not w.launcher.active()
@@ -135,4 +154,4 @@ with tempfile.TemporaryDirectory() as temp:
     w.show_library();w.filter.set_text('Nebula');w.render_cards();assert len(list(w.flow))==1
     for window in list(Gtk.Window.get_toplevels()):window.destroy()
     w.pool.shutdown(wait=True)
-    print('PASS: readonly details, modal Save/Cancel, both Add Game paths, collapsed advanced settings, metadata switching/default public search, tray hide/reopen/fallback/Exit cancel, operation controls, ZIP and Proton Manager')
+    print('PASS: readonly details, modal Save/Cancel, metadata-first Add Game and later launch choices, collapsed advanced settings, metadata switching/default public search, tray hide/reopen/fallback/Exit cancel, operation controls, ZIP and Proton Manager')

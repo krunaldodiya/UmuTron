@@ -1,3 +1,3 @@
 """Standalone installed-game library and UMU launcher."""
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"

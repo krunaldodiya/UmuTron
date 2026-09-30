@@ -1,12 +1,12 @@
-# Validation — version 0.3.0
+# Validation — version 0.3.1
 
 Validated on Ubuntu 26.04, 2026-09-30, with system Python and native GTK/libadwaita.
 
 ## Final checks
 
-- All 36 isolated regression tests pass.
+- All 37 isolated regression tests pass.
 - Python compilation and Ruff undefined/unused-code checks pass.
-- Native GUI smoke passes: read-only detail, hero/cover/logo, modal Save/Cancel, both Add Game modes, harmless installer execution and executable confirmation, advanced settings/reset, scrolling, default public metadata and missing-credential provider switching, active operation controls, ZIP recovery and Proton Manager.
+- Native GUI smoke passes: read-only detail, hero/cover/logo, modal Save/Cancel, metadata-first search/select/save/detail with artwork and no launch configuration, optional manual fallback cancellation, subsequent executable/shortcut/installer configuration, harmless installer execution and executable confirmation, advanced settings/reset, scrolling, default public metadata and missing-credential provider switching, active operation controls, ZIP recovery and Proton Manager.
 - Private-session D-Bus tray integration passes: registration, host detection/loss, Show Launcher, activation and Exit menu.
 - Separate-process instance test passes: the second launch activates the first instance and exits without launching a game or installer.
 - Live credential-free public Steam search and details lookup passed for Portal 2. No account/client is required.
@@ -27,6 +27,6 @@ Forced OS/supervisor termination is outside graceful cancellation guarantees. Mu
 
 ## Installed delivery
 
-User-level installation and desktop-entry validation passed. All installed Python modules match final source bytes. The existing library/artwork snapshot (21 files) was unchanged by installation; saves, prefixes and game files were not touched. Version 0.3.0 was opened normally with no startup errors in its journal. The current desktop reports a registered tray host and the app StatusNotifierItem. Real icon/menu interaction remains a user visual acceptance check.
+User-level installation and desktop-entry validation passed. All installed Python modules match final source bytes. The existing library/artwork snapshot (existing files) was unchanged by installation; saves, prefixes and game files were not touched. Version 0.3.1 was opened normally with no startup errors in its journal. The current desktop reports a registered tray host and the app StatusNotifierItem. Real icon/menu interaction remains a user visual acceptance check.
 
 The fresh instance is already open; reopening is not required. No game or installer was automatically started. Source and documentation are delivered together.

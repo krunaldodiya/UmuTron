@@ -14,6 +14,22 @@ class LibraryTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.lib = Library(self.root / 'data')
 
+    def test_metadata_only_entry_is_valid_and_can_configure_later(self):
+        game=self.lib.new_game()
+        game.update(title='Catalogue game',description='Fetched description',metadata_source={'provider':'steam','id':620})
+        self.lib.save(game)
+        saved=Library(self.root/'data').games()[0]
+        self.assertEqual(saved['executable'],'')
+        self.assertEqual(saved['launch'],{})
+        self.assertEqual(saved['installation'],{})
+        saved.update(executable='/games/launcher.lnk',working_dir='/games',installation={'mode':'shortcut'})
+        self.lib.save(saved)
+        self.assertEqual(self.lib.games()[0]['metadata_source'],game['metadata_source'])
+        self.assertEqual(self.lib.games()[0]['id'],game['id'])
+        archive=self.root/'backup.zip';self.lib.export_zip(archive)
+        self.lib.import_zip(archive,'replace')
+        self.assertEqual(self.lib.games()[0]['installation']['mode'],'shortcut')
+
     def test_save_reload_and_relink_preserve_identity(self):
         game = self.lib.new_game()
         game.update(title='A game', executable='/games/a.exe', metadata_app_id=620)

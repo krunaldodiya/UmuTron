@@ -182,7 +182,7 @@ class Window(Adw.ApplicationWindow):
         toolbar.append(self.filter)
         self.library_status=label('','dim-label',xalign=0); panel.append(self.library_status)
         self.library_stack=Gtk.Stack(); self.library_stack.set_vexpand(True); self.body.append(self.library_stack)
-        empty=Adw.StatusPage(title='A home for your games',description='Add an installed game, choose artwork, and play with UMU and Proton.',icon_name='applications-games-symbolic')
+        empty=Adw.StatusPage(title='A home for your games',description='Find a game to save its metadata and artwork. Set up Play whenever you’re ready.',icon_name='applications-games-symbolic')
         empty_button=button('Add your first game',self.add_game,'suggested-action'); empty_button.set_halign(Gtk.Align.CENTER)
         empty.set_child(empty_button)
         self.library_stack.add_named(empty,'empty')
@@ -208,22 +208,15 @@ class Window(Adw.ApplicationWindow):
             title=label(game['title'],'heading',width_chars=18,max_width_chars=18,ellipsize=Pango.EllipsizeMode.END,xalign=0); content.append(title)
             completed=sum(done for done,_ in self.progress_items(game))
             content.append(label(f'{completed}/3 complete','caption',xalign=0))
-            if not Path(game['executable']).is_file(): content.append(label('Relink needed','warning',xalign=0))
+            if not game['executable']: content.append(label('Set up to play','dim-label',xalign=0))
+            elif not Path(game['executable']).is_file(): content.append(label('Relink needed','warning',xalign=0))
             wrapper=box(spacing=4); tile.set_child(content); wrapper.append(tile)
             play=button('Play',lambda g=game:self.play_game(g)); wrapper.append(play); self.play_buttons[game['id']]=play
             self.flow.append(wrapper)
 
     def add_game(self):
-        dialog=Gtk.Window(title='Add Game',transient_for=self,modal=True,default_width=460)
-        content=box();margins(content);dialog.set_child(content)
-        content.append(label('How will you add this game?','title-2',wrap=True))
-        content.append(label('Use an existing executable, or run an installer in a dedicated Proton prefix. Metadata lookup needs no Steam client.','dim-label',wrap=True))
-        def choose(mode):
-            dialog.destroy();game=self.library.new_game();game['installation']={'mode':mode,'confirmed':False}
-            self.show_game(game);self.open_manage(new_game=True)
-        content.append(button('Already installed',lambda:choose('installed'),'suggested-action'))
-        content.append(button('Install from installer',lambda:choose('installer')))
-        content.append(button('Cancel',dialog.destroy));dialog.present()
+        self.game=self.library.new_game();self.fields={};self.launch_fields={};self.description=None
+        self.find_metadata(new_game=True)
 
     def entry(self,container,key,title,hint=None):
         wrapper=box(spacing=6); wrapper.append(label(title,'heading',xalign=0))
@@ -311,9 +304,9 @@ class Window(Adw.ApplicationWindow):
         dialog,content,footer=result
         self.manage_new=new_game
         if new_game:self.entry(content,'title','Game name','You can search public metadata after saving this entry.')
-        mode=self.game.get('installation',{}).get('mode','installed');self.install_mode=Gtk.DropDown.new_from_strings(['Already installed','Install from installer']);self.install_mode.set_selected(1 if mode=='installer' else 0);content.append(self.install_mode)
-        content.append(label('Game executable — select or confirm after setup','heading',wrap=True,xalign=0))
-        self.entry(content,'executable','Game executable');content.append(button('Choose game executable',self.pick_executable))
+        mode=self.game.get('installation',{}).get('mode','installed');self.install_mode=Gtk.DropDown.new_from_strings(['Already installed','Install from installer','Existing Windows launcher / shortcut']);self.install_mode.set_selected({'installed':0,'installer':1,'shortcut':2}[mode]);content.append(self.install_mode)
+        content.append(label('Game executable or Windows launcher / shortcut','heading',wrap=True,xalign=0))
+        self.entry(content,'executable','Game executable / launcher','Select a Windows .exe or .lnk; it runs through UMU. No shell command is required.');content.append(button('Choose game executable',self.pick_executable))
         self.entry(content,'working_dir','Working directory','Blank uses the executable’s folder.')
         content.append(button('Choose working directory',lambda:self.choose_file('Working directory',lambda p:self.fields['working_dir'].set_text(str(p)),folder=True)))
         self.installer_panel=box();content.append(self.installer_panel)
@@ -390,7 +383,7 @@ class Window(Adw.ApplicationWindow):
             for key,widget in self.launch_fields.items():game['launch'][key]=widget.get_text()
             buffer=self.launch_args.get_buffer();text=buffer.get_text(buffer.get_start_iter(),buffer.get_end_iter(),False)
             game['launch']['arguments']=text.splitlines() if text else []
-            config=dict(game.get('installation',{}));config['mode']='installer' if self.install_mode.get_selected()==1 else 'installed';config['installer']=self.installer_entry.get_text();game['installation']=config
+            config=dict(game.get('installation',{}));config['mode']=('installed','installer','shortcut')[self.install_mode.get_selected()];config['installer']=self.installer_entry.get_text();game['installation']=config
         if self.description is not None:
             buf=self.description.get_buffer();game['description']=buf.get_text(buf.get_start_iter(),buf.get_end_iter(),False)
         return game
@@ -457,7 +450,7 @@ class Window(Adw.ApplicationWindow):
         dialog=Gtk.Window(title='Find game metadata',transient_for=self.editor or self,modal=True,destroy_with_parent=True,default_width=620,default_height=530)
         content=box(); margins(content); dialog.set_child(content)
         content.append(label('Find the right game','title-1',xalign=0))
-        content.append(label('Choose a provider, then search by title or its game ID. Selecting a match fills your local draft.','dim-label',wrap=True,xalign=0))
+        content.append(label('Search by title or provider ID. Select a match to save metadata and available artwork.' if new_game else 'Choose a provider, then search by title or its game ID. Selecting a match fills your local draft.','dim-label',wrap=True,xalign=0))
         row=box(False); content.append(row)
         provider=Gtk.DropDown.new_from_strings(['Steam catalogue (no credentials)','IGDB']);provider.set_tooltip_text('Metadata provider');row.append(provider);self.metadata_provider=provider
         query=Gtk.Entry(placeholder_text='Game name or provider ID',hexpand=True,text=self.fields['title'].get_text() if 'title' in self.fields else self.game['title']); row.append(query)
@@ -467,10 +460,9 @@ class Window(Adw.ApplicationWindow):
         chosen=[False]
         def cancel():
             dialog.destroy()
-            if new_game and not chosen[0]: self.cancel_editor()
-        def selected(item):
+            if new_game and not chosen[0]: self.show_library()
+        def selected(item,selected_provider):
             chosen[0]=True
-            selected_provider='igdb' if provider.get_selected()==1 else 'steam'
             selected_id=self.game['id'];selected_editor=self.editor
             dialog.destroy()
             def loaded(result):
@@ -487,7 +479,10 @@ class Window(Adw.ApplicationWindow):
                     if key in info:field.set_text(info[key])
                 if self.description is not None:self.description.get_buffer().set_text(self.game['description'])
                 if self.editor_kind=='metadata':self.render_artwork()
-                self.notify('Metadata loaded into draft. Save to keep it.'+(' Missing artwork: '+', '.join(missing)+'.' if missing else ''))
+                if new_game:
+                    self.library.save(self.game);self.show_game(self.game)
+                    self.notify('Game added. Set up Play later through Manage Game.'+(' Missing artwork: '+', '.join(missing)+'.' if missing else ''))
+                else:self.notify('Metadata loaded into draft. Save to keep it.'+(' Missing artwork: '+', '.join(missing)+'.' if missing else ''))
             self.async_job('Fetching metadata and artwork…',lambda:(self.igdb.fetch(item['id']) if selected_provider=='igdb' else metadata.fetch_game(item['id'])),loaded)
         def run_search():
             if self.busy: return
@@ -497,7 +492,7 @@ class Window(Adw.ApplicationWindow):
                 status.set_text(f'{len(items)} matches. Select one to preview its metadata.' if items else 'No matching games. Try another title or ID.')
                 for item in items:
                     action=Adw.ActionRow(title=item['name'],subtitle='Provider ID '+str(item['id']))
-                    choose=button('Select',lambda i=item:selected(i)); choose.set_valign(Gtk.Align.CENTER)
+                    choose=button('Select',lambda i=item,p=('igdb' if provider_id==1 else 'steam'):selected(i,p)); choose.set_valign(Gtk.Align.CENTER)
                     action.set_use_markup(False); action.add_suffix(choose); action.set_activatable_widget(choose); results.append(action)
             # Restore dialog controls on failures as well as successes.
             def work():
@@ -510,9 +505,12 @@ class Window(Adw.ApplicationWindow):
         content.append(status); content.append(scroll)
         bottom=box(False)
         bottom.append(button('Cancel',cancel))
-        if new_game: bottom.append(button('Enter details manually',dialog.destroy))
+        if new_game:
+            def manual():
+                chosen[0]=True;dialog.destroy();self.open_metadata()
+            bottom.append(button('Enter details manually',manual))
         content.append(bottom)
-        dialog.connect('close-request',lambda _:(self.cancel_editor() if new_game and not chosen[0] else None,False)[-1])
+        dialog.connect('close-request',lambda _:(self.show_library() if new_game and not chosen[0] else None,False)[-1])
         dialog.present(); query.grab_focus()
 
     def open_settings(self):
@@ -725,6 +723,8 @@ class Window(Adw.ApplicationWindow):
                     self.confirm('Stop '+current.get('title','game')+'?','This stops only processes owned by this launch. Unsaved in-game progress may be lost.','Stop game',lambda:self.stop_game(game['id']),True)
                     return
                 raise RuntimeError(current.get('title','Another game')+' is active. Stop or finish it first.')
+            if not game['executable'] or (game.get('installation',{}).get('mode')=='installer' and not game['installation'].get('confirmed')):
+                self.show_game(game);self.open_manage();return
             if self.demo:raise ValueError('Play is disabled in the demo. Synthetic game files are inert.')
             settings=defaults(game,self.library.root);settings['proton']=game.get('launch',{}).get('proton') or game.get('installation',{}).get('proton') or self.library.data['settings'].get('default_proton') or settings['proton']
             game=deepcopy(game);game['launch']=settings
@@ -746,9 +746,11 @@ class Window(Adw.ApplicationWindow):
             own=active and active_id==game_id;stopping=own and current.get('state')=='Stopping'
             preparing=own and current.get('state')=='Preparing' and not current.get('supervisor_pid')
             installer=own and current.get('operation')=='installer'
-            control.set_label('Preparing…' if preparing else 'Stopping…' if stopping else ('Stop installer' if installer else 'Stop' if own else 'Play'))
+            entry=next((g for g in self.library.games() if g['id']==game_id),self.game or {})
+            configured=bool(entry.get('executable')) and (entry.get('installation',{}).get('mode')!='installer' or entry['installation'].get('confirmed'))
+            control.set_label('Preparing…' if preparing else 'Stopping…' if stopping else ('Stop installer' if installer else 'Stop' if own else 'Play' if configured else 'Set up to play'))
             control.set_sensitive(not self.demo and not stopping and not preparing and (not active or own))
-            control.set_tooltip_text(('Active: '+current.get('title','game')+'. Finish it before starting another.') if active and not own else 'Stop this game' if own else 'Play through UMU')
+            control.set_tooltip_text(('Active: '+current.get('title','game')+'. Finish it before starting another.') if active and not own else 'Stop this game' if own else 'Play through UMU' if configured else 'Configure game files in Manage Game')
         if self.game is not None and hasattr(self,'launch_status'):
             if self.detail_install_status is not None:self.detail_install_status.set_text('Installation: '+self.installations.status(self.game)['phase'])
             state=self.launcher.snapshot(self.game['id']);self.launch_status.set_text(state['state'])

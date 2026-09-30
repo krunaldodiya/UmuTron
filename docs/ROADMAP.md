@@ -1,6 +1,6 @@
-# Version 0.3 delivery scope
+# Version 0.3.1 delivery scope
 
-- [x] Preinstalled and installer Add Game modes; persistent installer journals and prefix/runtime continuity.
+- [x] Metadata-first Add Game, automatic metadata/artwork save and optional later launch setup; persistent installer journals and prefix/runtime continuity.
 - [x] Installer failure/cancel/retry and explicit installed-executable confirmation; never rerun setup from Play.
 - [x] Shared one-operation guard, owned Stop and early session-scoped cancellation.
 - [x] Close to tray, Show/Exit, single-instance activation and no-host fallback.

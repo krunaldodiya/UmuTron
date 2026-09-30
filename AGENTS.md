@@ -1,6 +1,6 @@
 # Project instructions
 
-Canonical contract: docs/DESIGN.md. This is a standalone Linux game/installer launcher. Public Steam catalogue metadata is allowed; client sync is not.
+Canonical contract: docs/DESIGN.md. This is a standalone Linux game/installer launcher. Public Steam catalogue metadata is allowed; client sync is not. Add Game is metadata-first: selecting a search result saves metadata/artwork and opens details. Launch configuration is optional and belongs in Manage Game; metadata-only entries are valid.
 
 - Play and installer execution are explicit, through UMU and Proton. Save/import/metadata lookup never execute a game. No shell commands are built from game data. Never use sudo for games.
 - One app-owned game or installer at a time. The launch supervisor owns descendants and retains the lock through their lifetime. Stop targets only verified owned PIDs; never broad process matching or shared wineserver termination.
