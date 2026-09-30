@@ -11,7 +11,7 @@ import sys
 import time
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from game_library.library import atomic_write
-from game_library.launcher import MARKER, clean_log, pid_identity
+from game_library.launcher import MARKER, clean_log, pid_identity, running_game_evidence
 
 
 def main(request_path):
@@ -21,7 +21,7 @@ def main(request_path):
     state={'game_id':request['game_id'],'title':request['title'],'state':'Preparing','logs':[],'code':None,'proton':request['env']['PROTONPATH'],'supervisor_pid':os.getpid(),'supervisor_start':pid_identity(os.getpid())}
     logs=deque(['Preparing UMU. First use may download Proton and runtime assets.'],maxlen=200)
     stopping=[False];signal.signal(signal.SIGTERM,lambda *_:stopping.__setitem__(0,True))
-    owned={};sent=set();stop_at=None;last_save=0;pending=b'';code=None;pipe_open=True
+    owned={};sent=set();stop_at=None;last_save=0;last_evidence=0;pending=b'';code=None;pipe_open=True
     def save():
         state['logs']=list(logs);atomic_write(request['record'],json.dumps(state).encode())
     def observe():
@@ -74,8 +74,11 @@ def main(request_path):
                             if text:
                                 logs.append(text);lower=text.lower()
                                 if not stopping[0]:
-                                    if any(w in lower for w in ('download','restoring runtime','setting up unified','updating steamrt')):state['state']='Downloading runtime'
+                                    if state['state']!='Running' and any(w in lower for w in ('download','restoring runtime','setting up unified','updating steamrt')):state['state']='Downloading runtime'
                                     if 'waitforexitandrun' in lower:state['state']='Running'
+                if not stopping[0] and state['state']!='Running' and time.monotonic()-last_evidence>.5:
+                    last_evidence=time.monotonic()
+                    if running_game_evidence(os.getpid(),state['supervisor_start'],request['argv'][1]):state['state']='Running'
                 code=process.poll()
                 if code is not None:
                     while True:

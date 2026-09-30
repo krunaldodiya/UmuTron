@@ -104,3 +104,17 @@ class LaunchTests(unittest.TestCase):
         launcher.stop(self.game['id']);deadline=time.monotonic()+5
         while launcher.active() and time.monotonic()<deadline:time.sleep(.03)
         self.assertFalse(launcher.active())
+
+    def test_running_detected_without_umu_log_marker_while_wrapper_lives(self):
+        self.runner.write_text('#!/usr/bin/python3\nimport subprocess,time\nprint("fsync: up and running.",flush=True)\np=subprocess.Popen(['+repr(self.game['executable'])+',"30"],executable="/bin/sleep")\np.wait()\n')
+        launcher=Launcher(self.lib.root);launcher.start(self.game)
+        try:
+            deadline=time.monotonic()+3
+            while launcher.snapshot(self.game['id'])['state']!='Running' and time.monotonic()<deadline:time.sleep(.02)
+            self.assertEqual(launcher.snapshot(self.game['id'])['state'],'Running')
+            self.assertTrue(launcher.active())
+        finally:
+            launcher.stop(self.game['id'])
+            deadline=time.monotonic()+5
+            while launcher.active() and time.monotonic()<deadline:time.sleep(.02)
+        self.assertEqual(launcher.snapshot(self.game['id'])['state'],'Stopped')

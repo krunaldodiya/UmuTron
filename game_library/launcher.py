@@ -9,6 +9,7 @@ import fcntl
 import json
 import signal
 import sys
+import time
 from uuid import UUID
 
 FIELDS={'runner','proton','prefix','arguments'}
@@ -84,10 +85,41 @@ def pid_identity(pid):
     except (OSError,IndexError):return None
 
 
+def running_game_evidence(supervisor_pid,supervisor_start,executable):
+    """Bounded read-only evidence: the selected executable is an owned descendant.
+
+    UMU and Wine wrapper argv can contain the game path as a later argument;
+    only argv[0] counts. Wine drive letters differ from host paths, so compare
+    the executable filename, within the verified supervisor ancestry only.
+    """
+    if type(supervisor_pid) is not int or not supervisor_start or pid_identity(supervisor_pid)!=supervisor_start:return False
+    filename=str(executable).replace('\\','/').rsplit('/',1)[-1].casefold()
+    if not filename:return False
+    table={}
+    for index,directory in enumerate(Path('/proc').iterdir()):
+        if index>=8192:break
+        if not directory.name.isdigit():continue
+        try:
+            raw=(directory/'stat').read_text();fields=raw[raw.rfind(')')+2:].split()
+            table[int(directory.name)]=(int(fields[1]),fields[19],fields[0])
+        except (OSError,IndexError,ValueError):continue
+    owned={supervisor_pid}
+    for _ in range(100):
+        children={pid for pid,(parent,_,state) in table.items() if parent in owned and state!='Z'}
+        if children<=owned:break
+        owned|=children
+    for pid in owned-{supervisor_pid}:
+        try:
+            with (Path('/proc')/str(pid)/'cmdline').open('rb') as stream:arg=stream.read(8192).split(b'\x00',1)[0].decode('utf-8',errors='replace').strip()
+            if arg.replace('\\','/').rsplit('/',1)[-1].casefold()==filename and pid_identity(pid)==table[pid][1]:return True
+        except OSError:continue
+    return False
+
+
 class Launcher:
     def __init__(self,root):
         self.root=Path(root);self.root.mkdir(parents=True,exist_ok=True)
-        self.record=self.root/'launch-session.json';self.processes=[]
+        self.record=self.root/'launch-session.json';self.processes=[];self.evidence_cache={}
 
     def active(self):
         fd=os.open(self.root/'launch.lock',os.O_CREAT|os.O_RDWR,0o600)
@@ -106,6 +138,17 @@ class Launcher:
             if self.record.stat().st_size>500000:return {}
             record=json.loads(self.record.read_text()); UUID(record['game_id'])
             if record['state'] not in ACTIVE|{'Finished','Error','Stopped'}:return {}
+            if record['state'] in ('Preparing','Downloading runtime'):
+                key=(record.get('supervisor_pid'),record.get('supervisor_start'),record['game_id'])
+                cached=self.evidence_cache.get('result')
+                if not cached or cached[0]!=key or time.monotonic()-cached[1]>.5:
+                    running=False;request_path=self.root/'launch-request.json'
+                    if request_path.is_file() and request_path.stat().st_size<=500000:
+                        request=json.loads(request_path.read_text())
+                        if request.get('game_id')==record['game_id'] and isinstance(request.get('argv'),list) and len(request['argv'])>1:
+                            running=running_game_evidence(key[0],key[1],request['argv'][1])
+                    cached=(key,time.monotonic(),running);self.evidence_cache['result']=cached
+                if cached[2]:record['state']='Running'
             return record
         except (OSError,ValueError,KeyError,TypeError):return {}
 

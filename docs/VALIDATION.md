@@ -4,7 +4,7 @@ Observed on Ubuntu 26.04 on 2026-09-30 using system Python and native GTK/libadw
 
 ## Executed checks
 
-- `/usr/bin/python3 -m unittest discover -s tests -q`: 29 isolated tests pass.
+- `/usr/bin/python3 -m unittest discover -s tests -q`: 30 isolated tests pass.
 - `/usr/bin/python3 -m compileall -q game_library`: passes.
 - `ruff check game_library tests tools run.py --select F`: passes.
 - `/usr/bin/python3 tools/ui_smoke.py`: passes. Exercises light/dark library screens, compact cards, scrolling at 920×640, local Save/Delete, structured launch settings, active-game navigation, ZIP restore, metadata-first Add Game and Settings → Proton Manager with a synthetic available release. Screenshots are synthetic and were visually inspected.
@@ -28,3 +28,9 @@ The launch supervisor survives an unexpected UI exit. Forced termination of the 
 User installer and desktop-entry validation passed. Installed code was byte-compared with source. First-run migration preserved all five existing game identities and verified copied artwork bytes against original files; the original library remained unchanged. The normal installed app was opened through a user systemd service and remained active with no startup error in its journal. This is process/startup evidence, not a claim that a real game was launched or visually accepted by the user.
 
 Installation: `~/.local/opt/game-library-launcher`; menu entry: `~/.local/share/applications/game-library-launcher.desktop`.
+
+## Live state correction
+
+A real launch reported Preparing despite a visible game because UMU did not emit the expected log marker. An inert regression reproduced a silent running executable while its wrapper remained alive. Running detection now uses bounded /proc ancestry, verified supervisor/process start identities and the selected executable argv[0] filename (including Wine drive paths). Wrapper arguments alone do not count. Running is not demoted by later runtime log text.
+
+The updated library reader can reconcile an older supervisor journal in memory, without writing it or signalling processes. Read-only checks identified the existing live session as Running. The installed UI/supervisor already in memory were deliberately not restarted; the new UI reader takes effect on next app reopen, while the existing supervisor can continue unchanged. All isolated tests and native GUI checks passed after this fix. Rendering evidence was provided by the diagnostic session; no campaign/gameplay acceptance or Stop of that real game is claimed here.
