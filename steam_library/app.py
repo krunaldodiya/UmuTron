@@ -198,8 +198,8 @@ class Window(Adw.ApplicationWindow):
             content=box(spacing=8)
             content.append(self.picture(game['artwork'].get('portrait'),128,170))
             title=label(game['title'],'heading',width_chars=18,max_width_chars=18,ellipsize=Pango.EllipsizeMode.END,xalign=0); content.append(title)
-            for done,text in self.progress_items(game):
-                content.append(label(('✓ ' if done else '○ ')+text,'caption',xalign=0))
+            completed=sum(done for done,_ in self.progress_items(game))
+            content.append(label(f'{completed}/3 complete','caption',xalign=0))
             if not Path(game['executable']).is_file(): content.append(label('Relink needed','warning',xalign=0))
             tile.set_child(content); self.flow.append(tile)
 
