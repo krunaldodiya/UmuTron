@@ -304,9 +304,9 @@ class Window(Adw.ApplicationWindow):
         dialog,content,footer=result
         self.manage_new=new_game
         if new_game:self.entry(content,'title','Game name','You can search public metadata after saving this entry.')
-        mode=self.game.get('installation',{}).get('mode','installed');self.install_mode=Gtk.DropDown.new_from_strings(['Already installed','Install from installer','Existing Windows launcher / shortcut']);self.install_mode.set_selected({'installed':0,'installer':1,'shortcut':2}[mode]);content.append(self.install_mode)
-        content.append(label('Game executable or Windows launcher / shortcut','heading',wrap=True,xalign=0))
-        self.entry(content,'executable','Game executable / launcher','Select a Windows .exe or .lnk; it runs through UMU. No shell command is required.');content.append(button('Choose game executable',self.pick_executable))
+        mode=self.game.get('installation',{}).get('mode','installed');self.install_mode=Gtk.DropDown.new_from_strings(['Already installed','Install from installer']);self.install_mode.set_selected(1 if mode=='installer' else 0);content.append(self.install_mode)
+        content.append(label('Game executable','heading',wrap=True,xalign=0))
+        self.entry(content,'executable','Game executable','Select the installed game executable; it runs through UMU.');content.append(button('Choose game executable',self.pick_executable))
         self.entry(content,'working_dir','Working directory','Blank uses the executable’s folder.')
         content.append(button('Choose working directory',lambda:self.choose_file('Working directory',lambda p:self.fields['working_dir'].set_text(str(p)),folder=True)))
         self.installer_panel=box();content.append(self.installer_panel)
@@ -383,7 +383,7 @@ class Window(Adw.ApplicationWindow):
             for key,widget in self.launch_fields.items():game['launch'][key]=widget.get_text()
             buffer=self.launch_args.get_buffer();text=buffer.get_text(buffer.get_start_iter(),buffer.get_end_iter(),False)
             game['launch']['arguments']=text.splitlines() if text else []
-            config=dict(game.get('installation',{}));config['mode']=('installed','installer','shortcut')[self.install_mode.get_selected()];config['installer']=self.installer_entry.get_text();game['installation']=config
+            config=dict(game.get('installation',{}));config['mode']=('installed','installer')[self.install_mode.get_selected()];config['installer']=self.installer_entry.get_text();game['installation']=config
         if self.description is not None:
             buf=self.description.get_buffer();game['description']=buf.get_text(buf.get_start_iter(),buf.get_end_iter(),False)
         return game

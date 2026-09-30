@@ -1,4 +1,4 @@
-# Version 0.3.1 delivery scope
+# Version 0.3.2 delivery scope
 
 - [x] Metadata-first Add Game, automatic metadata/artwork save and optional later launch setup; persistent installer journals and prefix/runtime continuity.
 - [x] Installer failure/cancel/retry and explicit installed-executable confirmation; never rerun setup from Play.

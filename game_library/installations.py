@@ -9,6 +9,7 @@ from .launcher import ACTIVE, defaults, build_command, pid_identity
 def validate_installation(value):
     if not isinstance(value,dict) or set(value)-{'mode','installer','session_id','prefix','proton','confirmed'}:
         raise ValueError('Invalid installation settings.')
+    # Legacy shortcut records remain readable; Manage Game maps them to Already installed.
     if value.get('mode','installed') not in ('installed','installer','shortcut'):raise ValueError('Unknown game installation mode.')
     for key in ('installer','session_id','prefix','proton'):
         item=value.get(key,'')

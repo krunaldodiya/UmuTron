@@ -101,8 +101,9 @@ with tempfile.TemporaryDirectory() as temp:
     click(add,'Enter details manually');assert w.editor.get_title()=='Edit Metadata';w.cancel_editor();assert len(library.games())==count
     metadata.search=original_search;metadata.fetch_game=original_fetch
     # Launch choices occur afterwards in Manage Game, without executing anything.
-    for mode,index in (('installed',0),('shortcut',2),('installer',1)):
+    for mode,index in (('installed',0),('installer',1)):
         draft=library.new_game();draft.update(title='New '+mode,description='Metadata saved before launch setup');library.save(draft);w.show_game(draft);w.open_manage();settle()
+        assert w.install_mode.get_model().get_n_items()==2
         w.install_mode.set_selected(index)
         assert w.editor.get_title()=='Manage Game' and not w.advanced.get_expanded()
         w.fields['executable'].set_text(game['executable']);w.installer_entry.set_text(str(Path(temp)/'setup.exe'))

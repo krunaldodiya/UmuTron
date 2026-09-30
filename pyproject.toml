@@ -1,6 +1,6 @@
 [project]
 name = "game-library-launcher"
-version = "0.3.1"
+version = "0.3.2"
 description = "Standalone installed-game library and UMU launcher for Linux"
 requires-python = ">=3.12"
 

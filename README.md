@@ -4,7 +4,7 @@ A native Linux library for preinstalled games and Windows installers, metadata/a
 
 ![Game details](docs/screenshots/details-dark.png)
 
-## Version 0.3.1
+## Version 0.3.2
 
 - Metadata-first **Add Game**: search by title/ID, select, then automatically save metadata/artwork and open details. No executable or runtime settings required.
 - Persistent installation status/logs; cancel/retry keeps installed files. Select and confirm the game executable after setup. Setup exit alone never means the game is ready.
@@ -30,7 +30,7 @@ This user-level installer writes code to `~/.local/opt/game-library-launcher` an
 
 Choose Add Game, search the public Steam catalogue (or select IGDB), and select a result. Metadata and available artwork are saved automatically; the read-only detail page opens. Manual entry is an optional fallback. Metadata-only entries are valid and show **Set up to play**.
 
-Later, controller → Manage Game offers Already installed, Existing Windows launcher / shortcut (.exe or .lnk), or Install from installer. Select executable/working directory when ready. Working defaults discover UMU and installed Proton (or use the app default/automatic runtime). Configuration never runs anything by itself.
+Later, controller → Manage Game offers Already installed or Install from installer. Select executable/working directory when ready. Working defaults discover UMU and installed Proton (or use the app default/automatic runtime). Configuration never runs anything by itself.
 
 For Install from installer, select a trusted setup executable and Run installer. The review is explicit; you handle its agreements and destination. Watch status/logs in Manage Game. On success, failure or cancellation, files stay intact. Reopen Manage Game later to retry or select/confirm the installed game executable and working directory. The picker opens the owned prefix's drive_c when available. Play uses the confirmed game file and pinned prefix/runtime. An unresolved automatic runner requires a concrete installed version and a retry rather than silently switching an installed game's runtime.
 
