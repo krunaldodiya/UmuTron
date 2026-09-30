@@ -4,7 +4,7 @@ A native Linux library for preinstalled games and Windows installers, metadata/a
 
 ![Game details](docs/screenshots/details-dark.png)
 
-## Version 0.3.2
+## Version 0.3.3
 
 - Metadata-first **Add Game**: search by title/ID, select, then automatically save metadata/artwork and open details. No executable or runtime settings required.
 - Persistent installation status/logs; cancel/retry keeps installed files. Select and confirm the game executable after setup. Setup exit alone never means the game is ready.
@@ -62,3 +62,7 @@ dbus-run-session -- /usr/bin/python3 tools/instance_smoke.py
 ```
 
 `--demo` is isolated and cannot execute games/installers. Tests use inert temporary fixtures and synthetic artwork. See [design](docs/DESIGN.md) and [validation](docs/VALIDATION.md). No real repack installer, new license acceptance or campaign/gameplay test is performed automatically.
+
+## Two-stage installer setup
+
+Already installed shows executable and working-directory selection only. Install from installer first shows setup selection and installation controls; game executable selection is hidden until the installation attempt ends. Step 2 uses the same executable/working-directory flow and requires explicit confirmation, retaining the installer prefix and Proton version. Failed or cancelled attempts may also leave files, so selection remains available for recovery without implying success.

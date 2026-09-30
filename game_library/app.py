@@ -305,26 +305,40 @@ class Window(Adw.ApplicationWindow):
         self.manage_new=new_game
         if new_game:self.entry(content,'title','Game name','You can search public metadata after saving this entry.')
         mode=self.game.get('installation',{}).get('mode','installed');self.install_mode=Gtk.DropDown.new_from_strings(['Already installed','Install from installer']);self.install_mode.set_selected(1 if mode=='installer' else 0);content.append(self.install_mode)
-        content.append(label('Game executable','heading',wrap=True,xalign=0))
-        self.entry(content,'executable','Game executable','Select the installed game executable; it runs through UMU.');content.append(button('Choose game executable',self.pick_executable))
-        self.entry(content,'working_dir','Working directory','Blank uses the executable’s folder.')
-        content.append(button('Choose working directory',lambda:self.choose_file('Working directory',lambda p:self.fields['working_dir'].set_text(str(p)),folder=True)))
         self.installer_panel=box();content.append(self.installer_panel)
         self.installer_entry=Gtk.Entry(text=self.game.get('installation',{}).get('installer',''));self.installer_entry.set_tooltip_text('Installer executable')
+        self.installer_panel.append(label('Step 1 · Install the game','title-2',xalign=0))
         self.installer_panel.append(label('Installer executable','heading',xalign=0));self.installer_panel.append(self.installer_entry)
         self.installer_panel.append(button('Choose setup.exe',self.pick_installer))
         self.install_status=label('','heading',wrap=True,xalign=0);self.installer_panel.append(self.install_status)
         self.installer_panel.append(label('Setup runs in a dedicated prefix. Its exit does not prove the game is ready. Choose and confirm the game executable afterwards. Cancellation keeps installed files.','caption',wrap=True,xalign=0))
         self.install_button=button('Run / retry installer',self.run_installer);self.installer_panel.append(self.install_button)
         self.install_cancel=button('Cancel installation',lambda:self.confirm('Cancel installation?','Only this installer’s owned processes will stop. Installed files and prefix are kept; you can retry or select an executable later.','Cancel installation',lambda:self.stop_game(self.game['id']),True));self.installer_panel.append(self.install_cancel)
-        self.confirm_executable_button=button('Confirm installed game executable',self.confirm_installed);self.installer_panel.append(self.confirm_executable_button)
         self.manage_logs=Gtk.TextView(editable=False,cursor_visible=False,wrap_mode=Gtk.WrapMode.WORD_CHAR);logs=Gtk.ScrolledWindow(min_content_height=130);logs.set_child(self.manage_logs);self.installer_panel.append(logs)
-        self.install_mode.connect('notify::selected',lambda *_:self.installer_panel.set_visible(self.install_mode.get_selected()==1));self.installer_panel.set_visible(mode=='installer')
+        self.executable_panel=box();content.append(self.executable_panel)
+        self.executable_stage=label('Game executable','title-2',xalign=0);self.executable_panel.append(self.executable_stage)
+        self.executable_panel.append(label('Game executable','heading',wrap=True,xalign=0))
+        self.entry(self.executable_panel,'executable','Game executable','Select the installed game executable; it runs through UMU.');self.executable_panel.append(button('Choose game executable',self.pick_executable))
+        self.entry(self.executable_panel,'working_dir','Working directory','Blank uses the executable’s folder.')
+        self.executable_panel.append(button('Choose working directory',lambda:self.choose_file('Working directory',lambda p:self.fields['working_dir'].set_text(str(p)),folder=True)))
+        self.confirm_executable_button=button('Confirm installed game executable',self.confirm_installed);self.executable_panel.append(self.confirm_executable_button)
+        self.install_mode.connect('notify::selected',lambda *_:self.update_install_stage())
         advanced=Adw.ExpanderRow(title='Advanced launch settings',subtitle='Optional overrides. Working defaults are applied automatically.');content.append(advanced);self.advanced=advanced
         advanced_content=box();margins(advanced_content,12);advanced.add_row(advanced_content);self.build_advanced(advanced_content)
         advanced_content.append(button('Reset to defaults',self.reset_launch_defaults))
         footer.append(button('Find metadata',self.find_metadata))
         dialog.present();self.refresh_launch_state()
+
+    def update_install_stage(self):
+        installer=self.install_mode.get_selected()==1
+        config=self.game.get('installation',{})
+        # An ended attempt may leave usable files even after failure/cancellation.
+        # Reveal selection for recovery; only explicit confirmation enables Play.
+        selecting=installer and bool(config.get('session_id')) and not self.launcher.active()
+        self.installer_panel.set_visible(installer)
+        self.executable_panel.set_visible(not installer or selecting)
+        self.executable_stage.set_text('Step 2 · Select the installed game executable' if installer else 'Select the installed game executable')
+        self.confirm_executable_button.set_visible(installer and selecting)
 
     def reset_launch_defaults(self):
         for field in self.launch_fields.values():field.set_text('')
@@ -757,6 +771,7 @@ class Window(Adw.ApplicationWindow):
             text='\n'.join(state.get('logs',[])[-200:])
             if text!=getattr(self,'last_launch_output',None):self.launch_output.get_buffer().set_text(text);self.last_launch_output=text
         if self.editor_kind=='manage':
+            self.update_install_stage()
             candidate=self.collect();status=self.installations.status(candidate);self.install_status.set_text(status['phase'])
             self.manage_logs.get_buffer().set_text('\n'.join(status.get('logs',[])[-200:]))
             self.install_mode.set_sensitive(not active);self.confirm_executable_button.set_sensitive(not active);self.install_button.set_sensitive(not self.demo and not active);self.install_cancel.set_sensitive(not self.demo and active and active_id==candidate['id'] and current.get('operation')=='installer')

@@ -106,6 +106,8 @@ with tempfile.TemporaryDirectory() as temp:
         assert w.install_mode.get_model().get_n_items()==2
         w.install_mode.set_selected(index)
         assert w.editor.get_title()=='Manage Game' and not w.advanced.get_expanded()
+        assert w.executable_panel.get_visible()==(mode=='installed')
+        assert w.installer_panel.get_visible()==(mode=='installer')
         w.fields['executable'].set_text(game['executable']);w.installer_entry.set_text(str(Path(temp)/'setup.exe'))
         if mode=='installer':
             screenshot('installer-dark.png',w.editor);assert not w.install_button.get_sensitive()
@@ -121,6 +123,8 @@ with tempfile.TemporaryDirectory() as temp:
     pump_until(lambda:not w.launcher.active() and w.installations.status(w.game)['phase']=='Select installed executable')
     prefix=Path(w.game['installation']['prefix']);assert (prefix/'drive_c/Game/game.exe').exists()
     w.cancel_editor();w.open_manage();assert w.install_status.get_text()=='Select installed executable'
+    assert w.executable_panel.get_visible() and w.confirm_executable_button.get_visible()
+    settle();screenshot('installer-select-executable-dark.png',w.editor)
     w.fields['executable'].set_text(str(prefix/'drive_c/Game/game.exe'));w.confirm_installed()
     saved=next(g for g in library.games() if g['title']=='New installer');assert saved['installation']['confirmed'];assert saved['launch']['prefix']==str(prefix)
     assert not w.launcher.active();w.demo=True

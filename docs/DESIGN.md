@@ -1,4 +1,4 @@
-# Standalone game library, installer and launcher — 0.3.2
+# Standalone game library, installer and launcher — 0.3.3
 
 ## Contract
 Manage preinstalled executables or explicitly run a trusted Windows installer with UMU/Proton. No Steam client/account or sync integration is required. Steam's public catalogue is the credential-free default metadata source; IGDB and SteamGridDB remain optional with accurate attribution.
@@ -32,3 +32,7 @@ Version-1 libraries/ZIPs accept optional validated installation and launch setti
 
 ## Verification
 Core fixtures cover installer modes, persistence, pinned context, failure/cancel/retry, early cancellation, duplicate guard, process ownership and archive/provider boundaries. Native tests exercise readonly pages, modal Save/Cancel, public default search and missing-key IGDB switching, scrolling, actual inert installer execution/confirmation, tray/fallback/Exit warnings and existing Proton Manager. Private-bus tests exercise DBusMenu, tray host registration/loss and single-instance activation. No downloaded installer or real game is used for these tests.
+
+## Two-stage installer setup
+
+Already installed shows executable and working-directory selection only. Install from installer first shows setup selection and installation controls; game executable selection is hidden until the installation attempt ends. Step 2 uses the same executable/working-directory flow and requires explicit confirmation, retaining the installer prefix and Proton version. Failed or cancelled attempts may also leave files, so selection remains available for recovery without implying success.
