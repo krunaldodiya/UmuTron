@@ -67,6 +67,8 @@ def validate_game(game):
         raise ValueError('Invalid metadata source.')
     from .launcher import validate_settings
     validate_settings(game.get('launch',{}))
+    from .installations import validate_installation
+    validate_installation(game.get('installation',{}))
     UUID(game['id'])
     for key in TEXT_FIELDS:
         if not isinstance(game.get(key), str) or len(game[key]) > 100000 or '\x00' in game[key]:
@@ -130,7 +132,7 @@ class Library:
 
     @staticmethod
     def new_game():
-        return dict(id=str(uuid4()), metadata_app_id=None, metadata_source={}, artwork={}, sync=None, launch={},
+        return dict(id=str(uuid4()), metadata_app_id=None, metadata_source={}, artwork={}, sync=None, launch={}, installation={},
                     **{k:'' for k in TEXT_FIELDS})
 
     def games(self): return deepcopy(self.data['games'])

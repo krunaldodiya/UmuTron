@@ -1,13 +1,13 @@
-# Version 0.2 standalone launcher
+# Version 0.3 delivery scope
 
-- [x] Native library, metadata/artwork, compact readiness indicators and backup/import.
-- [x] Remove client sync and old product branding; preserve legacy library/archive data.
-- [x] Explicit UMU Play/Stop with dedicated prefixes and structured arguments.
-- [x] Shared single-game guard and owned descendant supervision.
-- [x] Responsive launch status/output and navigation.
-- [x] Proton Manager: installed/default/override selection and official paginated releases.
-- [x] Staged, checksum-verified installs with cancel/retry and archive safeguards.
-- [x] Isolated core/process/installer tests and native GUI checks.
-- [ ] User review of the new standalone interface and manual real-game gameplay testing.
+- [x] Preinstalled and installer Add Game modes; persistent installer journals and prefix/runtime continuity.
+- [x] Installer failure/cancel/retry and explicit installed-executable confirmation; never rerun setup from Play.
+- [x] Shared one-operation guard, owned Stop and early session-scoped cancellation.
+- [x] Close to tray, Show/Exit, single-instance activation and no-host fallback.
+- [x] Credential-free default public catalogue metadata, optional IGDB/artwork providers.
+- [x] Read-only hero details, modal metadata/file management, collapsed advanced overrides/reset.
+- [x] Existing Proton Manager, artwork, portable backups, identities and custom overrides preserved.
+- [x] Isolated core, native GUI and private-bus regression coverage.
+- [ ] User review of actual desktop tray and real installer/game compatibility (not automated acceptance).
 
-IGDB/SGDB live authenticated checks remain optional until user credentials are supplied. Real runner downloads/game execution are never automatic development tests. Other runner families and a Windows build are out of current scope.
+No new launcher platforms or provider expansion are planned in this change. Existing game files/saves/prefixes are never deleted on cancel or update.

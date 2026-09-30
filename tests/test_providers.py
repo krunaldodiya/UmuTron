@@ -45,3 +45,17 @@ class ProviderTests(unittest.TestCase):
 
     def test_authenticated_redirect_not_followed(self):
         with self.assertRaises(ValueError): NoRedirects().redirect_request(None,None,302,'',{},'https://example.com')
+
+    def test_public_default_search_without_credentials_and_provider_switch(self):
+        from unittest.mock import patch
+        import json
+        from game_library import metadata
+        def fake(url,limit=0):
+            if 'storesearch' in url:return json.dumps({'items':[{'type':'app','id':620,'name':'Portal 2'}]}).encode()
+            return json.dumps({'620':{'success':True,'data':{'name':'Portal 2','short_description':'<p>Public description</p>'}}}).encode()
+        with patch.object(metadata,'request',side_effect=fake):
+            self.assertEqual(metadata.search('Portal')[0]['id'],620)
+            self.assertEqual(metadata.search('620')[0]['name'],'Portal 2')
+            self.assertEqual(metadata.details(620)['description'],'Public description')
+        self.assertFalse(self.credentials.path.exists())
+        with self.assertRaisesRegex(ValueError,'Providers'):IGDB(self.credentials).search('Portal')

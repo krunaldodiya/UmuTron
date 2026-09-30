@@ -36,12 +36,13 @@ def discover(home=None):
 
 def defaults(game,root):
     settings=game.get('launch',{}); validate_settings(settings)
+    installed=game.get('installation',{})
     found=discover()
     try:arguments=list(settings['arguments']) if 'arguments' in settings else shlex.split(game.get('arguments',''))
     except ValueError:raise ValueError('Legacy launch arguments have unmatched quotes. Set the Direct Play argument list explicitly.') from None
     return {'runner':settings.get('runner') or found['runner'],
-            'proton':settings.get('proton') or (found['protons'][0] if found['protons'] else 'UMU-Latest'),
-            'prefix':settings.get('prefix') or str(Path(root)/'prefixes'/game['id']),
+            'proton':settings.get('proton') or installed.get('proton') or (found['protons'][0] if found['protons'] else 'UMU-Latest'),
+            'prefix':settings.get('prefix') or installed.get('prefix') or str(Path(root)/'prefixes'/game['id']),
             'arguments':arguments}
 
 
@@ -159,23 +160,31 @@ class Launcher:
             state['state']='Error';state['logs']=[*state.get('logs',[])[-199:],'Launch supervisor ended unexpectedly. Review before retrying.']
         return state
 
-    def start(self,game):
+    def start(self,game,operation='play',before_start=None):
         from .library import atomic_write
+        if operation not in ('play','installer'):raise ValueError('Unknown operation.')
+        if operation=='play' and game.get('installation',{}).get('mode')=='installer' and not game['installation'].get('confirmed'):raise ValueError('Confirm the installed game executable in Manage Game before playing.')
+        if operation=='play' and game.get('installation',{}).get('mode')=='installer' and Path(game['executable']).resolve()==Path(game['installation'].get('installer','')).resolve():raise ValueError('Play cannot run setup. Confirm the installed game executable.')
         argv,cwd,env=build_command(game,self.root)
         fd=os.open(self.root/'launch.lock',os.O_CREAT|os.O_RDWR,0o600)
         try:
             try:fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:raise RuntimeError('A game is already active. Stop or finish it before launching another.') from None
-            request={'game_id':game['id'],'title':game['title'],'argv':argv,'cwd':cwd,'env':env,'record':str(self.record)}
+            session=str(__import__('uuid').uuid4())
+            request={'operation':operation,'session_id':session,'game_id':game['id'],'title':game['title'],'argv':argv,'cwd':cwd,'env':env,'record':str(self.record)}
             atomic_write(self.root/'launch-request.json',json.dumps(request).encode())
-            state={'game_id':game['id'],'title':game['title'],'state':'Preparing','logs':['Preparing UMU. First use may download Proton and runtime assets.'],'code':None}
+            state={'operation':operation,'session_id':session,'game_id':game['id'],'title':game['title'],'state':'Preparing','logs':['Preparing UMU. First use may download Proton and runtime assets.'],'code':None}
+            if before_start:before_start(state,env)
             atomic_write(self.record,json.dumps(state).encode())
+            if operation=='installer':atomic_write(self.root/'installation-sessions'/ (game['id']+'.json'),json.dumps(state).encode())
             supervisor=Path(__file__).with_name('launch_supervisor.py')
             process=subprocess.Popen([sys.executable,str(supervisor),str(self.root/'launch-request.json')],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True,pass_fds=(fd,))
             self.processes=[p for p in self.processes if p.poll() is None]+[process]
         except Exception as error:
             if not isinstance(error,RuntimeError):
-                atomic_write(self.record,json.dumps({'game_id':game['id'],'title':game['title'],'state':'Error','logs':[str(error)[:2000]],'code':None}).encode())
+                failure={'operation':operation,'session_id':locals().get('session',''),'game_id':game['id'],'title':game['title'],'state':'Error','logs':[str(error)[:2000]],'code':None}
+                atomic_write(self.record,json.dumps(failure).encode())
+                if operation=='installer':atomic_write(self.root/'installation-sessions'/(game['id']+'.json'),json.dumps(failure).encode())
             raise
         finally:os.close(fd)
 
@@ -183,5 +192,8 @@ class Launcher:
         state=self.current()
         if not self.active() or state.get('game_id')!=game_id:raise RuntimeError('This game has no owned active launch.')
         pid=state.get('supervisor_pid');identity=state.get('supervisor_start')
-        if type(pid) is not int or not identity or pid_identity(pid)!=identity:raise RuntimeError('The launch supervisor is still preparing or no longer exists. Try again shortly.')
+        if type(pid) is not int and state.get('state')=='Preparing' and state.get('session_id'):
+            from .library import atomic_write
+            atomic_write(self.root/'cancel-request.json',json.dumps({'session_id':state['session_id'],'game_id':game_id}).encode());return
+        if type(pid) is not int or not identity or pid_identity(pid)!=identity:raise RuntimeError('The launch supervisor no longer exists. Review the operation status before retrying.')
         os.kill(pid,signal.SIGTERM)

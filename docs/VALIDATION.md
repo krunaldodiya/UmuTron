@@ -1,36 +1,32 @@
-# Validation — version 0.2.0
+# Validation — version 0.3.0
 
-Observed on Ubuntu 26.04 on 2026-09-30 using system Python and native GTK/libadwaita.
+Validated on Ubuntu 26.04, 2026-09-30, with system Python and native GTK/libadwaita.
 
-## Executed checks
+## Final checks
 
-- `/usr/bin/python3 -m unittest discover -s tests -q`: 30 isolated tests pass.
-- `/usr/bin/python3 -m compileall -q game_library`: passes.
-- `ruff check game_library tests tools run.py --select F`: passes.
-- `/usr/bin/python3 tools/ui_smoke.py`: passes. Exercises light/dark library screens, compact cards, scrolling at 920×640, local Save/Delete, structured launch settings, active-game navigation, ZIP restore, metadata-first Add Game and Settings → Proton Manager with a synthetic available release. Screenshots are synthetic and were visually inspected.
+- All 36 isolated regression tests pass.
+- Python compilation and Ruff undefined/unused-code checks pass.
+- Native GUI smoke passes: read-only detail, hero/cover/logo, modal Save/Cancel, both Add Game modes, harmless installer execution and executable confirmation, advanced settings/reset, scrolling, default public metadata and missing-credential provider switching, active operation controls, ZIP recovery and Proton Manager.
+- Private-session D-Bus tray integration passes: registration, host detection/loss, Show Launcher, activation and Exit menu.
+- Separate-process instance test passes: the second launch activates the first instance and exits without launching a game or installer.
+- Live credential-free public Steam search and details lookup passed for Portal 2. No account/client is required.
 
-## Safety and lifecycle coverage
+## Preservation and lifecycle
 
-Temporary executable fixtures exercise launch completion, failed start/nonzero exit, bounded logs, duplicate and cross-instance launch rejection, Stop, and detached descendants after a wrapper exits. No actual game runs in these tests. Arguments are argv values, never shell commands; foreign prefixes are refused. Stop targets owned PID identities only. Active-game entries cannot be deleted, and transitional preparation disables premature Stop.
+Temporary inert runners exercise completed/nonzero installer runs, cancellation including initial preparation, retry, reopen recovery, executable confirmation, pinned prefix/runner continuity and duplicate/cross-instance launch rejection. Installer exit alone leaves selection pending. Play rejects setup executables and unconfirmed installations. Cancel never deletes installed files. Stop addresses only verified app-owned process identities; detached descendants remain tracked.
 
-Runner tests exercise checksum failure, cancellation, staged installation, no overwrite, unsafe archives, safe internal links, interrupted-stage cleanup, architecture filtering and cached pagination. Downloads use official upstream repositories; test downloads use inert temporary archives, not real runner packages.
+Native modal Cancel preserves saved metadata/art references and launch overrides. ZIP/library tests retain UUIDs, artwork hashes, legacy records and optional installation context. Backups exclude binaries, saves, prefixes, credentials and journals. No real game, downloaded repack installer or new license agreement was run/accepted for validation.
 
-Migration tests copy a version-1 library without changing its original and retain identities; ZIP tests cover launch/default-runner settings, artwork checksums and unsafe archives. Provider fixtures test credential handling and redirects. Portable exports omit credentials, binaries, prefixes, saves and session logs. Existing client shortcuts/files are not written.
+Close hides only with a registered tray host; otherwise it minimizes. Reopening reuses the existing window. Host loss restores accessibility. Active explicit Exit warns and permits cancellation; confirmed Exit leaves the owned supervisor operation running, recoverable on reopen. It does not stop unrelated processes.
 
-## Boundaries
+## Remaining acceptance boundaries
 
-Actual UMU gameplay and full upstream runner downloads through this UI have not been accepted by these isolated checks. Compatibility varies by game, anti-cheat and hardware. Authenticated IGDB/SteamGridDB calls require the user's keys and remain outside fixture coverage. Legacy copied metadata remains usable without a fresh provider lookup. A comprehensive accessibility assessment was not performed. Native tests report harmless deprecated libadwaita test API calls.
+Real Windows installer compatibility, gameplay and real desktop tray-menu visual acceptance remain user checks. Authenticated IGDB/SteamGridDB requests and full upstream runner downloads are covered by fixtures rather than credentialed live calls. Accessibility labels/tooltips are checked, not a comprehensive accessibility audit. GTK focus and deprecated test-API warnings occurred without test failures; the private-bus instance test emits portal warnings because it isolates the normal session.
 
-The launch supervisor survives an unexpected UI exit. Forced termination of the supervisor or OS is outside graceful Stop guarantees. This app does not track games launched elsewhere. Local credentials and ZIP backups are not encrypted. Backup ZIPs do not replace backups of game saves/prefixes.
+Forced OS/supervisor termination is outside graceful cancellation guarantees. Mutable external runner files can change independently of the app. Backups of game data/prefixes remain separate from library ZIPs.
 
 ## Installed delivery
 
-User installer and desktop-entry validation passed. Installed code was byte-compared with source. First-run migration preserved all five existing game identities and verified copied artwork bytes against original files; the original library remained unchanged. The normal installed app was opened through a user systemd service and remained active with no startup error in its journal. This is process/startup evidence, not a claim that a real game was launched or visually accepted by the user.
+User-level installation and desktop-entry validation passed. All installed Python modules match final source bytes. The existing library/artwork snapshot (21 files) was unchanged by installation; saves, prefixes and game files were not touched. Version 0.3.0 was opened normally with no startup errors in its journal. The current desktop reports a registered tray host and the app StatusNotifierItem. Real icon/menu interaction remains a user visual acceptance check.
 
-Installation: `~/.local/opt/game-library-launcher`; menu entry: `~/.local/share/applications/game-library-launcher.desktop`.
-
-## Live state correction
-
-A real launch reported Preparing despite a visible game because UMU did not emit the expected log marker. An inert regression reproduced a silent running executable while its wrapper remained alive. Running detection now uses bounded /proc ancestry, verified supervisor/process start identities and the selected executable argv[0] filename (including Wine drive paths). Wrapper arguments alone do not count. Running is not demoted by later runtime log text.
-
-The updated library reader can reconcile an older supervisor journal in memory, without writing it or signalling processes. Read-only checks identified the existing live session as Running. The installed UI/supervisor already in memory were deliberately not restarted; the new UI reader takes effect on next app reopen, while the existing supervisor can continue unchanged. All isolated tests and native GUI checks passed after this fix. Rendering evidence was provided by the diagnostic session; no campaign/gameplay acceptance or Stop of that real game is claimed here.
+The fresh instance is already open; reopening is not required. No game or installer was automatically started. Source and documentation are delivered together.

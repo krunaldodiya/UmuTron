@@ -18,12 +18,13 @@ def main(request_path):
     request=json.loads(Path(request_path).read_text())
     # Orphaned descendants are adopted here, not by the desktop application.
     if ctypes.CDLL(None,use_errno=True).prctl(36,1,0,0,0)!=0:raise RuntimeError('Unable to enable safe launch supervision.')
-    state={'game_id':request['game_id'],'title':request['title'],'state':'Preparing','logs':[],'code':None,'proton':request['env']['PROTONPATH'],'supervisor_pid':os.getpid(),'supervisor_start':pid_identity(os.getpid())}
+    state={'operation':request.get('operation','play'),'session_id':request.get('session_id',''),'game_id':request['game_id'],'title':request['title'],'state':'Preparing','logs':[],'code':None,'proton':request['env']['PROTONPATH'],'supervisor_pid':os.getpid(),'supervisor_start':pid_identity(os.getpid())}
     logs=deque(['Preparing UMU. First use may download Proton and runtime assets.'],maxlen=200)
     stopping=[False];signal.signal(signal.SIGTERM,lambda *_:stopping.__setitem__(0,True))
     owned={};sent=set();stop_at=None;last_save=0;last_evidence=0;pending=b'';code=None;pipe_open=True
     def save():
         state['logs']=list(logs);atomic_write(request['record'],json.dumps(state).encode())
+        if request.get('operation')=='installer':atomic_write(Path(request['record']).parent/'installation-sessions'/(request['game_id']+'.json'),json.dumps(state).encode())
     def observe():
         # Parent IDs and start times prevent accidentally targeting reused PIDs.
         table={}
@@ -41,7 +42,14 @@ def main(request_path):
         for pid in parents-{os.getpid()}:
             if pid in table:owned[pid]=table[pid][1]
         return {pid for pid,identity in owned.items() if pid in table and table[pid][1]==identity and table[pid][2]!='Z'}
+    def cancel_requested():
+        path=Path(request['record']).parent/'cancel-request.json'
+        try:
+            if not request.get('session_id') or path.stat().st_size>4096:return False
+            value=json.loads(path.read_text());return value.get('session_id')==request['session_id'] and value.get('game_id')==request['game_id']
+        except (OSError,ValueError):return False
     try:
+        if cancel_requested():state['state']='Stopped';logs.append('Operation cancelled before execution.');return
         prefix=Path(request['env']['WINEPREFIX']);prefix.mkdir(parents=True,exist_ok=True,mode=0o700)
         if prefix.is_symlink() or (any(prefix.iterdir()) and not (prefix/MARKER).is_file()):raise ValueError('Prefix changed before launch. Existing data was preserved.')
         if not (prefix/MARKER).exists():
@@ -52,7 +60,16 @@ def main(request_path):
             os.set_blocking(process.stdout.fileno(),False)
             selector=selectors.DefaultSelector();selector.register(process.stdout,selectors.EVENT_READ)
             while True:
+                if cancel_requested():stopping[0]=True
                 live=observe()
+                if state['proton'] in ('UMU-Latest','GE-Latest'):
+                    for pid in live:
+                        try:
+                            with (Path('/proc')/str(pid)/'environ').open('rb') as stream:entries=stream.read(262144).split(b'\x00')
+                            env=dict(e.split(b'=',1) for e in entries if b'=' in e)
+                            tool=Path(os.fsdecode(env.get(b'PROTONPATH',b'')))
+                            if env.get(b'WINEPREFIX')==os.fsencode(prefix) and tool.is_absolute() and (tool/'proton').is_file():state['proton']=str(tool.resolve());break
+                        except OSError:continue
                 if stopping[0]:
                     state['state']='Stopping'
                     if stop_at is None:stop_at=time.monotonic();logs.append('Stopping this launch’s owned processes…')

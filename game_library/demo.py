@@ -24,5 +24,12 @@ def prepare_demo(seed=False):
             image=root/f'demo-cover-{index}.png'; surface.write_to_png(str(image))
             executable=root/f'demo-{index}.exe'; executable.write_text('Inert demonstration file. Never execute.\n')
             game=library.new_game(); game.update(title=name,executable=str(executable),description='A fictional entry for reviewing the interface. This demo never runs games or changes your actual library.',release_date='2026',developers='Demo Studio',genres='Adventure, Exploration')
-            game['artwork']['portrait']=library.add_image(image.read_bytes()); library.save(game)
+            game['artwork']['portrait']=library.add_image(image.read_bytes())
+            import io
+            hero=cairo.ImageSurface(cairo.FORMAT_ARGB32,1120,280);hc=cairo.Context(hero);hc.set_source(gradient);hc.paint()
+            hc.set_source_rgba(1,1,1,.15)
+            for n in range(6):hc.arc(840,140,25+n*25,0,6.284);hc.stroke()
+            output=io.BytesIO();hero.write_to_png(output);game['artwork']['hero']=library.add_image(output.getvalue())
+            logo=cairo.ImageSurface(cairo.FORMAT_ARGB32,360,70);lc=cairo.Context(logo);lc.select_font_face('Sans',cairo.FONT_SLANT_NORMAL,cairo.FONT_WEIGHT_BOLD);lc.set_font_size(23);lc.set_source_rgb(1,1,1);lc.move_to(6,40);lc.show_text(name.upper())
+            output=io.BytesIO();logo.write_to_png(output);game['artwork']['logo']=library.add_image(output.getvalue());library.save(game)
     return library

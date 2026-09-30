@@ -1,71 +1,62 @@
 # Game Library Launcher
 
-A native Linux desktop library for managing installed games, metadata and artwork, and playing directly through **UMU + Proton**. No game-client installation, account or library is required.
+A native Linux library for preinstalled games and Windows installers, metadata/artwork, and explicit Play through **UMU + Proton**. No Steam client, account or synchronization is required. Public Steam catalogue search works without credentials.
 
-![Library](docs/screenshots/library-dark.png)
+![Game details](docs/screenshots/details-dark.png)
 
-## Version 0.2
+## Version 0.3.0
 
-- Compact game cards, search, light/dark/system appearance, detailed metadata and artwork.
-- IGDB metadata search and optional community artwork from SGDB; manual entry/local images work without provider accounts.
-- Explicit **Play** / **Stop**, strict one-game-at-a-time protection, preparing/download/running/finished/error status and bounded output.
-- Per-game executable, working directory, argument list, Proton override and dedicated prefix.
-- Settings → **Proton Manager**: installed runners, default selection, official GE-Proton/UMU-Proton releases, paginated history, checksum-verified installation, cancellation/retry.
-- Portable ZIP export/import with conflict preview. Imported settings never execute automatically.
+- Add **Already installed** games or **Install from installer** in a dedicated per-game prefix.
+- Persistent installation status/logs; cancel/retry keeps installed files. Select and confirm the game executable after setup. Setup exit alone never means the game is ready.
+- Reuse the installer prefix, registry/runtimes and resolved Proton version for Play. Play never reruns setup.
+- Read-only game details with hero/cover/logo; **pencil → Edit Metadata**, **controller → Manage Game**. Normal Play/Stop remains on cards/details.
+- Optional overrides in collapsed **Advanced launch settings**, including Reset to defaults and per-game runner selection.
+- Close to tray; **Show Launcher** and explicit **Exit**. Without a supported tray host, close minimizes instead of making the app inaccessible. Reopening activates the existing instance.
+- One app-owned game or installer at a time. Stop targets only that launch's verified owned processes. Active operations continue under their supervisor if you explicitly Exit; reopening reconnects.
+- Existing Proton Manager: installed/available official GE-Proton/UMU-Proton releases, paging/cache, architecture filtering, progress, cancel/retry, published checksums and safe atomic installation.
+- Local ZIP import/export, compact cards, filtering, light/dark/system themes and provider artwork.
 
-This app does not install games, manage purchased-client libraries or synchronize client shortcuts. Deleting an entry keeps game files, saves and prefixes.
+## Install
 
-## Install and run
-
-Ubuntu dependencies: system `python3`, `python3-gi`, `python3-cairo`, `gir1.2-gtk-4.0`, `gir1.2-adw-1`. Direct Play additionally requires [umu-run](https://github.com/Open-Wine-Components/umu-launcher) and an appropriate graphics driver. Install UMU from its official packaging instructions; the app reports a missing executable.
+Use native Ubuntu packages `python3-gi python3-cairo gir1.2-gtk-4.0 gir1.2-adw-1`. The UI runs with the system Python, not an arbitrary environment without GI. Install UMU separately following [upstream instructions](https://github.com/Open-Wine-Components/umu-launcher). `umu-run` must be available on PATH or selected in advanced settings.
 
 ```sh
 /usr/bin/python3 tools/install.py
-/usr/bin/python3 run.py
 ```
 
-The installer creates a user application/menu entry under `~/.local/opt/game-library-launcher`. Re-run after pulling updates. No administrator access is needed for the application installer. Use system Python for GTK.
+This user-level installer writes code to `~/.local/opt/game-library-launcher` and creates the application menu entry. No root, game execution or library rewrite is performed. Open **Game Library Launcher**. Reopen an older running app to load the updated code; do not restart a game just to update its UI.
 
-## Workflow
+## Add and play
 
-1. Add a game; search IGDB with your own credentials or enter details manually.
-2. Set its executable and working directory in **Game files**. Review artwork and metadata.
-3. In **Direct Play**, use an installed Proton folder, the app default, `UMU-Latest`, or `GE-Latest`. Set optional arguments, **one argument per line**; spaces on a line remain in one argument.
-4. Save. Choose Play and review the executable's launch configuration. UMU may download official runtime/Proton assets at first use; output and preparation status remain visible.
-5. While a game is active its button becomes Stop. Other games cannot start. Stop asks about unsaved in-game progress and targets only this launch's owned processes. Keep the launcher open during normal play; after an unexpected app exit it can reconnect to the surviving supervisor.
+Choose Add Game → Already installed, select its executable, save, optionally search metadata, then Play. Working defaults discover UMU and installed Proton (or use the app default/automatic runtime).
 
-Compatibility is game-dependent. A running process or successful start is not proof that every game or every gameplay feature works.
+For Install from installer, select a trusted setup executable and Run installer. The review is explicit; you handle its agreements and destination. Watch status/logs in Manage Game. On success, failure or cancellation, files stay intact. Reopen Manage Game later to retry or select/confirm the installed game executable and working directory. The picker opens the owned prefix's drive_c when available. Play uses the confirmed game file and pinned prefix/runtime. An unresolved automatic runner requires a concrete installed version and a retry rather than silently switching an installed game's runtime.
 
-## Proton Manager
+Never run games/installers with root/admin privileges. Compatibility, anti-cheat and hardware vary; an installer may create external files or require user interactions beyond this app's controls.
 
-Installed runners can be discovered in known compatibility-tool folders; detection is optional and does not require the associated client. New runners live in the app's own `proton-manager/runners` folder.
+## Metadata and artwork
 
-Available downloads are **official stable GE-Proton and UMU-Proton releases for x86_64/aarch64**, from version 9 onward where a published checksum is available. Refresh loads 20 upstream releases per page; Load older versions continues that family's history. Older unsupported builds, other families and client-only releases are excluded. This is not a promise of every Proton build ever made. UMU resolves the release's required runtime when launching.
+Pencil → Find metadata. Default **Steam catalogue (no credentials)** searches titles or public store IDs. No client/account is needed. These public endpoints may change or be region-restricted. Optional IGDB requires Twitch/IGDB credentials only when selected; missing keys do not block public search. SteamGridDB supplies optional community artwork in the metadata dialog. Manual text and local PNG/JPEG images work without accounts.
 
-Downloads verify published SHA-256 and/or SHA-512 checksums. Extraction rejects unsafe paths/links/devices, limits expanded size, checks disk space, stages on the destination filesystem and never overwrites an existing runner. Cancel keeps installed runners intact; retry discards only stale app-owned installation staging directories. No uninstall/update action is offered. Downloads are temporary staging files; no personal installer archive location is assumed.
+Credentials are permission-restricted local files, not encrypted and never exported. Service/runtime attribution remains accurate: [Steam catalogue](https://store.steampowered.com), [IGDB](https://api-docs.igdb.com/), [SteamGridDB](https://www.steamgriddb.com/api/v2), [UMU](https://github.com/Open-Wine-Components/umu-launcher), [GE-Proton](https://github.com/GloriousEggroll/proton-ge-custom/releases), [UMU-Proton](https://github.com/Open-Wine-Components/umu-proton/releases). Proton/UMU use Valve runtime components internally.
 
-## Providers and attribution
+## Data and backup
 
-Settings → Providers accepts your Twitch/IGDB credentials and optional community-artwork API key. Credentials are permission-restricted local files, not encrypted and not exported. IGDB and SteamGridDB are independent metadata/artwork services; SteamGridDB's service name is attribution, not client integration. Existing records fetched from the former public Steam Store provider retain their metadata/artwork, but new searches use IGDB. The old store adapter and sync feature were removed.
+Data/artwork: `~/.local/share/game-library-launcher`; credentials: `~/.config/game-library-launcher/providers.json`. XDG overrides are honored. Dedicated prefixes live under app data; custom paths are optional. Existing unrelated prefixes are refused. Installer history is private under `installation-sessions/<UUID>.json`; current journal/lock reconnect across UI restarts.
 
-UMU and Proton internally use Valve runtime components. Their licenses and upstream behavior still apply; this app does not remove or disguise that dependency. See [UMU documentation](https://github.com/Open-Wine-Components/umu-launcher), [GE-Proton releases](https://github.com/GloriousEggroll/proton-ge-custom/releases), [UMU-Proton releases](https://github.com/Open-Wine-Components/umu-proton/releases), [IGDB](https://api-docs.igdb.com/) and [SteamGridDB](https://www.steamgriddb.com/api/v2).
+Earlier version-1 libraries/archives and custom overrides remain readable. The earlier metadata-manager library/credentials are copied only if the new library is absent, preserving originals and identities. No existing game, save, prefix, artwork or Steam shortcut is deleted by this update.
 
-## Data, migration and backup
+ZIP backups include metadata/artwork, appearance and launch/installation path settings. They exclude game files, saves, prefixes, credentials, runner downloads and operation logs. Import never executes anything. Review/relink paths on a new PC and back up saves/prefixes separately.
 
-- Data/artwork: `~/.local/share/game-library-launcher`; config: `~/.config/game-library-launcher/providers.json`. XDG overrides are honored.
-- Existing metadata-manager version-1 libraries and credentials are copied on first use when no new library exists. Originals remain intact. UUIDs, paths, metadata, artwork and legacy identity fields are preserved. Legacy recovery journals remain in their original folder; no client files or shortcuts are changed.
-- Version-1 backups remain importable. Launch configuration is an optional validated extension. Old launch text becomes visible as structured Direct Play arguments when editing; it is never a shell expression.
-- Dedicated prefixes: `prefixes/<game UUID>`. Custom prefixes must be new/empty or previously created by this app; unrelated prefixes are refused. Reinstall/import does not delete prefixes or copy saved games.
-- ZIPs include metadata, artwork, appearance, default-runner selection and launch path/configuration strings. They exclude binaries, saves, prefixes, runner downloads, credentials and session logs. Review/relink paths after restoring on another PC.
-- Session journals are local/private. The supervisor holds a filesystem lock across app instances and tracks descendant start times, including orphaned processes. It does not inspect or stop games launched elsewhere.
-
-## Isolated demo and tests
+## Verification
 
 ```sh
-/usr/bin/python3 run.py --demo
-python3 -m unittest discover -s tests -v
-python3 -m compileall -q game_library
+/usr/bin/python3 -m unittest discover -s tests -q
+/usr/bin/python3 -m compileall -q game_library
+ruff check game_library tests tools run.py --select F
 /usr/bin/python3 tools/ui_smoke.py
+dbus-run-session -- /usr/bin/python3 tools/tray_smoke.py
+dbus-run-session -- /usr/bin/python3 tools/instance_smoke.py
 ```
 
-Demo Play is disabled. Tests use temporary mock runners, game files and archives. They never execute the user's games. See [design](docs/DESIGN.md) and [validation](docs/VALIDATION.md).
+`--demo` is isolated and cannot execute games/installers. Tests use inert temporary fixtures and synthetic artwork. See [design](docs/DESIGN.md) and [validation](docs/VALIDATION.md). No real repack installer, new license acceptance or campaign/gameplay test is performed automatically.
