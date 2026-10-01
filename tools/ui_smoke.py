@@ -21,8 +21,8 @@ def pump_until(condition,timeout=5):
     raise AssertionError('Native UI condition timed out')
 
 
-def settle():
-    ready=[False];GLib.timeout_add(180,lambda:(ready.__setitem__(0,True),False)[-1]);pump_until(lambda:ready[0])
+def settle(milliseconds=180):
+    ready=[False];GLib.timeout_add(milliseconds,lambda:(ready.__setitem__(0,True),False)[-1]);pump_until(lambda:ready[0])
 
 
 def widgets(widget):
@@ -41,11 +41,18 @@ with tempfile.TemporaryDirectory() as temp:
     os.environ['XDG_CACHE_HOME']=temp
     library=prepare_demo(seed=True)
     app=Application(demo=True);app.set_flags(Gio.ApplicationFlags.NON_UNIQUE);app.register(None)
-    w=Window(app,library,demo=True);app.window=w;w.present();settle()
+    w=Window(app,library,demo=True);app.window=w;w.present();settle(1000)
     def screenshot(name,target=None):
-        settle();target=target or w
-        paintable=Gtk.WidgetPaintable.new(target);snapshot=Gtk.Snapshot();paintable.snapshot(snapshot,target.get_width(),target.get_height())
-        texture=target.get_renderer().render_texture(snapshot.to_node(),None)
+        target=target or w;target.set_visible(False);target.present();settle(800)
+        captured=[]
+        def ready_frame():
+            if not target.get_mapped() or not target.get_renderer():return False
+            paintable=Gtk.WidgetPaintable.new(target);snapshot=Gtk.Snapshot();paintable.snapshot(snapshot,target.get_width(),target.get_height())
+            node=snapshot.to_node()
+            if node is None:return False
+            captured.append(node);return True
+        pump_until(ready_frame)
+        texture=target.get_renderer().render_texture(captured[0],None)
         texture.save_to_png(str(Path(__file__).resolve().parents[1]/'docs/screenshots'/name))
     w.theme.set_selected(1);screenshot('library-light.png');w.theme.set_selected(2);screenshot('library-dark.png')
     game=library.games()[0];before=library.path.read_bytes();art={p.name:p.read_bytes() for p in library.art_dir.iterdir()}
@@ -170,26 +177,50 @@ with tempfile.TemporaryDirectory() as temp:
         try:w.controller_action(action)
         finally:w.navigation_window=actual
     # Console-style fullscreen mode and controller navigation.
+    # Many metadata-only fixtures force horizontal overflow; no real library used.
+    for number in range(10):
+        entry=library.new_game();entry['title']='TV fixture '+str(number);library.save(entry)
     w.show_library();snapshot=library.path.read_bytes();w.set_tv_mode(True);settle()
     assert w.tv_mode and w.has_css_class('tv-mode')
     assert not w.get_decorated() and not w.header.get_visible() and w.tv_controls.get_visible()
     assert library.path.read_bytes()==snapshot
     screenshot('fullscreen-library-dark.png')
+    assert w.tv_home.get_tooltip_text()=='Home' and w.tv_clock.get_text()
+    assert not w.tv_clock.get_focusable()
+    # Installed grid excludes metadata-only and unconfirmed installer entries.
+    w.set_tv_section('library');settle()
+    assert all(g['executable'] and (g.get('installation',{}).get('mode')!='installer' or g['installation'].get('confirmed')) for g in w.tv_games)
+    assert all(g['title']!='Metadata only' for g in w.tv_games)
+    sizes={(tile.get_width(),tile.get_height()) for _,tile in w.tv_tiles}
+    assert max(height for _,height in sizes)-min(height for _,height in sizes)<=1,sizes
+    assert max(width for width,_ in sizes)-min(width for width,_ in sizes)<=1,sizes
+    assert next(iter(sizes))[1]<300,'Grid cards must not stretch to screen bottom'
+    screenshot('fullscreen-installed-grid-dark.png')
+    for _ in range(8):
+        navigate('next');settle();assert isinstance(w.focused_control(w),(Gtk.Button,Gtk.MenuButton))
+    navigate('back');settle();assert w.tv_section=='games'
+    w.tv_games_tab.grab_focus();navigate('right');settle();assert w.focused_control(w) is w.tv_library_tab
+    navigate('select');pump_until(lambda:w.tv_section=='library');settle()
+    w.set_tv_section('games');settle()
     rail_y=w.tv_scroll.get_allocation().y
     for selected in w.tv_games:
         w.select_tv_game(selected);settle();assert w.tv_scroll.get_allocation().y==rail_y,'Hero height must remain stable across artwork/text changes'
     w.select_tv_game(w.tv_games[0]);settle()
     # Emulate smaller display allocations without changing monitor settings.
-    w.unfullscreen();settle();w.set_default_size(1280,720);settle()
+    w.unfullscreen();pump_until(lambda:not w.is_fullscreen());w.set_visible(False);w.unrealize();w.set_default_size(1280,720);w.present();settle(800)
     assert w.get_width()<=1280 and w.get_height()<=720,(w.get_width(),w.get_height())
     screenshot('fullscreen-library-720p-dark.png')
     w.select_tv_game(w.tv_games[-1]);w.focus_tv_card();settle()
     assert w.tv_selected_id==w.tv_games[-1]['id']
-    w.set_default_size(1024,600);settle()
+    w.set_visible(False);w.unrealize();w.set_default_size(1024,600);w.present();settle(800)
     assert w.get_width()<=1024 and w.get_height()<=600,(w.get_width(),w.get_height())
     w.focus_tv_card();settle()
     assert w.tv_scroll.get_hadjustment().get_value()>0
     assert w.tv_menu.get_mapped()
+    w.set_tv_section('library');settle();assert w.get_height()<=600
+    assert len({tile.get_height() for _,tile in w.tv_tiles})==1
+    screenshot('fullscreen-installed-grid-small-dark.png')
+    w.set_tv_section('games');settle()
     w.show_game(w.tv_games[0]);settle();assert w.get_height()<=600 and w.tv_menu.get_mapped()
     assert w.play_buttons[w.game['id']].get_mapped()
     w.show_library();settle()
@@ -200,11 +231,16 @@ with tempfile.TemporaryDirectory() as temp:
     w.refresh_launch_state();assert w.tv_play.get_label()=='Stop' and w.tv_play.get_sensitive()
     navigate('right');settle();assert not w.tv_play.get_sensitive()
     assert fake.active();w.launcher=real;w.demo=True;w.refresh_launch_state()
+    w.focus_tv_card();settle()
     initial=w.tv_selected_id
     navigate('right');settle();assert w.tv_selected_id!=initial
     navigate('select');pump_until(lambda:w.game is not None);settle()
     screenshot('fullscreen-details-dark.png')
     assert not w.settings_button.get_visible() and not w.log_button.get_visible() and not w.exit_button.get_visible()
+    # Text never enters the fullscreen keyboard/controller focus path.
+    assert all(not widget.get_selectable() and not widget.get_focusable() for widget in widgets(w.body) if isinstance(widget,Gtk.Label))
+    for _ in range(12):
+        navigate('next');settle();assert isinstance(w.focused_control(w),(Gtk.Button,Gtk.MenuButton))
     # Shoulder buttons scroll readonly details without opening configuration.
     w.detail_scroll.get_child().get_child().append(Gtk.Label(label='Long fixture information\n'*100));settle()
     navigate('pagedown');settle();assert w.detail_scroll.get_vadjustment().get_value()>0
@@ -226,4 +262,4 @@ with tempfile.TemporaryDirectory() as temp:
     w.show_library();w.filter.set_text('Nebula');w.render_cards();assert len(list(w.flow))==1
     for window in list(Gtk.Window.get_toplevels()):window.destroy()
     w.pool.shutdown(wait=True)
-    print('PASS: readonly details, modal Save/Cancel, metadata-first Add Game and later launch choices, collapsed advanced settings, metadata switching/default public search, tray hide/reopen/fallback/Exit cancel, operation controls, ZIP, Proton Manager, fullscreen readonly navigation/controller scroll and default mode')
+    print('PASS: readonly details, modal Save/Cancel, metadata-first Add Game and later launch choices, collapsed advanced settings, metadata switching/default public search, tray hide/reopen/fallback/Exit cancel, operation controls, ZIP, Proton Manager, fullscreen Games/installed Library grid, control-only navigation, controller scroll and default mode')

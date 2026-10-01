@@ -4,7 +4,7 @@ A native Linux library for preinstalled games and Windows installers, metadata/a
 
 ![Game details](docs/screenshots/details-dark.png)
 
-## Version 0.4.0
+## Version 0.4.1
 
 - Metadata-first **Add Game**: search by title/ID, select, then automatically save metadata/artwork and open details. No executable or runtime settings required.
 - Persistent installation status/logs; cancel/retry keeps installed files. Select and confirm the game executable after setup. Setup exit alone never means the game is ready.
@@ -18,7 +18,7 @@ A native Linux library for preinstalled games and Windows installers, metadata/a
 
 ## Desktop and fullscreen
 
-Desktop handles adding/installing games, metadata/artwork editing, launch setup, settings and Proton Manager. Fullscreen is a console-inspired, dark browse-and-play view with a hero, cover rail and read-only details. There is no title bar or native window chrome. Metadata-only games remain visible with **Set up in desktop**; setup controls are unavailable in fullscreen.
+Desktop handles adding/installing games, metadata/artwork editing, launch setup, settings and Proton Manager. Fullscreen is a console-inspired, dark browse-and-play view. Home, Games and Library sit at the top left; only the settings gear and current clock sit at the right. Games uses a compact square game row above full-screen selected-game artwork and lower logo/description/Play controls. Library shows a responsive, top-aligned grid of installed games with equal-height square-art cards. Read-only details remain available. Text/descriptions are never controller or keyboard focus stops; only buttons are navigable. There are no media, search, profile, playtime or achievement/progress panels. There is no title bar or native window chrome. Metadata-only games remain visible with **Set up in desktop**; setup controls are unavailable in fullscreen.
 
 Use **Fullscreen** in desktop, **F11**, or the tray's **Switch to Fullscreen / Switch to Desktop** actions. The small fullscreen settings icon offers **Exit fullscreen**. Settings → General → **Default launch mode** selects the next-start mode and is included in library ZIP backups. Switching modes preserves the current selection and active operation; save/cancel an open editing dialog first.
 
