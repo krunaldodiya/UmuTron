@@ -124,6 +124,7 @@ class Library:
             ids.add(game['id'])
         if not isinstance(data.get('settings'),dict) or data['settings'].get('theme','system') not in ('system','light','dark'):
             raise ValueError('Invalid appearance settings.')
+        if data['settings'].get('default_display_mode','desktop') not in ('desktop','fullscreen'):raise ValueError('Invalid default display mode.')
         runner=data['settings'].get('default_proton','')
         if not isinstance(runner,str) or len(runner)>4096 or '\x00' in runner:raise ValueError('Invalid default runner.')
 
@@ -158,6 +159,10 @@ class Library:
         if theme not in ('system','light','dark'): raise ValueError('Unknown theme.')
         self.data['settings']['theme']=theme; self._write()
 
+    def set_default_display_mode(self,mode):
+        if mode not in ('desktop','fullscreen'):raise ValueError('Invalid default display mode.')
+        self.data['settings']['default_display_mode']=mode;self._write()
+
     def set_default_proton(self,value):
         if not isinstance(value,str) or len(value)>4096 or '\x00' in value:raise ValueError('Invalid default runner.')
         self.data['settings']['default_proton']=value;self._write()
@@ -187,7 +192,7 @@ class Library:
 
     def export_zip(self, destination):
         manifest=deepcopy(self.data)
-        manifest['settings']={'theme':self.data['settings'].get('theme','system'),'default_proton':self.data['settings'].get('default_proton','UMU-Latest')}
+        manifest['settings']={'theme':self.data['settings'].get('theme','system'),'default_proton':self.data['settings'].get('default_proton','UMU-Latest'),'default_display_mode':self.data['settings'].get('default_display_mode','desktop')}
         for game in manifest['games']: game['sync']=None
         fd,temp=tempfile.mkstemp(suffix='.zip',dir=Path(destination).parent); os.close(fd)
         try:
@@ -241,6 +246,7 @@ class Library:
         for name,content in art.items(): atomic_write(self.art_dir/name,content)
         previous=deepcopy(self.data)
         self.data['games']=list(merged.values())
+        self.data['settings']['default_display_mode']=data['settings'].get('default_display_mode','desktop')
         self.data['settings']['theme']=data['settings'].get('theme','system')
         self.data['settings']['default_proton']=data['settings'].get('default_proton','UMU-Latest')
         try: self._write()

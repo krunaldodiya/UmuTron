@@ -1,4 +1,4 @@
-# Version 0.3.4 delivery scope
+# Version 0.4.0 delivery scope
 
 - [x] Metadata-first Add Game, automatic metadata/artwork save and optional later launch setup; persistent installer journals and prefix/runtime continuity.
 - [x] Installer failure/cancel/retry and explicit installed-executable confirmation; never rerun setup from Play.
@@ -11,3 +11,8 @@
 - [ ] User review of actual desktop tray and real installer/game compatibility (not automated acceptance).
 
 No new launcher platforms or provider expansion are planned in this change. Existing game files/saves/prefixes are never deleted on cancel or update.
+
+- [x] Desktop/fullscreen modes; console-inspired readonly library/details, no window chrome, desktop-only editing/setup.
+- [x] Focus-gated controller/keyboard navigation, fullscreen Exit option, tray switching and persisted default mode.
+- [x] Virtual SDL controller, native fullscreen, mode/operation preservation and default-setting regression checks.
+- [ ] Physical controller/TV gameplay acceptance on the user's display (no real game executed by automated checks).

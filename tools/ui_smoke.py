@@ -160,7 +160,70 @@ with tempfile.TemporaryDirectory() as temp:
     w.open_settings();settle();settings=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Settings')
     assert any(b.get_label()=='Export ZIP' for b in buttons(settings));settings.set_visible_page(w.proton_settings_page);click(settings,'Refresh')
     pump_until(lambda:any(b.get_label()=='Install' for b in buttons(settings)));screenshot('proton-manager-dark.png',settings);settings.destroy()
+    for leftover in list(Gtk.Window.get_toplevels()):
+        if leftover is not w:leftover.destroy()
+    w.present();settle()
+    # Inject fixture navigation independently of user focus/hardware during smoke.
+    w.controller.close()
+    def navigate(action):
+        actual=w.navigation_window;w.navigation_window=lambda:w
+        try:w.controller_action(action)
+        finally:w.navigation_window=actual
+    # Console-style fullscreen mode and controller navigation.
+    w.show_library();snapshot=library.path.read_bytes();w.set_tv_mode(True);settle()
+    assert w.tv_mode and w.has_css_class('tv-mode')
+    assert not w.get_decorated() and not w.header.get_visible() and w.tv_controls.get_visible()
+    assert library.path.read_bytes()==snapshot
+    screenshot('fullscreen-library-dark.png')
+    rail_y=w.tv_scroll.get_allocation().y
+    for selected in w.tv_games:
+        w.select_tv_game(selected);settle();assert w.tv_scroll.get_allocation().y==rail_y,'Hero height must remain stable across artwork/text changes'
+    w.select_tv_game(w.tv_games[0]);settle()
+    # Emulate smaller display allocations without changing monitor settings.
+    w.unfullscreen();settle();w.set_default_size(1280,720);settle()
+    assert w.get_width()<=1280 and w.get_height()<=720,(w.get_width(),w.get_height())
+    screenshot('fullscreen-library-720p-dark.png')
+    w.select_tv_game(w.tv_games[-1]);w.focus_tv_card();settle()
+    assert w.tv_selected_id==w.tv_games[-1]['id']
+    w.set_default_size(1024,600);settle()
+    assert w.get_width()<=1024 and w.get_height()<=600,(w.get_width(),w.get_height())
+    w.focus_tv_card();settle()
+    assert w.tv_scroll.get_hadjustment().get_value()>0
+    assert w.tv_menu.get_mapped()
+    w.show_game(w.tv_games[0]);settle();assert w.get_height()<=600 and w.tv_menu.get_mapped()
+    assert w.play_buttons[w.game['id']].get_mapped()
+    w.show_library();settle()
+    w.fullscreen();settle()
+    # Mode changes preserve the active record and disable other game launches.
+    real=w.launcher;w.launcher=fake;w.demo=False
+    fake.record={'game_id':w.tv_selected_id,'title':'Fixture active','state':'Running','operation':'play','supervisor_pid':123}
+    w.refresh_launch_state();assert w.tv_play.get_label()=='Stop' and w.tv_play.get_sensitive()
+    navigate('right');settle();assert not w.tv_play.get_sensitive()
+    assert fake.active();w.launcher=real;w.demo=True;w.refresh_launch_state()
+    initial=w.tv_selected_id
+    navigate('right');settle();assert w.tv_selected_id!=initial
+    navigate('select');pump_until(lambda:w.game is not None);settle()
+    screenshot('fullscreen-details-dark.png')
+    assert not w.settings_button.get_visible() and not w.log_button.get_visible() and not w.exit_button.get_visible()
+    # Shoulder buttons scroll readonly details without opening configuration.
+    w.detail_scroll.get_child().get_child().append(Gtk.Label(label='Long fixture information\n'*100));settle()
+    navigate('pagedown');settle();assert w.detail_scroll.get_vadjustment().get_value()>0
+    navigate('pageup');settle();assert w.detail_scroll.get_vadjustment().get_value()==0
+    assert not any(b.get_tooltip_text() in ('Edit Metadata','Manage Game') and b.get_mapped() for b in buttons(w))
+    w.open_manage();assert w.editor is None
+    w.add_game();assert not any(d.get_title()=='Find game metadata' for d in Gtk.Window.get_toplevels())
+    navigate('back');settle();assert w.game is None
+    w.tv_menu.popup();settle();w.tv_menu.get_popover().child_focus(Gtk.DirectionType.TAB_FORWARD);navigate('select');pump_until(lambda:not w.tv_mode);settle();assert not w.tv_mode and w.header.get_visible()
+    assert library.path.read_bytes()==snapshot
+    # Default mode affects next launch, not the current window or game data.
+    w.open_settings();settle();settings=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Settings')
+    w.default_mode_choice.set_selected(1);assert not w.tv_mode
+    assert library.data['settings']['default_display_mode']=='fullscreen';settings.destroy()
+    other=Window(app,library,demo=True);other.present();settle();assert other.tv_mode
+    other.controller.close();other.destroy();other.pool.shutdown(wait=True)
+    library.set_default_display_mode('desktop');w.present();settle()
+    w.controller.close()
     w.show_library();w.filter.set_text('Nebula');w.render_cards();assert len(list(w.flow))==1
     for window in list(Gtk.Window.get_toplevels()):window.destroy()
     w.pool.shutdown(wait=True)
-    print('PASS: readonly details, modal Save/Cancel, metadata-first Add Game and later launch choices, collapsed advanced settings, metadata switching/default public search, tray hide/reopen/fallback/Exit cancel, operation controls, ZIP and Proton Manager')
+    print('PASS: readonly details, modal Save/Cancel, metadata-first Add Game and later launch choices, collapsed advanced settings, metadata switching/default public search, tray hide/reopen/fallback/Exit cancel, operation controls, ZIP, Proton Manager, fullscreen readonly navigation/controller scroll and default mode')

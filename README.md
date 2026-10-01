@@ -4,7 +4,7 @@ A native Linux library for preinstalled games and Windows installers, metadata/a
 
 ![Game details](docs/screenshots/details-dark.png)
 
-## Version 0.3.4
+## Version 0.4.0
 
 - Metadata-first **Add Game**: search by title/ID, select, then automatically save metadata/artwork and open details. No executable or runtime settings required.
 - Persistent installation status/logs; cancel/retry keeps installed files. Select and confirm the game executable after setup. Setup exit alone never means the game is ready.
@@ -15,6 +15,16 @@ A native Linux library for preinstalled games and Windows installers, metadata/a
 - One app-owned game or installer at a time. Stop targets only that launch's verified owned processes. Active operations continue under their supervisor if you explicitly Exit; reopening reconnects.
 - Existing Proton Manager: installed/available official GE-Proton/UMU-Proton releases, paging/cache, architecture filtering, progress, cancel/retry, published checksums and safe atomic installation.
 - Local ZIP import/export, compact cards, filtering, light/dark/system themes and provider artwork.
+
+## Desktop and fullscreen
+
+Desktop handles adding/installing games, metadata/artwork editing, launch setup, settings and Proton Manager. Fullscreen is a console-inspired, dark browse-and-play view with a hero, cover rail and read-only details. There is no title bar or native window chrome. Metadata-only games remain visible with **Set up in desktop**; setup controls are unavailable in fullscreen.
+
+Use **Fullscreen** in desktop, **F11**, or the tray's **Switch to Fullscreen / Switch to Desktop** actions. The small fullscreen settings icon offers **Exit fullscreen**. Settings → General → **Default launch mode** selects the next-start mode and is included in library ZIP backups. Switching modes preserves the current selection and active operation; save/cancel an open editing dialog first.
+
+Controller: D-pad/left stick navigates, A selects, B goes back, X invokes Play/Stop confirmation, Start returns to desktop, and LB/RB scroll details. Keyboard arrows, Enter, Escape and Page Up/Down are also supported. Optional native SDL2 (`libsdl2-2.0-0` on Ubuntu) reads mapped controllers only while the launcher has focus; it does not inject keys, grab the controller or consume game input in the background. Keyboard/mouse remain available without SDL2 or a controller.
+
+![Fullscreen library](docs/screenshots/fullscreen-library-dark.png)
 
 ## Install
 
@@ -73,3 +83,5 @@ Manage Game uses two stage tabs, Install and Game setup, with only one enabled a
 
 ## Public catalogue artwork repair — 0.3.5
 Steam asset manifests supply modern hash-qualified cover and hero URLs, with legacy fallback. Cricket 26 cover/hero were downloaded live and added to its existing entry without replacing saved artwork or changing launch configuration. Its separate logo was unavailable through these public endpoints. Fixture tests cover hash paths, rejected paths and API failure fallback; native smoke uses isolated data.
+
+Fullscreen layout checks include 1920×1080, 1280×720 and 1024×600 allocations, reachable scrollable content, horizontal selection scrolling and stable hero/rail position across games with differing artwork/text. Physical TV scaling and controller acceptance remain user checks.

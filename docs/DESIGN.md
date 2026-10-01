@@ -40,3 +40,8 @@ Already installed shows executable and working-directory selection only. Install
 ## Stage tabs
 
 Manage Game uses two stage tabs, Install and Game setup, with only one enabled at a time. The I already have installed the game switch skips/disables Install and activates Game setup. Otherwise Install is active until the attempt ends, then Game setup becomes active for executable confirmation. Return to installation / retry switches back safely without deleting files or losing prefix/runner context. The switch is disabled while an operation is active.
+
+## Display modes — 0.4.0
+Desktop owns all creation, installation, editing and configuration. Fullscreen is exclusively shared-library browsing and explicit Play/Stop, with no title bar/native controls. Its settings popover only exits fullscreen. There is no duplicate library or launch path. Header and mutation controls are hidden; entry points enforce desktop-only editing. Unconfigured entries stay visible but cannot launch. The mode can switch via F11, tray or desktop button; modal drafts block switching.
+
+The optional persisted default_display_mode is desktop/fullscreen, with desktop fallback for legacy data. ZIPs preserve it. Runtime switches do not rewrite games or affect owned operations. Optional SDL2 mapped controller input is debounced and gated by focus on this window or its owned modal. Held action buttons cannot trigger on refocus. LB/RB scroll details. No input injection, global grab or unrelated process action is introduced.

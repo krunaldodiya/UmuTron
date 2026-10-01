@@ -41,3 +41,8 @@ Manage Game uses two stage tabs, Install and Game setup, with only one enabled a
 
 ## Public catalogue artwork repair — 0.3.5
 Steam asset manifests supply modern hash-qualified cover and hero URLs, with legacy fallback. Cricket 26 cover/hero were downloaded live and added to its existing entry without replacing saved artwork or changing launch configuration. Its separate logo was unavailable through these public endpoints. Fixture tests cover hash paths, rejected paths and API failure fallback; native smoke uses isolated data.
+
+## Fullscreen delivery — 0.4.0, 2026-10-01
+42 isolated core tests pass, including action debounce/background suppression and default-mode validation/persistence/ZIP. Native GUI checks exercise library/detail navigation, readonly guards, no title bar/window controls, Exit fullscreen popover, detail scrolling, default next-start mode and active-operation preservation with inert fixtures. SDL2 virtual-controller checks cover face buttons, stick movement and suppression outside focused UI. Private D-Bus tray checks include both mode actions; the separate-process instance check remains required. Lint and compilation are run against final source. No real game or installer is launched. Physical gamepad/TV/gameplay behavior remains user acceptance; synthetic screenshot fixtures are not added to the user's library.
+
+Fullscreen layout checks include 1920×1080, 1280×720 and 1024×600 allocations, reachable scrollable content, horizontal selection scrolling and stable hero/rail position across games with differing artwork/text. Physical TV scaling and controller acceptance remain user checks.

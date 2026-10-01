@@ -30,6 +30,16 @@ class LibraryTests(unittest.TestCase):
         self.lib.import_zip(archive,'replace')
         self.assertEqual(self.lib.games()[0]['installation']['mode'],'shortcut')
 
+    def test_default_display_mode_persists_and_backup_retains_it(self):
+        before=self.lib.games()
+        self.lib.set_default_display_mode('fullscreen')
+        self.assertEqual(Library(self.root/'data').data['settings']['default_display_mode'],'fullscreen')
+        self.assertEqual(self.lib.games(),before)
+        archive=self.root/'mode.zip';self.lib.export_zip(archive)
+        self.lib.set_default_display_mode('desktop');self.lib.import_zip(archive,'replace')
+        self.assertEqual(self.lib.data['settings']['default_display_mode'],'fullscreen')
+        with self.assertRaises(ValueError):self.lib.set_default_display_mode('unexpected')
+
     def test_save_reload_and_relink_preserve_identity(self):
         game = self.lib.new_game()
         game.update(title='A game', executable='/games/a.exe', metadata_app_id=620)
