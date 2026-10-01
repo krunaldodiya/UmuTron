@@ -10,7 +10,7 @@ os.environ.setdefault('GSK_RENDERER','cairo')
 from game_library.app import Application,Window
 from game_library.demo import prepare_demo
 from game_library import metadata
-from gi.repository import Adw,Gio,GLib,Gtk
+from gi.repository import Adw,Gdk,Gio,GLib,Gtk
 
 
 def pump_until(condition,timeout=5):
@@ -68,13 +68,15 @@ with tempfile.TemporaryDirectory() as temp:
     assert {p.name:p.read_bytes() for p in library.art_dir.iterdir()}==art
     w.open_metadata();w.fields['title'].set_text('Nebula reviewed');w.save_editor();assert library.games()[0]['title']=='Nebula reviewed'
     w.open_manage();assert not w.advanced.get_expanded();w.advanced.set_expanded(True);settle()
+    assert w.launch_args.is_ancestor(w.executable_panel) and not w.launch_args.is_ancestor(w.advanced)
+
     w.launch_fields['proton'].set_text('GE-Latest');w.launch_args.get_buffer().set_text('one argument\n--flag')
     screenshot('manage-game-dark.png',w.editor)
     viewport=w.editor.get_child().get_first_child();adjustment=viewport.get_vadjustment();assert adjustment.get_page_size()>100 and adjustment.get_upper()>adjustment.get_page_size()
     adjustment.set_value(adjustment.get_upper()-adjustment.get_page_size());settle();assert adjustment.get_value()>0
     screenshot('advanced-bottom-dark.png',w.editor);w.save_editor()
     assert library.games()[0]['launch']['arguments']==['one argument','--flag']
-    w.open_manage();w.reset_launch_defaults();w.cancel_editor();assert library.games()[0]['launch']['proton']=='GE-Latest'
+    w.open_manage();w.reset_launch_defaults();assert w.collect()['launch']['arguments']==['one argument','--flag'];w.cancel_editor();assert library.games()[0]['launch']['proton']=='GE-Latest'
     # Metadata switching defaults to public catalogue, entirely fixture-backed.
     original_search=metadata.search;original_fetch=metadata.fetch_game
     metadata.search=lambda query:[{'id':620,'name':'Catalogue fixture'}]
@@ -191,6 +193,13 @@ with tempfile.TemporaryDirectory() as temp:
         actual=w.navigation_window;w.navigation_window=lambda:w
         try:w.controller_action(action)
         finally:w.navigation_window=actual
+    # Even a small saved library has trailing room for a shifting icon rail.
+    w.show_library();w.set_tv_mode(True);settle(500)
+    assert w.tv_scroll.get_hadjustment().get_upper()>w.tv_scroll.get_hadjustment().get_page_size()
+    w.select_tv_game(w.tv_games[0]);w.focus_tv_card();settle(300)
+    navigate('right');settle(300)
+    assert w.tv_scroll.get_hadjustment().get_value()>0
+    w.set_tv_mode(False);settle()
     # Console-style fullscreen mode and controller navigation.
     # Many metadata-only fixtures force horizontal overflow; no real library used.
     for number in range(10):
@@ -211,14 +220,21 @@ with tempfile.TemporaryDirectory() as temp:
     screenshot('fullscreen-library-dark.png')
     assert all(not control.get_visible() for control in (w.theme,w.settings_button,w.log_button,w.exit_button,w.mode_button))
     assert not hasattr(w,'tv_home') and w.tv_clock.get_text()
-    for control in (w.tv_games_tab,w.tv_library_tab,w.tv_menu):
+    for control in (w.tv_games_tab,w.tv_library_tab,w.tv_search,w.tv_menu):
         control.grab_focus();settle(350);assert w.focused_control(w) is control and control.has_css_class('control-focused') and w.tv_section=='games'
     screenshot('fullscreen-header-focus-dark.png')
     assert not w.tv_clock.get_focusable()
     # Installed grid excludes metadata-only and unconfirmed installer entries.
     w.set_tv_section('library');settle()
+    w.select_tv_game(w.tv_games[0]);w.focus_tv_card();settle();previous=w.tv_selected_id
+    assert w.keyboard_controller.get_propagation_phase()==Gtk.PropagationPhase.CAPTURE
+    actual=w.navigation_window;w.navigation_window=lambda:w
+    try:assert w.keyboard_controller.emit('key-pressed',Gdk.KEY_Right,0,Gdk.ModifierType(0))
+    finally:w.navigation_window=actual
+    settle();assert w.tv_selected_id!=previous and w.game is None
     assert all(g['executable'] and (g.get('installation',{}).get('mode')!='installer' or g['installation'].get('confirmed')) for g in w.tv_games)
     assert all(g['title']!='Metadata only' for g in w.tv_games)
+    assert all(not tile.has_css_class('tv-game-chip') for _,tile in w.tv_tiles)
     sizes={(tile.get_width(),tile.get_height()) for _,tile in w.tv_tiles}
     assert max(height for _,height in sizes)-min(height for _,height in sizes)<=1,sizes
     assert max(width for width,_ in sizes)-min(width for width,_ in sizes)<=1,sizes
@@ -229,8 +245,9 @@ with tempfile.TemporaryDirectory() as temp:
     navigate('back');settle();assert w.tv_section=='games'
     for _ in range(5):navigate('back');settle();assert w.tv_mode
     w.tv_games_tab.grab_focus();navigate('right');settle();assert w.focused_control(w) is w.tv_library_tab
+    navigate('right');settle();assert w.focused_control(w) is w.tv_search
     navigate('right');settle();assert w.focused_control(w) is w.tv_menu
-    navigate('left');settle();assert w.focused_control(w) is w.tv_library_tab
+    navigate('left');navigate('left');settle();assert w.focused_control(w) is w.tv_library_tab
     navigate('select');pump_until(lambda:w.tv_section=='library');settle();assert w.focused_control(w) is w.tv_library_tab
     navigate('down');settle();assert w.focused_control(w) in [tile for _,tile in w.tv_tiles]
     library_game=next(g for g in w.tv_games if g['artwork'].get('hero'));w.select_tv_game(library_game)
@@ -249,7 +266,24 @@ with tempfile.TemporaryDirectory() as temp:
         assert previews and all(gid==selected['id'] for gid in previews),previews
         assert w.tv_selected_id==selected['id']
         assert w.focused_control(w) is next(tile for gid,tile in w.tv_tiles if gid==selected['id'])
+    assert w.keyboard_controller.get_propagation_phase()==Gtk.PropagationPhase.CAPTURE
+    w.focus_tv_card();previous=w.tv_selected_id
+    actual=w.navigation_window;w.navigation_window=lambda:w
+    try:
+        assert w.on_key(w.keyboard_controller,Gdk.KEY_Right,0,Gdk.ModifierType(0))
+    finally:w.navigation_window=actual
+    settle();assert w.tv_selected_id!=previous
+    w.search_library();settle()
+    search_dialog=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Search games')
+    search_entry=next(i for i in widgets(search_dialog) if isinstance(i,Gtk.SearchEntry))
+    search_entry.set_text('Nebula');settle()
+    matches=[b for b in buttons(search_dialog) if b.get_label() and b.get_label()!='Close']
+    assert len(matches)==1 and 'Nebula' in matches[0].get_label()
+    screenshot('fullscreen-search-dark.png',search_dialog)
+    assert not w.launcher.active();matches[0].emit('clicked');settle();assert 'Nebula' in w.game['title'] and not w.launcher.active()
+    w.go_back();settle()
     w.set_tv_section('games');settle()
+    assert all(tile.has_css_class('tv-game-chip') for _,tile in w.tv_tiles)
     rail_y=w.tv_scroll.get_allocation().y
     for selected in w.tv_games:
         w.select_tv_game(selected);settle();assert w.tv_scroll.get_allocation().y==rail_y,'Hero height must remain stable across artwork/text changes'
@@ -262,7 +296,15 @@ with tempfile.TemporaryDirectory() as temp:
     assert w.tv_selected_id==w.tv_games[-1]['id']
     w.set_visible(False);w.unrealize();w.set_default_size(1024,600);w.present();settle(800)
     assert w.get_width()<=1024 and w.get_height()<=600,(w.get_width(),w.get_height())
-    w.focus_tv_card();settle()
+    settings=Gtk.Settings.get_default();animations=settings.get_property('gtk-enable-animations');settings.set_property('gtk-enable-animations',True)
+    w.select_tv_game(w.tv_games[0]);w.scroll_tv_card_into_view(w.tv_tiles[0][1],False);settle(280)
+    start=w.tv_scroll.get_hadjustment().get_value()
+    w.select_tv_game(w.tv_games[-1]);w.focus_tv_card();settle(80)
+    middle=w.tv_scroll.get_hadjustment().get_value();settle(300);end=w.tv_scroll.get_hadjustment().get_value()
+    assert start<middle<end,(start,middle,end,[(gid,t.compute_bounds(w.tv_rail)[1].get_x(),t.get_width()) for gid,t in w.tv_tiles],w.tv_scroll.get_hadjustment().get_upper(),w.tv_scroll.get_hadjustment().get_page_size(),w.tv_selected_id)
+    settings.set_property('gtk-enable-animations',False);w.select_tv_game(w.tv_games[0]);assert w.rail_animation is None
+    settings.set_property('gtk-enable-animations',animations);w.select_tv_game(w.tv_games[-1]);w.focus_tv_card();settle(300)
+    assert w.tv_scroll.get_policy()[0]==Gtk.PolicyType.EXTERNAL
     assert w.tv_scroll.get_hadjustment().get_value()>0
     selected=w.tv_selected_game();w.show_game(selected);settle();navigate('back');settle()
     assert w.tv_selected_id==selected['id'] and w.tv_scroll.get_hadjustment().get_value()>0
@@ -309,7 +351,16 @@ with tempfile.TemporaryDirectory() as temp:
     w.open_manage();assert w.editor is None
     w.add_game();assert not any(d.get_title()=='Find game metadata' for d in Gtk.Window.get_toplevels())
     navigate('back');settle();assert w.game is None
-    w.tv_menu.popup();settle();assert {b.get_label() for b in buttons(w.tv_menu.get_popover())}=={'Exit fullscreen','Exit'};next(b for b in buttons(w.tv_menu.get_popover()) if b.get_label()=='Exit fullscreen').grab_focus();navigate('select');pump_until(lambda:not w.tv_mode);settle();assert not w.tv_mode and w.header.get_visible()
+    w.open_tv_options();settle();options=w.tv_options_dialog
+    assert {b.get_label() for b in buttons(options) if b.get_label()}=={'Exit fullscreen','Exit'}
+    screenshot('fullscreen-options-dark.png',options)
+    w.open_tv_options();assert w.tv_options_dialog is options
+    actual=w.navigation_window;w.navigation_window=lambda:options
+    try:w.controller_action('back')
+    finally:w.navigation_window=actual
+    settle();assert not options.get_visible() and w.tv_mode
+    w.open_tv_options();settle();options=w.tv_options_dialog
+    click(options,'Exit fullscreen');pump_until(lambda:not w.tv_mode);settle();assert not w.tv_mode and w.header.get_visible()
     assert library.path.read_bytes()==snapshot
     # Default mode affects next launch, not the current window or game data.
     w.open_settings();settle();settings=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Settings')

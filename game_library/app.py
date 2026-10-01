@@ -54,7 +54,7 @@ class Window(Adw.ApplicationWindow):
     def __init__(self, app, library, demo=False):
         super().__init__(application=app,title='Game Library Launcher',default_width=1120,default_height=800)
         css=Gtk.CssProvider()
-        css.load_from_data(b'.tv-mode { background: #111723; color: #f5f7fb; font-size: 16px; } .tv-mode button { min-height: 42px; padding: 10px 18px; border-radius: 12px; } .tv-mode .tv-card { padding: 5px; background: alpha(#202938, .8); border-radius: 10px; } .tv-mode .tv-card .art-frame { padding: 0; background: transparent; } .tv-mode .tv-tab-active { color: #fff; font-weight: 800; border-bottom: 2px solid #fff; border-radius: 0; } .tv-mode .tv-clock { font-size: 20px; } .tv-mode .tv-controls button { min-height: 30px; padding: 6px 12px; } .control-focused, button:focus, .tv-mode button:focus-visible { outline: 3px solid #82bcff; outline-offset: 2px; } .tv-mode .selected-game { background: alpha(#82bcff, .18); } .tv-mode .tv-title { font-size: 38px; font-weight: 700; } .tv-mode .tv-description { font-size: 16px; font-weight: 400; line-height: 1.4; } .tv-mode .tv-hints { font-size: 13px; color: #c4d0e5; } .art-frame { background: alpha(@window_fg_color, 0.055); border-radius: 12px; padding: 8px; } .game-card { padding: 10px; } .game-card:hover { background: alpha(@accent_color, 0.09); }')
+        css.load_from_data(b'.tv-mode { background: #111723; color: #f5f7fb; font-size: 16px; } .tv-mode button { min-height: 42px; padding: 10px 18px; border-radius: 12px; } .tv-mode .tv-card { padding: 5px; background: alpha(#202938, .8); border-radius: 10px; } .tv-mode .tv-game-chip { transform: scale(.666667); transition: transform 160ms ease-out; } .tv-mode .tv-game-chip.selected-game, .tv-mode .tv-game-chip.control-focused, .tv-mode .tv-game-chip:focus { transform: scale(1); } .tv-mode .tv-card .art-frame { padding: 0; background: transparent; } .tv-mode .tv-tab-active { color: #fff; font-weight: 800; border-bottom: 2px solid #fff; border-radius: 0; } .tv-mode .tv-clock { font-size: 20px; } .tv-mode .tv-controls button { min-height: 30px; padding: 6px 12px; } .control-focused, button:focus, .tv-mode button:focus-visible { outline: 3px solid #82bcff; outline-offset: 2px; } .tv-mode .selected-game { background: alpha(#82bcff, .18); } .tv-mode .tv-title { font-size: 38px; font-weight: 700; } .tv-mode .tv-description { font-size: 16px; font-weight: 400; line-height: 1.4; } .tv-mode .tv-hints { font-size: 13px; color: #c4d0e5; } .art-frame { background: alpha(@window_fg_color, 0.055); border-radius: 12px; padding: 8px; } .game-card { padding: 10px; } .game-card:hover { background: alpha(@accent_color, 0.09); }')
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(),css,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self.demo=demo;self.tv_mode=False;self.tv_selected_id=None;self.tv_tiles=[];self.tv_section='games'
         self.library=library; self.launcher=Launcher(library.root); self.proton_manager=ProtonManager(library.root/'proton-manager'); self.launch_fields={}; self.play_buttons={}; self.installations=Installations(library,self.launcher);self.editor=None;self.editor_kind=None;self.exiting=False
@@ -84,15 +84,8 @@ class Window(Adw.ApplicationWindow):
         self.tv_games_tab=button('Games',lambda:self.set_tv_section('games'));self.tv_games_tab.add_css_class('flat');self.tv_controls.append(self.tv_games_tab)
         self.tv_library_tab=button('Library',lambda:self.set_tv_section('library'));self.tv_library_tab.add_css_class('flat');self.tv_controls.append(self.tv_library_tab)
         spacer=Gtk.Box(hexpand=True);self.tv_controls.append(spacer)
-        self.tv_menu=Gtk.MenuButton(icon_name='emblem-system-symbolic');self.tv_menu.set_tooltip_text('Fullscreen options')
-        self.tv_menu.update_property([Gtk.AccessibleProperty.LABEL],['Fullscreen options'])
-        popover=Gtk.Popover();options=box();margins(options,8)
-        def exit_fullscreen():
-            popover.popdown();self.set_tv_mode(False)
-        options.append(button('Exit fullscreen',exit_fullscreen))
-        def exit_launcher():
-            popover.popdown();self.explicit_exit()
-        options.append(button('Exit',exit_launcher));popover.set_child(options);self.tv_menu.set_popover(popover);self.tv_menu.add_css_class('flat');self.tv_controls.append(self.tv_menu)
+        self.tv_search=button('Search games',self.search_library,icon='system-search-symbolic');self.tv_search.add_css_class('flat');self.tv_controls.append(self.tv_search)
+        self.tv_menu=button('Fullscreen options',self.open_tv_options,icon='emblem-system-symbolic');self.tv_menu.add_css_class('flat');self.tv_controls.append(self.tv_menu)
         self.tv_clock=label('','tv-clock');self.tv_controls.append(self.tv_clock);self.update_tv_clock();GLib.timeout_add_seconds(30,self.update_tv_clock)
         self.layout.append(self.tv_controls)
         if demo:
@@ -111,7 +104,7 @@ class Window(Adw.ApplicationWindow):
         log_scroll=Gtk.ScrolledWindow(min_content_height=110,max_content_height=160,propagate_natural_height=True)
         log_scroll.set_child(self.log_text); self.log_revealer.set_child(log_scroll); self.layout.append(self.log_revealer)
         self.apply_theme(); self.show_library()
-        keys=Gtk.EventControllerKey();keys.connect('key-pressed',self.on_key);self.add_controller(keys)
+        keys=Gtk.EventControllerKey();keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE);self.keyboard_controller=keys;keys.connect('key-pressed',self.on_key);self.add_controller(keys)
         self.controller=Controller(self.controller_action,self.controller_enabled)
         GLib.timeout_add(40,self.controller.poll)
         app.connect('shutdown',lambda *_:self.controller.close())
@@ -159,9 +152,10 @@ class Window(Adw.ApplicationWindow):
     def tv_tile(self,game,grid=False):
         tile=button(game['title'],lambda g=game:self.show_game(g));tile.set_focusable(False);tile.add_css_class('tv-card');tile.set_valign(Gtk.Align.START);tile.set_tooltip_text('Open '+game['title'])
         tile.update_property([Gtk.AccessibleProperty.LABEL],['Open '+game['title']])
+        if not grid:tile.add_css_class('tv-game-chip')
         content=box(spacing=8);tile.set_child(content)
         name=game['artwork'].get('portrait') or game['artwork'].get('landscape')
-        size=160 if grid else 100
+        size=160 if grid else 88
         artwork=Gtk.AspectFrame(xalign=.5,yalign=.5,ratio=1,obey_child=False);artwork.set_size_request(size,size);artwork.set_halign(Gtk.Align.CENTER)
         path=self.library.art_dir/name if name else None
         image=Gtk.Image(icon_name='applications-games-symbolic',pixel_size=48)
@@ -194,10 +188,12 @@ class Window(Adw.ApplicationWindow):
         self.tv_page=Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER,vscrollbar_policy=Gtk.PolicyType.AUTOMATIC);self.tv_page.set_vexpand(True);self.tv_page.set_child(tv_content);self.body.append(self.tv_page)
         # Compact, fixed-height game row above the selected game's hero.
         self.tv_rail=box(False,16);margins(self.tv_rail,24)
-        self.tv_scroll=Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.AUTOMATIC,vscrollbar_policy=Gtk.PolicyType.NEVER);self.tv_scroll.set_child(self.tv_rail);tv_content.append(self.tv_scroll)
+        self.tv_scroll=Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.EXTERNAL,vscrollbar_policy=Gtk.PolicyType.NEVER);self.tv_scroll.set_child(self.tv_rail);self.tv_scroll.get_child().set_hscroll_policy(Gtk.ScrollablePolicy.NATURAL);tv_content.append(self.tv_scroll)
+        self.tv_scroll.get_hadjustment().connect('changed',lambda adjustment:GLib.idle_add(self.pad_tv_rail,adjustment))
         self.tv_selected_title=label('','heading',xalign=0,ellipsize=Pango.EllipsizeMode.END);self.tv_selected_title.set_margin_start(36);self.tv_selected_title.set_margin_end(36);self.tv_selected_title.set_size_request(-1,32);self.tv_selected_title.set_visible(False);tv_content.append(self.tv_selected_title)
         for game in self.tv_games:
             tile=self.tv_tile(game);self.tv_rail.append(tile);self.tv_tiles.append((game['id'],tile))
+        self.tv_rail_end=Gtk.Box();self.tv_rail.append(self.tv_rail_end)
         self.tv_hero=Gtk.Picture(content_fit=Gtk.ContentFit.COVER,can_shrink=True,opacity=0)
         hero=Gtk.Overlay();hero.set_child(self.tv_hero);hero.set_vexpand(True);hero.set_size_request(-1,360);tv_content.append(hero)
         summary=box(spacing=10);margins(summary,24);summary.set_valign(Gtk.Align.END);hero.add_overlay(summary)
@@ -231,7 +227,7 @@ class Window(Adw.ApplicationWindow):
 
     def restrict_tv_focus(self,widget):
         if isinstance(widget,Gtk.Label):widget.set_selectable(False)
-        if isinstance(widget,Gtk.Viewport):widget.set_scroll_to_focus(True)
+        if isinstance(widget,Gtk.Viewport):widget.set_scroll_to_focus(widget.get_child() is not getattr(self,'tv_rail',None))
         if not isinstance(widget,(Gtk.Button,Gtk.MenuButton)):widget.set_focusable(False)
         child=widget.get_first_child()
         while child:self.restrict_tv_focus(child);child=child.get_next_sibling()
@@ -295,17 +291,44 @@ class Window(Adw.ApplicationWindow):
                 return False
             tile.add_tick_callback(allocated)
 
-    def focus_tv_card(self):
+    def focus_tv_card(self,animate=True):
         tile=next((t for gid,t in self.tv_tiles if gid==self.tv_selected_id),None)
         if tile:
             tile.grab_focus()
             if self.tv_section=='library':return
-            self.scroll_tv_card_into_view(tile)
+            self.scroll_tv_card_into_view(tile,animate)
 
-    def scroll_tv_card_into_view(self,tile):
-        adjustment=self.tv_scroll.get_hadjustment();left=tile.get_allocation().x;right=left+tile.get_width()
-        if left<adjustment.get_value():adjustment.set_value(left)
-        elif right>adjustment.get_value()+adjustment.get_page_size():adjustment.set_value(right-adjustment.get_page_size())
+    def pad_tv_rail(self,adjustment):
+        if adjustment!=self.tv_scroll.get_hadjustment():return False
+        # Trailing room lets even a short library slide to each selected icon.
+        if self.tv_mode and self.game is None and self.tv_section=='games':
+            padding=max(24,int(adjustment.get_page_size())-116)
+            if hasattr(self,'tv_rail_end') and self.tv_rail_end.get_size_request()[0]!=padding:self.tv_rail_end.set_size_request(padding,-1)
+        return False
+
+    def scroll_tv_card_into_view(self,tile,animate=False):
+        scroll=self.tv_scroll;adjustment=scroll.get_hadjustment()
+        if tile.get_width()<=0:return
+        valid,bounds=tile.compute_bounds(self.tv_rail)
+        if not valid:return
+        left=bounds.get_x()
+        target=max(adjustment.get_lower(),min(adjustment.get_upper()-adjustment.get_page_size(),left))
+        callback=getattr(self,'rail_animation',None)
+        if callback:
+            GLib.source_remove(callback);self.rail_animation=None
+        settings=Gtk.Settings.get_default()
+        if not animate or not settings.get_property('gtk-enable-animations'):
+            adjustment.set_value(target);return
+        start=adjustment.get_value();started=GLib.get_monotonic_time()
+        def frame():
+            if self.game is not None or self.tv_section!='games' or self.tv_scroll is not scroll:
+                self.rail_animation=None;return False
+            progress=min(1,(GLib.get_monotonic_time()-started)/220000)
+            eased=1-(1-progress)**3
+            adjustment.set_value(start+(target-start)*eased)
+            if progress>=1:self.rail_animation=None;return False
+            return True
+        self.rail_animation=GLib.timeout_add(16,frame)
 
     def select_tv_game(self,game):
         self.tv_selected_id=game['id']
@@ -328,6 +351,44 @@ class Window(Adw.ApplicationWindow):
             if kind=='logo':
                 picture.set_visible(False);self.tv_title.set_opacity(1)
         self.play_buttons={game['id']:self.tv_play};self.refresh_launch_state()
+        tile=next((tile for gid,tile in self.tv_tiles if gid==game['id']),None)
+        if tile and tile.get_width()>0:self.scroll_tv_card_into_view(tile,True)
+
+    def open_tv_options(self):
+        dialog=getattr(self,'tv_options_dialog',None)
+        if dialog and dialog.get_visible():dialog.present();return
+        dialog=Adw.Window(title='Fullscreen options',transient_for=self,modal=True,default_width=420,default_height=230)
+        self.tv_options_dialog=dialog
+        content=box();margins(content,24);dialog.set_content(content)
+        header=box(False);header.append(label('Fullscreen options','title-1',xalign=0,hexpand=True));header.append(button('Close',dialog.close,icon='window-close-symbolic'));content.append(header)
+        def exit_fullscreen():
+            dialog.close();self.set_tv_mode(False)
+        def exit_launcher():
+            dialog.close();self.explicit_exit()
+        leave=button('Exit fullscreen',exit_fullscreen);content.append(leave);content.append(button('Exit',exit_launcher))
+        keys=Gtk.EventControllerKey();keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE);keys.connect('key-pressed',self.on_key);dialog.add_controller(keys)
+        dialog.connect('close-request',lambda _:(self.tv_menu.grab_focus(),False)[-1])
+        dialog.present();leave.grab_focus()
+
+    def search_library(self):
+        dialog=Adw.Window(title='Search games',transient_for=self,modal=True,default_width=640,default_height=520)
+        content=box();margins(content,24);dialog.set_content(content)
+        header=box(False);header.append(label('Search games','title-1',xalign=0,hexpand=True))
+        header.append(button('Close',dialog.close,icon='window-close-symbolic'));content.append(header)
+        entry=Gtk.SearchEntry(placeholder_text='Search your library',hexpand=True);content.append(entry)
+        results=box(spacing=8);scroll=self.scrolled(results);content.append(scroll)
+        def choose(game):
+            dialog.close();self.show_game(game)
+        def search(*_):
+            clear(results);query=entry.get_text().strip().casefold()
+            games=[g for g in sorted(self.library.games(),key=lambda g:g['title'].casefold()) if query in g['title'].casefold()]
+            for game in games:
+                row=button(game['title'],lambda g=game:choose(g));results.append(row)
+            if not games:results.append(label('No games found.','dim-label',xalign=0))
+        entry.connect('notify::text',search);search()
+        keys=Gtk.EventControllerKey();keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE);keys.connect('key-pressed',self.on_key);dialog.add_controller(keys)
+        dialog.connect('close-request',lambda _:(self.tv_search.grab_focus(),False)[-1])
+        dialog.present();entry.grab_focus()
 
     def navigation_window(self):
         # Only launcher-owned, focused windows receive controller navigation.
@@ -342,18 +403,8 @@ class Window(Adw.ApplicationWindow):
     def controller_action(self,action):
         if not self.controller_enabled():return
         target=self.navigation_window()
-        popover=self.tv_menu.get_popover()
-        if target is self and popover.get_visible():
-            if action=='back':popover.popdown()
-            elif action=='desktop':return
-            elif action=='select':
-                focus=self.get_focus()
-                while focus and not isinstance(focus,Gtk.Button):focus=focus.get_parent()
-                if focus and focus.is_sensitive():focus.activate()
-            elif action in ('left','right','up','down','next','previous'):popover.child_focus(Gtk.DirectionType.TAB_FORWARD if action in ('right','down','next') else Gtk.DirectionType.TAB_BACKWARD)
-            return
         if action=='desktop':
-            if target is self:self.tv_menu.grab_focus();self.tv_menu.popup()
+            if target is self:self.tv_menu.grab_focus();self.open_tv_options()
             return
         if action=='back':
             if target is not self:
@@ -375,7 +426,7 @@ class Window(Adw.ApplicationWindow):
             return
         if action in ('left','right','up','down','next','previous'):
             focus=self.focused_control(target)
-            header=[self.tv_games_tab,self.tv_library_tab,self.tv_menu]
+            header=[self.tv_games_tab,self.tv_library_tab,self.tv_search,self.tv_menu]
             if target is self and focus in header:
                 if action in ('left','right'):
                     index=header.index(focus);index=max(0,min(len(header)-1,index+(1 if action=='right' else -1)));header[index].grab_focus();self.update_focus_outline();return
@@ -393,12 +444,13 @@ class Window(Adw.ApplicationWindow):
 
     def on_key(self,controller,keyval,keycode,state):
         if keyval==Gdk.KEY_F11:
-            if self.tv_mode:self.tv_menu.grab_focus();self.tv_menu.popup()
+            if self.tv_mode:self.tv_menu.grab_focus();self.open_tv_options()
             else:self.set_tv_mode(True)
             return True
         if not self.tv_mode:return False
-        focus=self.get_focus()
-        if isinstance(focus,(Gtk.Entry,Gtk.Text,Gtk.TextView)):return False
+        target=controller.get_widget() if controller else self
+        focus=target.get_focus()
+        if isinstance(focus,(Gtk.Entry,Gtk.Text,Gtk.TextView)) and keyval!=Gdk.KEY_Escape:return False
         if keyval==Gdk.KEY_Tab:self.controller_action('previous' if state&Gdk.ModifierType.SHIFT_MASK else 'next');return True
         action={Gdk.KEY_Left:'left',Gdk.KEY_Right:'right',Gdk.KEY_Up:'up',Gdk.KEY_Down:'down',Gdk.KEY_Return:'select',Gdk.KEY_KP_Enter:'select',Gdk.KEY_Escape:'back',Gdk.KEY_Page_Up:'pageup',Gdk.KEY_Page_Down:'pagedown'}.get(keyval)
         if action:self.controller_action(action);return True
@@ -705,6 +757,7 @@ class Window(Adw.ApplicationWindow):
         self.entry(self.executable_panel,'executable','Game executable','Select the installed game executable; it runs through UMU.');self.executable_panel.append(button('Choose game executable',self.pick_executable))
         self.entry(self.executable_panel,'working_dir','Working directory','Blank uses the executable’s folder.')
         self.executable_panel.append(button('Choose working directory',lambda:self.choose_file('Working directory',lambda p:self.fields['working_dir'].set_text(str(p)),folder=True)))
+        self.build_game_arguments(self.executable_panel)
         self.confirm_executable_button=button('Confirm installed game executable',self.confirm_installed);self.executable_panel.append(self.confirm_executable_button)
         self.retry_stage_button=button('Return to installation / retry',self.return_to_installation);self.executable_panel.append(self.retry_stage_button)
         self.already_installed.connect('notify::active',lambda *_:self.update_install_stage())
@@ -736,7 +789,6 @@ class Window(Adw.ApplicationWindow):
 
     def reset_launch_defaults(self):
         for field in self.launch_fields.values():field.set_text('')
-        self.launch_args.get_buffer().set_text('')
         self.proton_choice.set_selected(0)
         self.game['launch']={}
         self.notify('Defaults selected in this draft. Installer prefix and runner continuity are preserved.')
@@ -1121,7 +1173,10 @@ class Window(Adw.ApplicationWindow):
                 self.proton_choice=select
                 select.connect('notify::selected',lambda w,_:self.launch_fields['proton'].set_text('' if w.get_selected()==0 else choices[w.get_selected()]))
                 page.append(select);page.append(button('Choose custom Proton folder',lambda:self.choose_file('Choose Proton',lambda p:self.launch_fields['proton'].set_text(str(p)),folder=True)))
-        page.append(label('Direct arguments — one argument per line','heading',xalign=0))
+
+    def build_game_arguments(self,page):
+        settings=self.game.get('launch',{})
+        page.append(label('Game launch arguments — one argument per line','heading',xalign=0))
         import shlex
         try:arguments=settings['arguments'] if 'arguments' in settings else shlex.split(self.game.get('arguments',''))
         except ValueError:arguments=[self.game.get('arguments','')]

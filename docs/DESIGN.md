@@ -83,3 +83,10 @@ Library rebuilding keeps other cards out of automatic focus fallback until the s
 
 ## Gaming profile activation — 0.4.9
 The --fullscreen option opens fullscreen for this activation only, forwarding to the existing app instance when already open. It does not save a new default mode or launch a game. Workstation Modes uses this option on Gaming activation.
+
+## Fullscreen input, sliding rail and Search — 0.4.10
+Keyboard navigation is captured before grid children consume arrows, using the same control-only routing as gamepads. Games pans its overflowing icon rail smoothly toward the focused card, with no horizontal scrollbar; reduced-motion settings disable the transition and Back restores position immediately. Search sits left of Settings and filters the saved library; selecting a result opens read-only detail, never Play. Native checks cover grid arrow dispatch, intermediate/end animation positions, reduced motion, header navigation and local search.
+
+Games-only icon artwork is reduced to 88px; selected/focused chips render at full size and the others at two-thirds scale (1.5× selection ratio), with a short transition and stable row height. Library grid cards have no scale effect and retain their previous dimensions.
+
+Fullscreen Settings is a separate modal (like Search), with Exit fullscreen and Exit actions; controller Back dismisses it without leaving fullscreen. Game arguments belong to Manage Game → Game setup, alongside executable and working directory. Advanced runner/prefix reset preserves those arguments.
