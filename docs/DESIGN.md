@@ -1,4 +1,4 @@
-# Standalone game library, installer and launcher — 0.3.3
+# Standalone game library, installer and launcher — 0.3.4
 
 ## Contract
 Manage preinstalled executables or explicitly run a trusted Windows installer with UMU/Proton. No Steam client/account or sync integration is required. Steam's public catalogue is the credential-free default metadata source; IGDB and SteamGridDB remain optional with accurate attribution.
@@ -6,7 +6,7 @@ Manage preinstalled executables or explicitly run a trusted Windows installer wi
 ## Interface
 Home retains compact cards, search, readiness count and Play/Stop. Add Game opens title/ID search with public Steam default and optional supported provider selection. Selecting a result fetches and saves metadata plus available artwork, creates a library entry and opens details; launch fields are not required. Manual metadata entry is a fallback. Metadata-only entries show Set up to play. Details are read-only: hero, cover, logo, title, description and related information. Pencil opens Edit Metadata; controller opens Manage Game. Dialog Save commits locally; Cancel discards draft metadata/file settings. Late metadata results cannot modify a cancelled draft.
 
-Manage Game offers Already installed and Install from installer; it contains executable, working directory, installer selection/status/logs/Run/Cancel/Confirm. Advanced launch settings are collapsed by default, with runner/default selection, dedicated prefix, structured arguments and Reset to defaults. Reset clears explicit overrides while retaining an installer’s pinned prefix/runner. Existing overrides stay valid; no broad configuration rewrite occurs.
+Manage Game separates installation and executable selection into stage tabs; it contains executable, working directory, installer selection/status/logs/Run/Cancel/Confirm. Advanced launch settings are collapsed by default, with runner/default selection, dedicated prefix, structured arguments and Reset to defaults. Reset clears explicit overrides while retaining an installer’s pinned prefix/runner. Existing overrides stay valid; no broad configuration rewrite occurs.
 
 Settings retains General backup/restore/appearance, Providers and the full Proton Manager. Metadata lookup/search/save/import never execute a game or installer.
 
@@ -36,3 +36,7 @@ Core fixtures cover installer modes, persistence, pinned context, failure/cancel
 ## Two-stage installer setup
 
 Already installed shows executable and working-directory selection only. Install from installer first shows setup selection and installation controls; game executable selection is hidden until the installation attempt ends. Step 2 uses the same executable/working-directory flow and requires explicit confirmation, retaining the installer prefix and Proton version. Failed or cancelled attempts may also leave files, so selection remains available for recovery without implying success.
+
+## Stage tabs
+
+Manage Game uses two stage tabs, Install and Game setup, with only one enabled at a time. The I already have installed the game switch skips/disables Install and activates Game setup. Otherwise Install is active until the attempt ends, then Game setup becomes active for executable confirmation. Return to installation / retry switches back safely without deleting files or losing prefix/runner context. The switch is disabled while an operation is active.

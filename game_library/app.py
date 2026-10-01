@@ -304,8 +304,20 @@ class Window(Adw.ApplicationWindow):
         dialog,content,footer=result
         self.manage_new=new_game
         if new_game:self.entry(content,'title','Game name','You can search public metadata after saving this entry.')
-        mode=self.game.get('installation',{}).get('mode','installed');self.install_mode=Gtk.DropDown.new_from_strings(['Already installed','Install from installer']);self.install_mode.set_selected(1 if mode=='installer' else 0);content.append(self.install_mode)
-        self.installer_panel=box();content.append(self.installer_panel)
+        mode=self.game.get('installation',{}).get('mode','installed')
+        self.install_retry_requested=False
+        row=box(False);content.append(row)
+        row.append(label('I already have installed the game','heading',xalign=0,hexpand=True))
+        self.already_installed=Gtk.Switch(active=mode!='installer',valign=Gtk.Align.CENTER)
+        self.already_installed.set_tooltip_text('Skip installation and select the installed game executable')
+        self.already_installed.update_property([Gtk.AccessibleProperty.LABEL],['I already have installed the game'])
+        row.append(self.already_installed)
+        tabs=box(False);content.append(tabs)
+        self.install_tab=button('1 · Install',lambda:self.stage_stack.set_visible_child_name('install'))
+        self.game_tab=button('2 · Game setup',lambda:self.stage_stack.set_visible_child_name('game'))
+        tabs.append(self.install_tab);tabs.append(self.game_tab)
+        self.stage_stack=Gtk.Stack();self.stage_stack.set_vexpand(True);content.append(self.stage_stack)
+        self.installer_panel=box();self.stage_stack.add_named(self.installer_panel,'install')
         self.installer_entry=Gtk.Entry(text=self.game.get('installation',{}).get('installer',''));self.installer_entry.set_tooltip_text('Installer executable')
         self.installer_panel.append(label('Step 1 · Install the game','title-2',xalign=0))
         self.installer_panel.append(label('Installer executable','heading',xalign=0));self.installer_panel.append(self.installer_entry)
@@ -315,30 +327,40 @@ class Window(Adw.ApplicationWindow):
         self.install_button=button('Run / retry installer',self.run_installer);self.installer_panel.append(self.install_button)
         self.install_cancel=button('Cancel installation',lambda:self.confirm('Cancel installation?','Only this installer’s owned processes will stop. Installed files and prefix are kept; you can retry or select an executable later.','Cancel installation',lambda:self.stop_game(self.game['id']),True));self.installer_panel.append(self.install_cancel)
         self.manage_logs=Gtk.TextView(editable=False,cursor_visible=False,wrap_mode=Gtk.WrapMode.WORD_CHAR);logs=Gtk.ScrolledWindow(min_content_height=130);logs.set_child(self.manage_logs);self.installer_panel.append(logs)
-        self.executable_panel=box();content.append(self.executable_panel)
+        self.executable_panel=box();self.stage_stack.add_named(self.executable_panel,'game')
         self.executable_stage=label('Game executable','title-2',xalign=0);self.executable_panel.append(self.executable_stage)
         self.executable_panel.append(label('Game executable','heading',wrap=True,xalign=0))
         self.entry(self.executable_panel,'executable','Game executable','Select the installed game executable; it runs through UMU.');self.executable_panel.append(button('Choose game executable',self.pick_executable))
         self.entry(self.executable_panel,'working_dir','Working directory','Blank uses the executable’s folder.')
         self.executable_panel.append(button('Choose working directory',lambda:self.choose_file('Working directory',lambda p:self.fields['working_dir'].set_text(str(p)),folder=True)))
         self.confirm_executable_button=button('Confirm installed game executable',self.confirm_installed);self.executable_panel.append(self.confirm_executable_button)
-        self.install_mode.connect('notify::selected',lambda *_:self.update_install_stage())
+        self.retry_stage_button=button('Return to installation / retry',self.return_to_installation);self.executable_panel.append(self.retry_stage_button)
+        self.already_installed.connect('notify::active',lambda *_:self.update_install_stage())
         advanced=Adw.ExpanderRow(title='Advanced launch settings',subtitle='Optional overrides. Working defaults are applied automatically.');content.append(advanced);self.advanced=advanced
         advanced_content=box();margins(advanced_content,12);advanced.add_row(advanced_content);self.build_advanced(advanced_content)
         advanced_content.append(button('Reset to defaults',self.reset_launch_defaults))
         footer.append(button('Find metadata',self.find_metadata))
         dialog.present();self.refresh_launch_state()
 
+    def return_to_installation(self):
+        self.install_retry_requested=True
+        self.update_install_stage()
+
     def update_install_stage(self):
-        installer=self.install_mode.get_selected()==1
+        installer=not self.already_installed.get_active()
         config=self.game.get('installation',{})
-        # An ended attempt may leave usable files even after failure/cancellation.
-        # Reveal selection for recovery; only explicit confirmation enables Play.
-        selecting=installer and bool(config.get('session_id')) and not self.launcher.active()
-        self.installer_panel.set_visible(installer)
-        self.executable_panel.set_visible(not installer or selecting)
+        # Completed, failed and cancelled attempts can leave files for recovery.
+        selecting=installer and bool(config.get('session_id')) and not self.launcher.active() and not self.install_retry_requested
+        game_stage=not installer or selecting
+        self.install_tab.set_sensitive(not game_stage)
+        self.game_tab.set_sensitive(game_stage)
+        for tab,enabled in ((self.install_tab,not game_stage),(self.game_tab,game_stage)):
+            if enabled:tab.add_css_class('suggested-action')
+            else:tab.remove_css_class('suggested-action')
+        self.stage_stack.set_visible_child_name('game' if game_stage else 'install')
         self.executable_stage.set_text('Step 2 · Select the installed game executable' if installer else 'Select the installed game executable')
         self.confirm_executable_button.set_visible(installer and selecting)
+        self.retry_stage_button.set_visible(installer and selecting)
 
     def reset_launch_defaults(self):
         for field in self.launch_fields.values():field.set_text('')
@@ -360,7 +382,7 @@ class Window(Adw.ApplicationWindow):
             def start():
                 try:
                     saved=self.installations.start(candidate);self.game=saved;self.original=deepcopy(saved);self.installer_entry.set_text(saved['installation']['installer']);self.refresh_launch_state()
-                    self.install_mode.set_sensitive(False);self.notify('Installer started. Installed files will be kept if cancelled.')
+                    self.already_installed.set_sensitive(False);self.install_retry_requested=False;self.notify('Installer started. Installed files will be kept if cancelled.')
                 except Exception as error:self.error(error)
             self.confirm('Run this installer?',setup+'\n\nOnly run a trusted installer. You control its license agreements and destination. It uses this game’s dedicated prefix and blocks other launches.','Run installer',start)
         except Exception as error:self.error(error)
@@ -397,7 +419,7 @@ class Window(Adw.ApplicationWindow):
             for key,widget in self.launch_fields.items():game['launch'][key]=widget.get_text()
             buffer=self.launch_args.get_buffer();text=buffer.get_text(buffer.get_start_iter(),buffer.get_end_iter(),False)
             game['launch']['arguments']=text.splitlines() if text else []
-            config=dict(game.get('installation',{}));config['mode']=('installed','installer')[self.install_mode.get_selected()];config['installer']=self.installer_entry.get_text();game['installation']=config
+            config=dict(game.get('installation',{}));config['mode']='installed' if self.already_installed.get_active() else 'installer';config['installer']=self.installer_entry.get_text();game['installation']=config
         if self.description is not None:
             buf=self.description.get_buffer();game['description']=buf.get_text(buf.get_start_iter(),buf.get_end_iter(),False)
         return game
@@ -774,7 +796,7 @@ class Window(Adw.ApplicationWindow):
             self.update_install_stage()
             candidate=self.collect();status=self.installations.status(candidate);self.install_status.set_text(status['phase'])
             self.manage_logs.get_buffer().set_text('\n'.join(status.get('logs',[])[-200:]))
-            self.install_mode.set_sensitive(not active);self.confirm_executable_button.set_sensitive(not active);self.install_button.set_sensitive(not self.demo and not active);self.install_cancel.set_sensitive(not self.demo and active and active_id==candidate['id'] and current.get('operation')=='installer')
+            self.already_installed.set_sensitive(not active);self.confirm_executable_button.set_sensitive(not active);self.install_button.set_sensitive(not self.demo and not active);self.install_cancel.set_sensitive(not self.demo and active and active_id==candidate['id'] and current.get('operation')=='installer')
         return True
 
     def export_backup(self):

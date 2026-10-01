@@ -103,11 +103,11 @@ with tempfile.TemporaryDirectory() as temp:
     # Launch choices occur afterwards in Manage Game, without executing anything.
     for mode,index in (('installed',0),('installer',1)):
         draft=library.new_game();draft.update(title='New '+mode,description='Metadata saved before launch setup');library.save(draft);w.show_game(draft);w.open_manage();settle()
-        assert w.install_mode.get_model().get_n_items()==2
-        w.install_mode.set_selected(index)
+        w.already_installed.set_active(mode=='installed')
         assert w.editor.get_title()=='Manage Game' and not w.advanced.get_expanded()
-        assert w.executable_panel.get_visible()==(mode=='installed')
-        assert w.installer_panel.get_visible()==(mode=='installer')
+        assert w.stage_stack.get_visible_child_name()==('game' if mode=='installed' else 'install')
+        assert w.game_tab.get_sensitive()==(mode=='installed')
+        assert w.install_tab.get_sensitive()==(mode=='installer')
         w.fields['executable'].set_text(game['executable']);w.installer_entry.set_text(str(Path(temp)/'setup.exe'))
         if mode=='installer':
             screenshot('installer-dark.png',w.editor);assert not w.install_button.get_sensitive()
@@ -123,7 +123,11 @@ with tempfile.TemporaryDirectory() as temp:
     pump_until(lambda:not w.launcher.active() and w.installations.status(w.game)['phase']=='Select installed executable')
     prefix=Path(w.game['installation']['prefix']);assert (prefix/'drive_c/Game/game.exe').exists()
     w.cancel_editor();w.open_manage();assert w.install_status.get_text()=='Select installed executable'
-    assert w.executable_panel.get_visible() and w.confirm_executable_button.get_visible()
+    assert w.stage_stack.get_visible_child_name()=='game' and w.confirm_executable_button.get_visible()
+    assert w.game_tab.get_sensitive() and not w.install_tab.get_sensitive()
+    w.return_to_installation();assert w.stage_stack.get_visible_child_name()=='install'
+    assert w.install_tab.get_sensitive() and not w.game_tab.get_sensitive()
+    w.cancel_editor();w.open_manage();assert w.stage_stack.get_visible_child_name()=='game'
     settle();screenshot('installer-select-executable-dark.png',w.editor)
     w.fields['executable'].set_text(str(prefix/'drive_c/Game/game.exe'));w.confirm_installed()
     saved=next(g for g in library.games() if g['title']=='New installer');assert saved['installation']['confirmed'];assert saved['launch']['prefix']==str(prefix)
