@@ -53,3 +53,7 @@ Fullscreen layout checks include 1920×1080, 1280×720 and 1024×600 allocations
 
 ## 0.4.2 verification
 Native checks cover repeated Back remaining fullscreen, removal of Home and desktop header utility actions, the two fullscreen exit options, and existing responsive grid/navigation flows. Tray checks exercise Activity, Settings and Appearance callbacks alongside mode switching and Exit. Core regression tests, lint and compilation are required before installation. Real games and installers are not run.
+
+
+## 0.4.3 verification
+43 core tests pass, including observed download bytes and missing-file/unknown-total behavior. Native regression coverage exercises increasing archive bytes, the visible preparation panel and hiding it when Running. Synthetic fixtures only; no real game was launched during validation.

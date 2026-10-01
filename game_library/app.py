@@ -10,7 +10,7 @@ gi.require_version('Gtk','4.0')
 gi.require_version('Adw','1')
 from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango
 from .library import Library, ART_KINDS, image_extension
-from .launcher import Launcher, defaults, build_command
+from .launcher import preparation_progress, Launcher, defaults, build_command
 from .proton_manager import ProtonManager
 from .installations import Installations
 from .tray import Tray, close_action
@@ -101,6 +101,8 @@ class Window(Adw.ApplicationWindow):
         self.spinner=Gtk.Spinner(); self.progress.append(self.spinner)
         self.progress_label=label(''); self.progress.append(self.progress_label)
         self.progress.set_visible(False); self.layout.append(self.progress)
+        self.runtime_progress=box(False,10);margins(self.runtime_progress,12);self.runtime_spinner=Gtk.Spinner();self.runtime_progress.append(self.runtime_spinner)
+        self.runtime_label=label('',wrap=True,xalign=0);self.runtime_label.set_hexpand(True);self.runtime_progress.append(self.runtime_label);self.runtime_progress.set_visible(False);self.layout.append(self.runtime_progress)
         self.body=box(spacing=0); self.body.set_vexpand(True); self.layout.append(self.body)
         self.log_button=button('Activity',self.toggle_log,icon='view-list-symbolic'); self.log_button.set_visible(False)
         self.log_revealer=Gtk.Revealer(); self.log_text=Gtk.TextView(editable=False,cursor_visible=False,wrap_mode=Gtk.WrapMode.WORD_CHAR)
@@ -1072,6 +1074,13 @@ class Window(Adw.ApplicationWindow):
 
     def refresh_launch_state(self):
         current=self.launcher.current();active=self.launcher.active();active_id=current.get('game_id')
+        preparing_runtime=active and current.get('state') in ('Preparing','Downloading runtime')
+        self.runtime_progress.set_visible(preparing_runtime)
+        if preparing_runtime:
+            self.runtime_spinner.start();info=preparation_progress(current)
+            amount=(f" · {info['bytes']/1048576:.1f} MiB downloaded" if info['bytes'] is not None else ' · Waiting for UMU progress')
+            self.runtime_label.set_text(current.get('title','Game')+' — '+info['stage']+amount+'\nDownload total is not supplied by UMU. Status refreshes automatically.')
+        else:self.runtime_spinner.stop()
         for game_id,control in self.play_buttons.items():
             own=active and active_id==game_id;stopping=own and current.get('state')=='Stopping'
             preparing=own and current.get('state')=='Preparing' and not current.get('supervisor_pid')

@@ -84,7 +84,7 @@ def main(request_path):
                     chunk=os.read(key.fileobj.fileno(),262144)
                     if not chunk:selector.unregister(key.fileobj);pipe_open=False
                     else:
-                        pending+=chunk
+                        pending+=chunk.replace(b'\r',b'\n')
                         while b'\n' in pending or len(pending)>8192:
                             raw,_,pending=pending.partition(b'\n') if b'\n' in pending else (pending[:8192],b'',pending[8192:])
                             text=clean_log(raw.decode('utf-8',errors='replace'))

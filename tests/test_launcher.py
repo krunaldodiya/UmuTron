@@ -4,10 +4,18 @@ import tempfile
 import time
 import unittest
 from game_library.library import Library, digest
-from game_library.launcher import Launcher, build_command, discover, defaults, validate_settings
+from game_library.launcher import preparation_progress, Launcher, build_command, discover, defaults, validate_settings
 
 
 class LaunchTests(unittest.TestCase):
+    def test_runtime_progress_observed_bytes_and_unknown_total(self):
+        with tempfile.TemporaryDirectory() as directory:
+            part=Path(directory)/'runtime.tar.gz.parts';part.write_bytes(b'x'*1024)
+            record={'state':'Downloading runtime','logs':['Downloading runtime.tar.gz...',f'Writing: {part}']}
+            self.assertEqual(preparation_progress(record),{'stage':'Downloading runtime.tar.gz...','bytes':1024})
+            part.unlink();self.assertIsNone(preparation_progress(record)['bytes'])
+            self.assertEqual(preparation_progress({'state':'Preparing','logs':[]})['stage'],'Preparing')
+
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.root=Path(self.tmp.name); self.lib=Library(self.root/'library')

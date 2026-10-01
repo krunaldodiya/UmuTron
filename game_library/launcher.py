@@ -17,6 +17,22 @@ ACTIVE={'Preparing','Downloading runtime','Running','Stopping'}
 MARKER='.metadata-manager-prefix'
 
 
+def preparation_progress(record):
+    """Report observed UMU output and bytes, never invent a total or percentage."""
+    logs=record.get('logs',[])
+    stage=next((line for line in reversed(logs) if any(word in line.lower() for word in ('downloading','extracting','verifying','restoring','setting up','updating steamrt'))),record.get('state','Preparing'))
+    transferred=None
+    for line in reversed(logs):
+        match=re.search(r"Writing: (.+\.parts)$",line)
+        if not match:continue
+        path=Path(match.group(1).strip("'\""))
+        try:
+            if path.is_absolute() and not path.is_symlink() and path.is_file():transferred=path.stat().st_size
+        except OSError:pass
+        break
+    return {'stage':stage,'bytes':transferred}
+
+
 def validate_settings(settings):
     if not isinstance(settings,dict) or set(settings)-FIELDS: raise ValueError('Invalid direct launch settings.')
     for key in ('runner','proton','prefix'):

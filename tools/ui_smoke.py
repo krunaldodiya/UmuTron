@@ -146,8 +146,13 @@ with tempfile.TemporaryDirectory() as temp:
         def current(self):return self.record
         def snapshot(self,game_id):return {'state':'Running' if self.record.get('game_id')==game_id else 'Not started','logs':['fixture'],'code':None}
     fake=FakeLaunch();real=w.launcher;w.launcher=fake
+    partial=Path(temp)/'runtime.tar.gz.parts';partial.write_bytes(b'x'*1048576)
+    fake.record={'game_id':game['id'],'title':game['title'],'state':'Downloading runtime','logs':['Downloading runtime.tar.gz...',f'Writing: {partial}']}
+    w.refresh_launch_state();assert w.runtime_progress.get_visible() and '1.0 MiB downloaded' in w.runtime_label.get_text()
+    partial.write_bytes(b'x'*2097152);w.refresh_launch_state();assert '2.0 MiB downloaded' in w.runtime_label.get_text()
+    screenshot('runtime-download-dark.png')
     fake.record={'game_id':game['id'],'title':game['title'],'state':'Running','operation':'installer','supervisor_pid':123}
-    w.show_library();w.refresh_launch_state();assert w.play_buttons[game['id']].get_label()=='Stop installer'
+    w.show_library();w.refresh_launch_state();assert not w.runtime_progress.get_visible();assert w.play_buttons[game['id']].get_label()=='Stop installer'
     assert all(not b.get_sensitive() for gid,b in w.play_buttons.items() if gid!=game['id'])
     # close hides, activation shows same window, unavailable tray minimizes safely.
     class FakeTray:
@@ -230,7 +235,7 @@ with tempfile.TemporaryDirectory() as temp:
     # Mode changes preserve the active record and disable other game launches.
     real=w.launcher;w.launcher=fake;w.demo=False
     fake.record={'game_id':w.tv_selected_id,'title':'Fixture active','state':'Running','operation':'play','supervisor_pid':123}
-    w.refresh_launch_state();assert w.tv_play.get_label()=='Stop' and w.tv_play.get_sensitive()
+    w.refresh_launch_state();w.focus_tv_card();settle();assert w.tv_play.get_label()=='Stop' and w.tv_play.get_sensitive()
     navigate('right');settle();assert not w.tv_play.get_sensitive()
     assert fake.active();w.launcher=real;w.demo=True;w.refresh_launch_state()
     w.focus_tv_card();settle()

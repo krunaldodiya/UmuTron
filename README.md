@@ -4,7 +4,7 @@ A native Linux library for preinstalled games and Windows installers, metadata/a
 
 ![Game details](docs/screenshots/details-dark.png)
 
-## Version 0.4.2
+## Version 0.4.3
 
 - Metadata-first **Add Game**: search by title/ID, select, then automatically save metadata/artwork and open details. No executable or runtime settings required.
 - Persistent installation status/logs; cancel/retry keeps installed files. Select and confirm the game executable after setup. Setup exit alone never means the game is ready.
