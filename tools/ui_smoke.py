@@ -70,13 +70,15 @@ with tempfile.TemporaryDirectory() as temp:
     w.open_manage();assert not w.advanced.get_expanded();w.advanced.set_expanded(True);settle()
     assert w.launch_args.is_ancestor(w.executable_panel) and not w.launch_args.is_ancestor(w.advanced)
 
-    w.launch_fields['proton'].set_text('GE-Latest');w.launch_args.get_buffer().set_text('one argument\n--flag')
+    w.launch_fields['dll_overrides'].set_text('winmm=n,b');w.launch_fields['proton'].set_text('GE-Latest');w.launch_args.get_buffer().set_text('one argument\n--flag')
     screenshot('manage-game-dark.png',w.editor)
     viewport=w.editor.get_child().get_first_child();adjustment=viewport.get_vadjustment();assert adjustment.get_page_size()>100 and adjustment.get_upper()>adjustment.get_page_size()
     adjustment.set_value(adjustment.get_upper()-adjustment.get_page_size());settle();assert adjustment.get_value()>0
     screenshot('advanced-bottom-dark.png',w.editor);w.save_editor()
     assert library.games()[0]['launch']['arguments']==['one argument','--flag']
-    w.open_manage();w.reset_launch_defaults();assert w.collect()['launch']['arguments']==['one argument','--flag'];w.cancel_editor();assert library.games()[0]['launch']['proton']=='GE-Latest'
+    assert library.games()[0]['launch']['dll_overrides']=='winmm=n,b'
+    w.open_manage();w.launch_fields['dll_overrides'].set_text('dinput8=n');w.cancel_editor();assert library.games()[0]['launch']['dll_overrides']=='winmm=n,b'
+    w.open_manage();w.reset_launch_defaults();assert w.launch_fields['dll_overrides'].get_text()=='';assert w.collect()['launch']['arguments']==['one argument','--flag'];w.cancel_editor();assert library.games()[0]['launch']['proton']=='GE-Latest'
     # Metadata switching defaults to public catalogue, entirely fixture-backed.
     original_search=metadata.search;original_fetch=metadata.fetch_game
     metadata.search=lambda query:[{'id':620,'name':'Catalogue fixture'}]

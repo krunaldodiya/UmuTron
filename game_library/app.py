@@ -764,6 +764,7 @@ class Window(Adw.ApplicationWindow):
         advanced=Adw.ExpanderRow(title='Advanced launch settings',subtitle='Optional overrides. Working defaults are applied automatically.');content.append(advanced);self.advanced=advanced
         advanced_content=box();margins(advanced_content,12);advanced.add_row(advanced_content);self.build_advanced(advanced_content)
         advanced_content.append(button('Reset to defaults',self.reset_launch_defaults))
+        content.append(button('Open diagnostic logs',self.open_diagnostic_logs))
         footer.append(button('Find metadata',self.find_metadata))
         dialog.present();self.refresh_launch_state()
 
@@ -1173,6 +1174,17 @@ class Window(Adw.ApplicationWindow):
                 self.proton_choice=select
                 select.connect('notify::selected',lambda w,_:self.launch_fields['proton'].set_text('' if w.get_selected()==0 else choices[w.get_selected()]))
                 page.append(select);page.append(button('Choose custom Proton folder',lambda:self.choose_file('Choose Proton',lambda p:self.launch_fields['proton'].set_text(str(p)),folder=True)))
+
+        page.append(label('DLL compatibility overrides','heading',xalign=0))
+        overrides=Gtk.Entry(text=settings.get('dll_overrides',''),placeholder_text='Example: winmm=n,b')
+        self.launch_fields['dll_overrides']=overrides;page.append(overrides)
+        page.append(label('Only apply a verified fix for this game. n = supplied/native DLL, b = Wine built-in, d = disabled. Separate entries with semicolons. Blank keeps the existing prefix defaults.','caption',wrap=True,xalign=0))
+
+    def open_diagnostic_logs(self):
+        folder=self.library.root/'diagnostics'/self.game['id']
+        if not folder.is_dir():self.notify('No diagnostic logs yet. Logs are recorded automatically when you play or install.');return
+        try:Gio.AppInfo.launch_default_for_uri(folder.as_uri(),None)
+        except Exception as error:self.error(error)
 
     def build_game_arguments(self,page):
         settings=self.game.get('launch',{})

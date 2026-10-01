@@ -1,4 +1,5 @@
 import json
+import zipfile
 from pathlib import Path
 import tempfile
 import time
@@ -32,6 +33,37 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(cwd,str(self.root/'games')); self.assertNotIn('SECRET_TOKEN',env)
         for key in ('GAMEID','STORE','SteamAppId'): self.assertNotIn(key,env)
         self.assertEqual(env['PROTONPATH'],str(self.proton)); self.assertFalse(Path(env['WINEPREFIX']).exists())
+
+    def test_dll_overrides_are_per_game_validated_and_not_inherited(self):
+        self.game['launch']['dll_overrides']='winmm=n,b;dinput8=b,n'
+        _,_,env=build_command(self.game,self.lib.root,{'WINEDLLOVERRIDES':'global=n'})
+        self.assertEqual(env['WINEDLLOVERRIDES'],'winmm=n,b;dinput8=b,n')
+        self.game['launch'].pop('dll_overrides')
+        self.assertNotIn('WINEDLLOVERRIDES',build_command(self.game,self.lib.root,{'WINEDLLOVERRIDES':'global=n'})[2])
+        for invalid in ('winmm=n,b;PATH=x','winmm=n,b\nother=n','$(touch bad)','winmm=x',None):
+            self.game['launch']['dll_overrides']=invalid
+            with self.subTest(invalid=invalid),self.assertRaises(ValueError):build_command(self.game,self.lib.root)
+
+    def test_diagnostics_defaults_and_compatibility_backup_roundtrip(self):
+        self.game['launch']['dll_overrides']='winmm=n,b';self.lib.save(self.game)
+        env=build_command(self.game,self.lib.root)[2]
+        self.assertEqual(env['PROTON_LOG'],'-all,+seh,+loaddll')
+        self.assertEqual(env['PROTON_LOG_DIR'],str(self.lib.root/'diagnostics'/self.game['id']))
+        diagnostic=self.lib.root/'diagnostics'/self.game['id'];diagnostic.mkdir(parents=True);(diagnostic/'steam-default.log').write_text('private log')
+        archive=self.root/'backup.zip';self.lib.export_zip(archive)
+        with zipfile.ZipFile(archive) as saved:self.assertFalse(any('diagnostics' in name for name in saved.namelist()))
+        restored=Library(self.root/'restore');restored.import_zip(archive)
+        self.assertEqual(restored.games()[0]['launch']['dll_overrides'],'winmm=n,b')
+
+    def test_failed_launch_creates_diagnostics_before_runner_starts(self):
+        self.runner.write_text('#!/usr/bin/python3\nimport os,pathlib,sys\nfolder=pathlib.Path(os.environ["PROTON_LOG_DIR"])\nassert folder.is_dir()\n(folder/"steam-default.log").write_text("fixture crash")\nsys.exit(9)\n')
+        launch=Launcher(self.lib.root);launch.start(self.game)
+        deadline=time.monotonic()+5
+        while launch.active() and time.monotonic()<deadline:time.sleep(.03)
+        self.assertFalse(launch.active())
+        state=launch.snapshot(self.game['id'])
+        self.assertEqual(state['state'],'Error');self.assertEqual(state['code'],9)
+        self.assertEqual((Path(state['diagnostics_dir'])/'steam-default.log').read_text(),'fixture crash')
 
     def test_missing_and_unsafe_paths(self):
         for key,value in [('runner','/missing'),('proton','/missing'),('prefix',str(self.root/'games'/'game ; $.exe'))]:

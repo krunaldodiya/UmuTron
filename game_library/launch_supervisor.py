@@ -54,6 +54,11 @@ def main(request_path):
         if prefix.is_symlink() or (any(prefix.iterdir()) and not (prefix/MARKER).is_file()):raise ValueError('Prefix changed before launch. Existing data was preserved.')
         if not (prefix/MARKER).exists():
             with (prefix/MARKER).open('x') as f:f.write('Dedicated UMU prefix for Game Library Launcher.\n')
+        diagnostic_dir=request['env'].get('PROTON_LOG_DIR')
+        if diagnostic_dir:
+            folder=Path(diagnostic_dir);folder.mkdir(parents=True,exist_ok=True,mode=0o700)
+            state['diagnostics_dir']=str(folder)
+            logs.append('Detailed Proton logs: '+str(folder))
         save()
         with subprocess.Popen(request['argv'],cwd=request['cwd'],env=request['env'],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True) as process:
             owned[process.pid]=pid_identity(process.pid)

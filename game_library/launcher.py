@@ -12,7 +12,7 @@ import sys
 import time
 from uuid import UUID
 
-FIELDS={'runner','proton','prefix','arguments'}
+FIELDS={'runner','proton','prefix','arguments','dll_overrides'}
 ACTIVE={'Preparing','Downloading runtime','Running','Stopping'}
 MARKER='.metadata-manager-prefix'
 
@@ -38,6 +38,9 @@ def validate_settings(settings):
     for key in ('runner','proton','prefix'):
         value=settings.get(key,'')
         if not isinstance(value,str) or len(value)>4096 or '\x00' in value: raise ValueError('Invalid launch '+key+'.')
+    overrides=settings.get('dll_overrides','')
+    if not isinstance(overrides,str) or len(overrides)>1024 or (overrides and not re.fullmatch(r'[A-Za-z0-9_.-]+=(?:n,b|b,n|n|b|d)(?:;[A-Za-z0-9_.-]+=(?:n,b|b,n|n|b|d))*',overrides)):
+        raise ValueError('DLL overrides must use entries such as winmm=n,b, separated by semicolons. Allowed orders: n,b / b,n / n / b / d.')
     args=settings.get('arguments',[])
     if not isinstance(args,list) or len(args)>128 or any(not isinstance(a,str) or len(a)>8192 or '\x00' in a or '\n' in a or '\r' in a for a in args):
         raise ValueError('Direct arguments must be a list of at most 128 single-line strings.')
@@ -59,7 +62,7 @@ def defaults(game,root):
     return {'runner':settings.get('runner') or found['runner'],
             'proton':settings.get('proton') or installed.get('proton') or (found['protons'][0] if found['protons'] else 'UMU-Latest'),
             'prefix':settings.get('prefix') or installed.get('prefix') or str(Path(root)/'prefixes'/game['id']),
-            'arguments':arguments}
+            'arguments':arguments,'dll_overrides':settings.get('dll_overrides','')}
 
 
 def build_command(game,root,inherited=None):
@@ -83,6 +86,8 @@ def build_command(game,root,inherited=None):
     if any(parent.is_symlink() for parent in prefix.parents): raise ValueError('Choose a prefix without symbolic-link parents.')
     env={k:v for k,v in (inherited if inherited is not None else os.environ).items() if k in {'HOME','USER','LOGNAME','PATH','LANG','DISPLAY','WAYLAND_DISPLAY','DBUS_SESSION_BUS_ADDRESS','XAUTHORITY','XDG_RUNTIME_DIR','XDG_SESSION_TYPE','XDG_DATA_HOME','XDG_CONFIG_HOME','XDG_CACHE_HOME','XDG_DATA_DIRS','PULSE_SERVER','PIPEWIRE_REMOTE','DRI_PRIME','__NV_PRIME_RENDER_OFFLOAD','__GLX_VENDOR_LIBRARY_NAME'} or k.startswith('LC_')}
     env.update(WINEPREFIX=str(prefix),PROTONPATH=proton,UMU_LOG='debug',PYTHONUNBUFFERED='1')
+    env.update(PROTON_LOG='-all,+seh,+loaddll',PROTON_LOG_DIR=str(Path(root)/'diagnostics'/game['id']))
+    if settings['dll_overrides']:env['WINEDLLOVERRIDES']=settings['dll_overrides']
     # GAMEID/STORE are deliberately unset; catalog IDs are not gamefix IDs.
     return [str(runner),str(exe),*settings['arguments']],str(cwd),env
 

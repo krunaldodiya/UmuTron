@@ -83,3 +83,7 @@ Games-only icon artwork is reduced to 88px; selected/focused chips render at ful
 Fullscreen Settings is a separate modal (like Search), with Exit fullscreen and Exit actions; controller Back dismisses it without leaving fullscreen. Game arguments belong to Manage Game → Game setup, alongside executable and working directory. Advanced runner/prefix reset preserves those arguments.
 
 Final validation: 44 core tests pass, native isolated GUI smoke passes (including modal Save/Cancel, keyboard grid navigation, sliding/reduced-motion behavior, Search and Settings modal, and arguments retention). Lint, compilation and whitespace checks pass. Synthetic screenshots inspected; no real game/installer or physical TV/controller test performed.
+
+## Per-game compatibility and diagnostics — 0.4.11
+
+47 core tests pass. New cases cover validated per-game DLL overrides, rejection of injected/malformed settings, inherited override isolation, ZIP preference round-trip with diagnostic exclusion, and a harmless failing runner writing its log into the automatically prepared folder. Native GUI smoke passes with collapsed advanced settings, compatibility Save/Cancel/Reset, and existing browse/installer/tray/runner flows. Updated synthetic Manage Game screenshots inspected. Compilation, lint and whitespace checks pass. No real game or installer executed or stopped for this release; physical controller and real-game diagnostic replay remain untested.
