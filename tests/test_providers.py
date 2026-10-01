@@ -59,3 +59,29 @@ class ProviderTests(unittest.TestCase):
             self.assertEqual(metadata.details(620)['description'],'Public description')
         self.assertFalse(self.credentials.path.exists())
         with self.assertRaisesRegex(ValueError,'Providers'):IGDB(self.credentials).search('Portal')
+
+    def test_hash_qualified_catalogue_artwork(self):
+        from unittest.mock import patch
+        from game_library import metadata
+        import json
+        assets={'asset_url_format':'steam/apps/3468650/${FILENAME}?t=123',
+                'library_capsule_2x':'coverhash/library_capsule_2x.jpg',
+                'library_hero':'herohash/library_hero.jpg'}
+        payload={'response':{'store_items':[{'appid':3468650,'success':1,'assets':assets}]}}
+        with patch.object(metadata,'request',side_effect=lambda *args:json.dumps(payload).encode()):
+            found=metadata.catalogue_artwork(3468650)
+            self.assertIn('/coverhash/library_capsule_2x.jpg',found['portrait'])
+            self.assertIn('/herohash/library_hero.jpg',found['hero'])
+            self.assertNotIn('logo',found)
+            assets['library_capsule_2x']='../../evil.jpg'
+            self.assertNotIn('portrait',metadata.catalogue_artwork(3468650))
+            assets['asset_url_format']='https://evil.example/${FILENAME}'
+            self.assertEqual(metadata.catalogue_artwork(3468650),{})
+
+    def test_catalogue_failure_keeps_legacy_artwork_fallback(self):
+        from unittest.mock import patch
+        from game_library import metadata
+        with patch.object(metadata,'details',return_value={'title':'Old game','header_url':''}),patch.object(metadata,'catalogue_artwork',side_effect=ValueError('Unavailable')),patch.object(metadata,'request',return_value=b'image'),patch.object(metadata,'image_extension',return_value='.png'):
+            _,art,missing=metadata.fetch_game(620)
+            self.assertEqual(set(art),{'portrait','landscape','hero','logo'})
+            self.assertEqual(missing,[])

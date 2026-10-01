@@ -1,10 +1,10 @@
-# Validation — version 0.3.4
+# Validation — version 0.3.5
 
 Validated on Ubuntu 26.04, 2026-09-30, with system Python and native GTK/libadwaita.
 
 ## Final checks
 
-- All 37 isolated regression tests pass.
+- All 39 isolated regression tests pass.
 - Python compilation and Ruff undefined/unused-code checks pass.
 - Native GUI smoke passes: read-only detail, hero/cover/logo, modal Save/Cancel, metadata-first search/select/save/detail with artwork and no launch configuration, optional manual fallback cancellation, subsequent executable/installer configuration, harmless installer execution and executable confirmation, advanced settings/reset, scrolling, default public metadata and missing-credential provider switching, active operation controls, ZIP recovery and Proton Manager.
 - Private-session D-Bus tray integration passes: registration, host detection/loss, Show Launcher, activation and Exit menu.
@@ -27,9 +27,9 @@ Forced OS/supervisor termination is outside graceful cancellation guarantees. Mu
 
 ## Installed delivery
 
-User-level installation and desktop-entry validation passed. All installed Python modules match final source bytes. The existing library/artwork snapshot (existing files) was unchanged by installation; saves, prefixes and game files were not touched. The previous 0.3.1 instance was opened normally without startup errors; the 0.3.4 change was exercised through the isolated native GUI checks. The current desktop reports a registered tray host and the app StatusNotifierItem. Real icon/menu interaction remains a user visual acceptance check.
+User-level installation and desktop-entry validation passed. All installed Python modules match final source bytes. The existing library/artwork snapshot (existing files) was unchanged by installation; saves, prefixes and game files were not touched. The previous 0.3.1 instance was opened normally without startup errors; the 0.3.5 change was exercised through the isolated native GUI checks. The current desktop reports a registered tray host and the app StatusNotifierItem. Real icon/menu interaction remains a user visual acceptance check.
 
-The installed 0.3.4 update does not restart an existing window. Use explicit Exit and reopen to load it; closing alone hides to tray. No game or installer was automatically started. Source and documentation are delivered together.
+The installed 0.3.5 update does not restart an existing window. Use explicit Exit and reopen to load it; closing alone hides to tray. No game or installer was automatically started. Source and documentation are delivered together.
 
 ## Two-stage installer setup
 
@@ -38,3 +38,6 @@ Already installed shows executable and working-directory selection only. Install
 ## Stage tabs
 
 Manage Game uses two stage tabs, Install and Game setup, with only one enabled at a time. The I already have installed the game switch skips/disables Install and activates Game setup. Otherwise Install is active until the attempt ends, then Game setup becomes active for executable confirmation. Return to installation / retry switches back safely without deleting files or losing prefix/runner context. The switch is disabled while an operation is active.
+
+## Public catalogue artwork repair — 0.3.5
+Steam asset manifests supply modern hash-qualified cover and hero URLs, with legacy fallback. Cricket 26 cover/hero were downloaded live and added to its existing entry without replacing saved artwork or changing launch configuration. Its separate logo was unavailable through these public endpoints. Fixture tests cover hash paths, rejected paths and API failure fallback; native smoke uses isolated data.

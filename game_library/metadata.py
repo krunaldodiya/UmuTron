@@ -6,7 +6,7 @@ from urllib.parse import urlencode, urlparse
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 from .library import MAX_IMAGE, image_extension
 
-ALLOWED=('store.steampowered.com','cdn.akamai.steamstatic.com','cdn.cloudflare.steamstatic.com',
+ALLOWED=('api.steampowered.com','store.steampowered.com','cdn.akamai.steamstatic.com','cdn.cloudflare.steamstatic.com',
          'shared.akamai.steamstatic.com','shared.fastly.steamstatic.com',
          'shared.cloudflare.steamstatic.com','steamcdn-a.akamaihd.net',
          'images.igdb.com','cdn2.steamgriddb.com','cdn.steamgriddb.com')
@@ -71,12 +71,37 @@ def search(query):
     return [{'id':int(i['id']),'name':i['name']} for i in payload.get('items',[])[:30] if i.get('type')=='app']
 
 
+def catalogue_artwork(app_id):
+    """Read published asset paths, including modern hash-qualified library art."""
+    query={'ids':[{'appid':int(app_id)}],
+           'context':{'language':'english','country_code':'US'},
+           'data_request':{'include_assets':True}}
+    payload=json.loads(request('https://api.steampowered.com/IStoreBrowseService/GetItems/v1/?'+urlencode({'input_json':json.dumps(query)})))
+    items=payload.get('response',{}).get('store_items',[])
+    item=next((i for i in items if i.get('appid')==int(app_id) and i.get('success')==1),{})
+    assets=item.get('assets',{});format_=assets.get('asset_url_format','')
+    prefix=f'steam/apps/{int(app_id)}/'
+    if not isinstance(format_,str) or not format_.startswith(prefix) or '${FILENAME}' not in format_:return {}
+    result={}
+    for kind,keys in {'portrait':('library_capsule_2x','library_capsule'),
+                      'hero':('library_hero_2x','library_hero'),
+                      'logo':('library_logo',)}.items():
+        name=next((assets.get(k) for k in keys if assets.get(k)),None)
+        if not isinstance(name,str) or not name or any(c in name for c in ('..',':','?','#','\\')) or name.startswith('/'):continue
+        path=format_.replace('${FILENAME}',name)
+        if '..' in path or '\\' in path:continue
+        result[kind]=allowed('https://shared.akamai.steamstatic.com/store_item_assets/'+path)
+    return result
+
+
 def fetch_game(app_id):
     info=details(app_id)
     base=f'https://cdn.akamai.steamstatic.com/steam/apps/{int(app_id)}/'
     sources={'portrait':base+'library_600x900_2x.jpg',
              'landscape':info.pop('header_url') or base+'header.jpg',
              'hero':base+'library_hero.jpg','logo':base+'logo.png'}
+    try:sources.update(catalogue_artwork(app_id))
+    except Exception:pass  # Older API/region failures retain the legacy lookup.
     artwork={}; missing=[]
     def download(item):
         kind,url=item
