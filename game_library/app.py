@@ -975,6 +975,14 @@ class Window(Adw.ApplicationWindow):
         dialog.connect('close-request',lambda _:(self.show_library() if new_game and not chosen[0] else None,False)[-1])
         dialog.present(); query.grab_focus()
 
+    def clear_diagnostic_logs(self):
+        def clear_logs():
+            try:
+                from .diagnostics import clear_all
+                count=clear_all(self.library.root);self.notify(f'Cleared {count} diagnostic log files.')
+            except Exception as error:self.error(error)
+        self.confirm('Clear all diagnostic logs?','Deletes diagnostic log files only. Game files, saves, prefixes and artwork are kept.','Clear all',clear_logs,True)
+
     def open_settings(self):
         if self.tv_mode:self.notify('Switch to desktop mode to manage settings.');return
         dialog=Adw.PreferencesWindow(title='Settings',transient_for=self,modal=True,default_width=660,default_height=740)
@@ -989,6 +997,8 @@ class Window(Adw.ApplicationWindow):
         theme.set_selected(self.theme.get_selected())
         theme.connect('notify::selected',lambda dropdown,_:self.theme.set_selected(dropdown.get_selected()))
         theme_row.add_suffix(theme); appearance.add(theme_row)
+        diagnostics=Adw.PreferencesGroup(title='Diagnostic logs',description='One local folder per game. Completed logs: 8 MiB per file, 100 MiB total, 14-day retention. Cleanup runs before and after launches; active logs are never cleared.');page.add(diagnostics)
+        diagnostics.add(button('Clear all diagnostic logs',self.clear_diagnostic_logs,'destructive-action'))
         backup=Adw.PreferencesGroup(title='Backup and restore',description='Portable metadata, artwork and appearance. Game files, saves and provider credentials are not included.'); page.add(backup)
         def leave_then(callback): dialog.close(); callback()
         for title,subtitle,action,callback in (

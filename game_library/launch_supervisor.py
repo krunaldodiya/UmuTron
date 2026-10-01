@@ -118,7 +118,11 @@ def main(request_path):
         logs.append('Launch stopped.' if stopping[0] else f'UMU exited with code {code}.')
     except Exception as error:
         state['state']='Error';logs.append(clean_log(str(error)))
-    finally:save()
+    finally:
+        save()
+        from game_library.diagnostics import cleanup
+        try:cleanup(Path(request['record']).parent)
+        except OSError:pass
 
 
 if __name__=='__main__':main(sys.argv[1])

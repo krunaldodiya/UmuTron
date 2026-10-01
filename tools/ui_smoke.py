@@ -366,6 +366,14 @@ with tempfile.TemporaryDirectory() as temp:
     assert library.path.read_bytes()==snapshot
     # Default mode affects next launch, not the current window or game data.
     w.open_settings();settle();settings=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Settings')
+    assert any(b.get_label()=='Clear all diagnostic logs' for b in buttons(settings))
+    log=library.root/'diagnostics'/game['id']/'steam-default.log';log.parent.mkdir(parents=True,exist_ok=True);log.write_text('fixture')
+    click(settings,'Clear all diagnostic logs');settle()
+    prompt=next(d for d in Gtk.Window.get_toplevels() if isinstance(d,Adw.MessageDialog) and d.get_heading()=='Clear all diagnostic logs?')
+    prompt.emit('response','cancel');settle();assert log.exists()
+    click(settings,'Clear all diagnostic logs');settle()
+    prompt=next(d for d in Gtk.Window.get_toplevels() if isinstance(d,Adw.MessageDialog) and d.get_heading()=='Clear all diagnostic logs?')
+    prompt.emit('response','confirm');settle();assert not log.exists()
     w.default_mode_choice.set_selected(1);assert not w.tv_mode
     assert library.data['settings']['default_display_mode']=='fullscreen';settings.destroy()
     other=Window(app,library,demo=True);other.present();settle();assert other.tv_mode

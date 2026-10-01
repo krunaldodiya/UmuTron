@@ -86,7 +86,7 @@ def build_command(game,root,inherited=None):
     if any(parent.is_symlink() for parent in prefix.parents): raise ValueError('Choose a prefix without symbolic-link parents.')
     env={k:v for k,v in (inherited if inherited is not None else os.environ).items() if k in {'HOME','USER','LOGNAME','PATH','LANG','DISPLAY','WAYLAND_DISPLAY','DBUS_SESSION_BUS_ADDRESS','XAUTHORITY','XDG_RUNTIME_DIR','XDG_SESSION_TYPE','XDG_DATA_HOME','XDG_CONFIG_HOME','XDG_CACHE_HOME','XDG_DATA_DIRS','PULSE_SERVER','PIPEWIRE_REMOTE','DRI_PRIME','__NV_PRIME_RENDER_OFFLOAD','__GLX_VENDOR_LIBRARY_NAME'} or k.startswith('LC_')}
     env.update(WINEPREFIX=str(prefix),PROTONPATH=proton,UMU_LOG='debug',PYTHONUNBUFFERED='1')
-    env.update(PROTON_LOG='-all,+seh,+loaddll',PROTON_LOG_DIR=str(Path(root)/'diagnostics'/game['id']))
+    env.update(PROTON_LOG='-all,err+all,warn+seh',PROTON_LOG_DIR=str(Path(root)/'diagnostics'/game['id']))
     if settings['dll_overrides']:env['WINEDLLOVERRIDES']=settings['dll_overrides']
     # GAMEID/STORE are deliberately unset; catalog IDs are not gamefix IDs.
     return [str(runner),str(exe),*settings['arguments']],str(cwd),env
@@ -191,6 +191,8 @@ class Launcher:
         try:
             try:fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:raise RuntimeError('A game is already active. Stop or finish it before launching another.') from None
+            from .diagnostics import cleanup
+            cleanup(self.root)
             session=str(__import__('uuid').uuid4())
             request={'operation':operation,'session_id':session,'game_id':game['id'],'title':game['title'],'argv':argv,'cwd':cwd,'env':env,'record':str(self.record)}
             atomic_write(self.root/'launch-request.json',json.dumps(request).encode())

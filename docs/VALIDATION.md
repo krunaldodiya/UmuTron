@@ -87,3 +87,6 @@ Final validation: 44 core tests pass, native isolated GUI smoke passes (includin
 ## Per-game compatibility and diagnostics — 0.4.11
 
 47 core tests pass. New cases cover validated per-game DLL overrides, rejection of injected/malformed settings, inherited override isolation, ZIP preference round-trip with diagnostic exclusion, and a harmless failing runner writing its log into the automatically prepared folder. Native GUI smoke passes with collapsed advanced settings, compatibility Save/Cancel/Reset, and existing browse/installer/tray/runner flows. Updated synthetic Manage Game screenshots inspected. Compilation, lint and whitespace checks pass. No real game or installer executed or stopped for this release; physical controller and real-game diagnostic replay remain untested.
+
+## Diagnostic retention — 0.4.12
+51 tests pass, including age expiry, per-file tail trimming, total-size eviction, preservation of non-log files/prefixes, symlink exclusion, and active-operation lock protection for Clear all. Native GUI smoke passes with Clear all confirm/cancel. Diagnostic settings screenshot inspected. Compilation, lint and whitespace checks pass. No real game started/stopped for this update. Live log files are not truncated until the operation completes.

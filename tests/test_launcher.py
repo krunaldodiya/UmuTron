@@ -47,7 +47,7 @@ class LaunchTests(unittest.TestCase):
     def test_diagnostics_defaults_and_compatibility_backup_roundtrip(self):
         self.game['launch']['dll_overrides']='winmm=n,b';self.lib.save(self.game)
         env=build_command(self.game,self.lib.root)[2]
-        self.assertEqual(env['PROTON_LOG'],'-all,+seh,+loaddll')
+        self.assertEqual(env['PROTON_LOG'],'-all,err+all,warn+seh')
         self.assertEqual(env['PROTON_LOG_DIR'],str(self.lib.root/'diagnostics'/self.game['id']))
         diagnostic=self.lib.root/'diagnostics'/self.game['id'];diagnostic.mkdir(parents=True);(diagnostic/'steam-default.log').write_text('private log')
         archive=self.root/'backup.zip';self.lib.export_zip(archive)
