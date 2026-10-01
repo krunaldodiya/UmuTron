@@ -80,3 +80,6 @@ Play confirmation shows only the game title question and Cancel/Play actions, wi
 
 ## Immediate Back focus — 0.4.8
 Library rebuilding keeps other cards out of automatic focus fallback until the selected card receives focus synchronously. Selection/background never pass through the first card on Back. A layout callback adjusts scrolling only and does not move focus. Native checks record every preview during Back and require immediate selected-card focus, with no intermediate first-game preview.
+
+## Gaming profile activation — 0.4.9
+The --fullscreen option opens fullscreen for this activation only, forwarding to the existing app instance when already open. It does not save a new default mode or launch a game. Workstation Modes uses this option on Gaming activation.

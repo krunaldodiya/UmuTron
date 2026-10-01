@@ -14,7 +14,7 @@ with tempfile.TemporaryDirectory() as temp:
         while not (Path(temp)/'data/game-library-launcher/proton-manager').exists() and time.monotonic()<deadline:
             assert first.poll() is None;time.sleep(.05)
         time.sleep(.4)
-        second=subprocess.run(['/usr/bin/python3',str(script)],env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=5)
+        second=subprocess.run(['/usr/bin/python3',str(script),'--fullscreen'],env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=5)
         assert second.returncode==0,second.stdout.decode()
         assert first.poll() is None,'Existing application must stay alive'
         assert not (Path(temp)/'data/game-library-launcher/launch-session.json').exists(),'Activation never launches a game'

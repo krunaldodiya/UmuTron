@@ -198,6 +198,12 @@ with tempfile.TemporaryDirectory() as temp:
     w.show_library();snapshot=library.path.read_bytes();w.set_tv_mode(True);settle()
     assert w.tv_mode and w.has_css_class('tv-mode')
     assert not w.get_decorated() and not w.header.get_visible() and w.tv_controls.get_visible()
+    w.set_tv_mode(False);settle();saved_default=library.data['settings'].get('default_display_mode','desktop')
+    class FullscreenCommand:
+        def get_options_dict(self):
+            options=GLib.VariantDict.new(None);options.insert_value('fullscreen',GLib.Variant('b',True));return options
+    assert app.command_line(app,FullscreenCommand())==0
+    settle();assert w.tv_mode and library.data['settings'].get('default_display_mode','desktop')==saved_default
     assert library.path.read_bytes()==snapshot
     selected=dict(w.tv_selected_game());long_selected=dict(selected);long_selected['description']='Long home description. '*100;w.select_tv_game(long_selected)
     assert len(w.tv_description.get_text())<=300 and w.tv_description.get_text().endswith('...')

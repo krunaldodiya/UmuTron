@@ -1214,8 +1214,16 @@ class Window(Adw.ApplicationWindow):
 class Application(Adw.Application):
     def __init__(self,demo=False):
         self.demo=demo
-        super().__init__(application_id='io.github.game_library_launcher'+('.demo' if demo else ''),flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
+        super().__init__(application_id='io.github.game_library_launcher'+('.demo' if demo else ''),flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
+        self.add_main_option('fullscreen',0,GLib.OptionFlags.NONE,GLib.OptionArg.NONE,'Open in fullscreen for this activation',None)
+        self.connect('command-line',self.command_line)
         self.connect('activate',self.activate_window)
+    def command_line(self,app,command_line):
+        self.activate_window()
+        if command_line.get_options_dict().contains('fullscreen'):
+            window=self.window
+            if not isinstance(window,Window) or not window.set_tv_mode(True):return 1
+        return 0
     def activate_window(self,*_):
         window=getattr(self,'window',None)
         if not window:
