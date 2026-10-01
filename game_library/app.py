@@ -324,7 +324,7 @@ class Window(Adw.ApplicationWindow):
         self.installer_panel.append(button('Choose setup.exe',self.pick_installer))
         self.install_status=label('','heading',wrap=True,xalign=0);self.installer_panel.append(self.install_status)
         self.installer_panel.append(label('Setup runs in a dedicated prefix. Its exit does not prove the game is ready. Choose and confirm the game executable afterwards. Cancellation keeps installed files.','caption',wrap=True,xalign=0))
-        self.install_button=button('Run / retry installer',self.run_installer);self.installer_panel.append(self.install_button)
+        self.install_button=button('Launch Installer',self.run_installer);self.installer_panel.append(self.install_button)
         self.install_cancel=button('Cancel installation',lambda:self.confirm('Cancel installation?','Only this installer’s owned processes will stop. Installed files and prefix are kept; you can retry or select an executable later.','Cancel installation',lambda:self.stop_game(self.game['id']),True));self.installer_panel.append(self.install_cancel)
         self.manage_logs=Gtk.TextView(editable=False,cursor_visible=False,wrap_mode=Gtk.WrapMode.WORD_CHAR);logs=Gtk.ScrolledWindow(min_content_height=130);logs.set_child(self.manage_logs);self.installer_panel.append(logs)
         self.executable_panel=box();self.stage_stack.add_named(self.executable_panel,'game')
