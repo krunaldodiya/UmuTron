@@ -58,3 +58,11 @@ Games and Library are the only top-level fullscreen tabs. Repeated Back/B/Escape
 
 ## Runtime download visibility — 0.4.3
 During UMU preparation/download the app shows a live status panel in desktop and fullscreen: current stage, observed archive bytes in MiB when UMU reports its temporary .parts file, and an indeterminate spinner. UMU does not always supply a total size, so no estimated percentage is invented. The panel hides when running/finished; full operation logs remain available. Carriage-return progress updates are captured by launch supervision. Never stop a user's launch just to test the panel.
+
+
+## Compact game information — 0.4.4
+Home and detail descriptions display at most 300 characters, ending with ... when truncated. Stored/provider metadata remains complete. Game Info is available only on detail and opens a scrollable read-only full-description dialog. Detail Play/Stop sits directly under the cover, at its width. Preparation/download feedback appears below the local compact operation status, not in a global header banner. Focused buttons have a persistent outline for controller/keyboard navigation.
+
+Fullscreen header tabs/gear activate only on A/click; game-card focus changes the preview, while card activation opens detail without launching. Only explicit Play/Stop button activation executes/stops an operation. X focuses that button without executing it.
+
+The desktop header has no Fullscreen utility action; use the tray mode commands. Missing game-file configuration is labeled Setup. Fullscreen setup remains a desktop-only management task.

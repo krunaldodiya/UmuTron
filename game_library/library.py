@@ -11,6 +11,12 @@ import tempfile
 from uuid import UUID, uuid4
 import zipfile
 
+def description_excerpt(text, limit=300):
+    """Bound display text without changing stored metadata."""
+    compact=' '.join((text or '').split())
+    return compact if len(compact)<=limit else compact[:limit-3].rstrip()+'...'
+
+
 ART_KINDS = ('portrait', 'landscape', 'hero', 'logo', 'icon')
 TEXT_FIELDS = ('title','executable','working_dir','arguments','description','release_date','developers','publishers','genres')
 MAX_IMAGE = 20 * 1024 * 1024

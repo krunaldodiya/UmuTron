@@ -57,3 +57,9 @@ Native checks cover repeated Back remaining fullscreen, removal of Home and desk
 
 ## 0.4.3 verification
 43 core tests pass, including observed download bytes and missing-file/unknown-total behavior. Native regression coverage exercises increasing archive bytes, the visible preparation panel and hiding it when Running. Synthetic fixtures only; no real game was launched during validation.
+
+
+## 0.4.4 verification
+Regression coverage includes bounded descriptions, complete source preservation, full-description Game Info, focused-button CSS, cover/Play layout and local download status placement. Native screenshots use synthetic fixtures; real games are not launched.
+
+Final 0.4.4 validation: 44 core tests and the native GUI smoke pass. Header focus is separate from activation; game-card activation and X do not launch. Play/Stop and cover bounds match; full-description dialog and shortened views preserve source text. Physical controller/TV acceptance remains a user check.

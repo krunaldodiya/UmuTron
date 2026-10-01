@@ -140,3 +140,15 @@ class LibraryTests(unittest.TestCase):
         archive=self.root/'defaults.zip';current.export_zip(archive)
         restored=Library(self.root/'restored-defaults');restored.import_zip(archive)
         self.assertEqual(restored.data['settings']['default_proton'],'UMU-Latest')
+
+
+class DescriptionExcerptTests(unittest.TestCase):
+    def test_bounded_display_preserves_short_and_long_sources(self):
+        from game_library.library import description_excerpt
+        self.assertEqual(description_excerpt('Short description.'),'Short description.')
+        original='Long description. '*200
+        excerpt=description_excerpt(original)
+        self.assertLessEqual(len(excerpt),300)
+        self.assertTrue(excerpt.endswith('...'))
+        self.assertEqual(original,'Long description. '*200)
+        self.assertEqual(description_excerpt('a\n b'),'a b')

@@ -86,7 +86,8 @@ class LaunchTests(unittest.TestCase):
         self.assertIsInstance(found['protons'],list)
         launcher=Launcher(self.lib.root)
         self.runner.write_text('#!/usr/bin/python3\nfor _ in range(1000): print("x"*5000)\n')
-        launcher.start(self.game);deadline=time.monotonic()+15
+        # Large pipe output can drain slowly on a busy desktop; this verifies bounded logs, not speed.
+        launcher.start(self.game);self.addCleanup(lambda:launcher.stop(self.game['id']) if launcher.active() else None);deadline=time.monotonic()+30
         while launcher.active() and time.monotonic()<deadline:time.sleep(.02)
         self.assertFalse(launcher.active())
         logs=launcher.snapshot(self.game['id'])['logs']

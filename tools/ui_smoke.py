@@ -41,7 +41,7 @@ with tempfile.TemporaryDirectory() as temp:
     os.environ['XDG_CACHE_HOME']=temp
     library=prepare_demo(seed=True)
     app=Application(demo=True);app.set_flags(Gio.ApplicationFlags.NON_UNIQUE);app.register(None)
-    w=Window(app,library,demo=True);app.window=w;w.present();settle(1000)
+    w=Window(app,library,demo=True);app.window=w;w.controller.close();w.present();settle(1000)
     def screenshot(name,target=None):
         target=target or w;target.set_visible(False);target.present();settle(800)
         captured=[]
@@ -61,6 +61,7 @@ with tempfile.TemporaryDirectory() as temp:
     assert next(b for b in buttons(w) if b.get_tooltip_text()=='Edit Metadata')
     assert next(b for b in buttons(w) if b.get_tooltip_text()=='Manage Game')
     assert any(b.get_label()=='Play' for b in buttons(w))
+    assert not w.tv_mode and w.editor is None,(w.tv_mode,w.editor_kind)
     w.open_metadata();w.fields['title'].set_text('Cancel this title');w.cancel_editor()
     assert library.path.read_bytes()==before
     assert {p.name:p.read_bytes() for p in library.art_dir.iterdir()}==art
@@ -100,8 +101,8 @@ with tempfile.TemporaryDirectory() as temp:
     assert saved['executable']=='' and saved['launch']=={} and saved['installation']=={}
     assert set(saved['artwork'])=={'portrait','hero','logo'} and w.editor is None
     assert not any(isinstance(i,Gtk.Entry) for i in widgets(w.body))
-    assert w.play_buttons[saved['id']].get_label()=='Set up to play'
-    w.demo=False;click(w,'Set up to play');assert w.editor.get_title()=='Manage Game';w.cancel_editor();w.demo=True
+    assert w.play_buttons[saved['id']].get_label()=='Setup'
+    w.demo=False;click(w,'Setup');assert w.editor.get_title()=='Manage Game';w.cancel_editor();w.demo=True
     # Manual fallback remains optional, and cancellation creates no entry.
     count=len(library.games());w.add_game();settle()
     add=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Find game metadata')
@@ -145,11 +146,12 @@ with tempfile.TemporaryDirectory() as temp:
         def active(self):return bool(self.record)
         def current(self):return self.record
         def snapshot(self,game_id):return {'state':'Running' if self.record.get('game_id')==game_id else 'Not started','logs':['fixture'],'code':None}
-    fake=FakeLaunch();real=w.launcher;w.launcher=fake
+    fake=FakeLaunch();real=w.launcher;w.launcher=fake;w.show_game(game)
     partial=Path(temp)/'runtime.tar.gz.parts';partial.write_bytes(b'x'*1048576)
     fake.record={'game_id':game['id'],'title':game['title'],'state':'Downloading runtime','logs':['Downloading runtime.tar.gz...',f'Writing: {partial}']}
     w.refresh_launch_state();assert w.runtime_progress.get_visible() and '1.0 MiB downloaded' in w.runtime_label.get_text()
     partial.write_bytes(b'x'*2097152);w.refresh_launch_state();assert '2.0 MiB downloaded' in w.runtime_label.get_text()
+    assert w.runtime_progress.get_parent() is w.launch_status.get_parent()
     screenshot('runtime-download-dark.png')
     fake.record={'game_id':game['id'],'title':game['title'],'state':'Running','operation':'installer','supervisor_pid':123}
     w.show_library();w.refresh_launch_state();assert not w.runtime_progress.get_visible();assert w.play_buttons[game['id']].get_label()=='Stop installer'
@@ -189,9 +191,15 @@ with tempfile.TemporaryDirectory() as temp:
     assert w.tv_mode and w.has_css_class('tv-mode')
     assert not w.get_decorated() and not w.header.get_visible() and w.tv_controls.get_visible()
     assert library.path.read_bytes()==snapshot
+    selected=dict(w.tv_selected_game());long_selected=dict(selected);long_selected['description']='Long home description. '*100;w.select_tv_game(long_selected)
+    assert len(w.tv_description.get_text())<=300 and w.tv_description.get_text().endswith('...')
+    assert not any(b.get_label()=='Game Info' for b in buttons(w.body));w.select_tv_game(selected)
     screenshot('fullscreen-library-dark.png')
-    assert all(not control.get_visible() for control in (w.theme,w.settings_button,w.log_button,w.exit_button))
+    assert all(not control.get_visible() for control in (w.theme,w.settings_button,w.log_button,w.exit_button,w.mode_button))
     assert not hasattr(w,'tv_home') and w.tv_clock.get_text()
+    for control in (w.tv_games_tab,w.tv_library_tab,w.tv_menu):
+        control.grab_focus();settle(350);assert w.focused_control(w) is control and control.has_css_class('control-focused') and w.tv_section=='games'
+    screenshot('fullscreen-header-focus-dark.png')
     assert not w.tv_clock.get_focusable()
     # Installed grid excludes metadata-only and unconfirmed installer entries.
     w.set_tv_section('library');settle()
@@ -241,9 +249,18 @@ with tempfile.TemporaryDirectory() as temp:
     w.focus_tv_card();settle()
     initial=w.tv_selected_id
     navigate('right');settle();assert w.tv_selected_id!=initial
-    navigate('select');pump_until(lambda:w.game is not None);settle()
+    navigate('select');pump_until(lambda:w.game is not None);settle();assert not w.launcher.active()
     screenshot('fullscreen-details-dark.png')
     assert not w.settings_button.get_visible() and not w.log_button.get_visible() and not w.exit_button.get_visible()
+    w.demo=False
+    long_game=dict(next(candidate for candidate in library.games() if candidate.get('executable') and (candidate.get('installation',{}).get('mode')!='installer' or candidate['installation'].get('confirmed'))));long_game['description']='Long description sentence. '*100
+    w.show_game(long_game);settle();assert not any(isinstance(widget,Gtk.Label) and widget.get_text()==long_game['description'] for widget in widgets(w.body))
+    w.show_game_info(long_game);settle();info=next(window for window in Gtk.Window.get_toplevels() if window.get_title()=='Game Info' and window.get_visible())
+    assert any(isinstance(widget,Gtk.Label) and widget.get_text()==long_game['description'] for widget in widgets(info));info.close();settle();screenshot('fullscreen-details-dark.png')
+    play=w.play_buttons[w.game['id']];assert play.get_parent() is w.cover.get_parent();assert abs(play.compute_bounds(play.get_parent())[1].get_width()-w.cover.compute_bounds(w.cover.get_parent())[1].get_width())<=1,(play.get_allocation().width,w.cover.get_allocation().width)
+    navigate('play');settle();assert not w.launcher.active()
+    assert play.get_sensitive()
+    play.grab_focus();settle(350);assert w.focused_control(w) is play and play.has_css_class('control-focused');w.demo=True
     # Text never enters the fullscreen keyboard/controller focus path.
     assert all(not widget.get_selectable() and not widget.get_focusable() for widget in widgets(w.body) if isinstance(widget,Gtk.Label))
     for _ in range(12):
