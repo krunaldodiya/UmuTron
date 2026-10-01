@@ -153,7 +153,8 @@ class Window(Adw.ApplicationWindow):
 
     def set_tv_section(self,section):
         if not self.tv_mode:return
-        self.tv_section=section;self.show_library()
+        self.section_tab_focus=self.tv_games_tab if section=='games' else self.tv_library_tab
+        self.tv_section=section;self.show_library();self.section_tab_focus=None
 
     def tv_tile(self,game,grid=False):
         tile=button(game['title'],lambda g=game:self.show_game(g));tile.add_css_class('tv-card');tile.set_valign(Gtk.Align.START);tile.set_tooltip_text('Open '+game['title'])
@@ -210,7 +211,7 @@ class Window(Adw.ApplicationWindow):
         self.tv_hints=label('D-pad / stick: Move   A / Enter: Select   B / Esc: Back   X: Focus Play / Stop   Start / F11: Options','tv-hints',wrap=True,xalign=0);margins(self.tv_hints,16);tv_content.append(self.tv_hints)
         game=next((g for g in self.tv_games if g['id']==self.tv_selected_id),self.tv_games[0]);self.select_tv_game(game)
         self.restrict_tv_focus(self.body)
-        GLib.idle_add(lambda:(self.focus_tv_card(),False)[-1])
+        GLib.idle_add(lambda tab=getattr(self,'section_tab_focus',None):(tab.grab_focus() if tab else self.focus_tv_card(),False)[-1])
 
     def show_tv_grid(self):
         title=label('Installed games · '+str(len(self.tv_games)),'tv-title',xalign=0);margins(title,24);self.body.append(title)
@@ -224,7 +225,7 @@ class Window(Adw.ApplicationWindow):
         self.tv_hints=label('D-pad / stick: Move   A / Enter: Game details   B / Esc: Games   X: Focus Play / Stop','tv-hints',wrap=True,xalign=0);margins(self.tv_hints,16);self.body.append(self.tv_hints)
         if self.tv_games:
             game=next((g for g in self.tv_games if g['id']==self.tv_selected_id),self.tv_games[0]);self.select_tv_game(game)
-            GLib.idle_add(lambda:(self.focus_tv_card(),False)[-1])
+            GLib.idle_add(lambda tab=getattr(self,'section_tab_focus',None):(tab.grab_focus() if tab else self.focus_tv_card(),False)[-1])
         self.restrict_tv_focus(self.body)
 
     def restrict_tv_focus(self,widget):
@@ -291,6 +292,10 @@ class Window(Adw.ApplicationWindow):
         for gid,tile in self.tv_tiles:
             if gid==game['id']:tile.add_css_class('selected-game')
             else:tile.remove_css_class('selected-game')
+        name=game['artwork'].get('hero') or game['artwork'].get('landscape')
+        path=self.library.art_dir/name if name else None
+        self.backdrop.set_filename(str(path)) if path and path.is_file() else self.backdrop.set_paintable(None)
+        self.backdrop.set_opacity(.22 if self.tv_section=='library' else .4)
         if self.tv_section=='library':return
         self.tv_selected_title.set_text(game['title']);self.tv_title.set_text(game['title']);self.tv_description.set_text(description_excerpt(game['description']))
         self.tv_related.set_text(' · '.join(filter(None,(game.get('release_date'),game.get('genres')))))
@@ -350,6 +355,12 @@ class Window(Adw.ApplicationWindow):
             return
         if action in ('left','right','up','down','next','previous'):
             focus=self.focused_control(target)
+            header=[self.tv_games_tab,self.tv_library_tab,self.tv_menu]
+            if target is self and focus in header:
+                if action in ('left','right'):
+                    index=header.index(focus);index=max(0,min(len(header)-1,index+(1 if action=='right' else -1)));header[index].grab_focus();self.update_focus_outline();return
+                if action=='down' and self.game is None and self.tv_tiles:self.focus_tv_card();self.update_focus_outline();return
+                if action=='up':return
             if target is self and self.game is None and self.tv_section=='games' and self.tv_tiles and focus in [tile for _,tile in self.tv_tiles] and action in ('left','right'):
                 index=next(i for i,g in enumerate(self.tv_games) if g['id']==self.tv_selected_id)
                 index=(index+(1 if action=='right' else -1))%len(self.tv_games)

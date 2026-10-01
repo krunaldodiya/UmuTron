@@ -63,3 +63,7 @@ Native checks cover repeated Back remaining fullscreen, removal of Home and desk
 Regression coverage includes bounded descriptions, complete source preservation, full-description Game Info, focused-button CSS, cover/Play layout and local download status placement. Native screenshots use synthetic fixtures; real games are not launched.
 
 Final 0.4.4 validation: 44 core tests and the native GUI smoke pass. Header focus is separate from activation; game-card activation and X do not launch. Play/Stop and cover bounds match; full-description dialog and shortened views preserve source text. Physical controller/TV acceptance remains a user check.
+
+
+## 0.4.5 verification
+44 core tests pass. Final native smoke verifies Games → Library → Settings direction navigation, section activation retaining header focus, Down entering the cards, and the Library hero changing without extra metadata panels. Native synthetic screenshots were inspected; compilation, lint and whitespace checks pass. No real game was launched.

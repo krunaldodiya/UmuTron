@@ -66,3 +66,7 @@ Home and detail descriptions display at most 300 characters, ending with ... whe
 Fullscreen header tabs/gear activate only on A/click; game-card focus changes the preview, while card activation opens detail without launching. Only explicit Play/Stop button activation executes/stops an operation. X focuses that button without executing it.
 
 The desktop header has no Fullscreen utility action; use the tray mode commands. Missing game-file configuration is labeled Setup. Fullscreen setup remains a desktop-only management task.
+
+
+## Header navigation and Library background — 0.4.5
+Left/right on the fullscreen header stays within Games, Library and Settings. Activating a section keeps focus on its tab; Down moves into the game cards. Library remains a grid-only view: focused-card changes update just the subdued hero background, without adding metadata panels. Game icons never launch an operation.

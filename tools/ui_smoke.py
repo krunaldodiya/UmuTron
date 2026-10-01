@@ -215,7 +215,12 @@ with tempfile.TemporaryDirectory() as temp:
     navigate('back');settle();assert w.tv_section=='games'
     for _ in range(5):navigate('back');settle();assert w.tv_mode
     w.tv_games_tab.grab_focus();navigate('right');settle();assert w.focused_control(w) is w.tv_library_tab
-    navigate('select');pump_until(lambda:w.tv_section=='library');settle()
+    navigate('right');settle();assert w.focused_control(w) is w.tv_menu
+    navigate('left');settle();assert w.focused_control(w) is w.tv_library_tab
+    navigate('select');pump_until(lambda:w.tv_section=='library');settle();assert w.focused_control(w) is w.tv_library_tab
+    navigate('down');settle();assert w.focused_control(w) in [tile for _,tile in w.tv_tiles]
+    library_game=next(g for g in w.tv_games if g['artwork'].get('hero'));w.select_tv_game(library_game)
+    assert w.backdrop.get_file().get_path()==str(library.art_dir/library_game['artwork']['hero']) and w.backdrop.get_opacity()>0
     w.set_tv_section('games');settle()
     rail_y=w.tv_scroll.get_allocation().y
     for selected in w.tv_games:
