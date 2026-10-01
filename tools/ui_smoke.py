@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import time
+from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault('GSK_RENDERER','cairo')
 from game_library.app import Application,Window
@@ -147,6 +148,13 @@ with tempfile.TemporaryDirectory() as temp:
         def current(self):return self.record
         def snapshot(self,game_id):return {'state':'Running' if self.record.get('game_id')==game_id else 'Not started','logs':['fixture'],'code':None}
     fake=FakeLaunch();real=w.launcher;w.launcher=fake;w.show_game(game)
+    w.demo=False
+    with patch('game_library.app.build_command',return_value=[]):w.play_game(game)
+    settle()
+    confirmation=next(d for d in Gtk.Window.get_toplevels() if isinstance(d,Adw.MessageDialog) and d.get_heading()=='Play '+game['title']+'?')
+    assert confirmation.get_body()=='' and confirmation.get_response_label('confirm')=='Play' and confirmation.get_response_label('cancel')=='Cancel'
+    screenshot('play-confirmation-dark.png',confirmation)
+    confirmation.emit('response','cancel');settle();assert not fake.active();w.demo=True
     partial=Path(temp)/'runtime.tar.gz.parts';partial.write_bytes(b'x'*1048576)
     fake.record={'game_id':game['id'],'title':game['title'],'state':'Downloading runtime','logs':['Downloading runtime.tar.gz...',f'Writing: {partial}']}
     w.refresh_launch_state();assert w.runtime_progress.get_visible() and '1.0 MiB downloaded' in w.runtime_label.get_text()

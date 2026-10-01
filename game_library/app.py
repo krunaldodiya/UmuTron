@@ -1122,7 +1122,7 @@ class Window(Adw.ApplicationWindow):
             def launch():
                 try:self.launcher.start(game);self.refresh_launch_state()
                 except Exception as error:self.error(error)
-            self.confirm('Play '+game['title']+'?', 'UMU will run the selected executable and may download Proton/runtime assets.\n\nExecutable: '+game['executable']+'\nProton: '+settings['proton']+'\nPrefix: '+settings['prefix'], 'Play',launch)
+            self.confirm('Play '+game['title']+'?', '', 'Play',launch)
         except Exception as error:self.error(error)
 
     def stop_game(self,game_id):

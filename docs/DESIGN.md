@@ -74,3 +74,6 @@ Left/right on the fullscreen header stays within Games, Library and Settings. Ac
 ## Detail navigation — 0.4.6
 
 Back restores the selected card in Games and Library rather than resetting to the first item. Desktop Back also retains the library filter and scroll position. The redundant detail launch-status label is removed; Play/Stop and live preparation progress remain. Native regression checks cover returning to a non-first card in both fullscreen sections and a filtered desktop library.
+
+## Play confirmation — 0.4.7
+Play confirmation shows only the game title question and Cancel/Play actions, without executable, prefix or runtime details. Stop and Exit safety warnings remain unchanged.
