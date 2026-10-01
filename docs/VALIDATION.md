@@ -49,3 +49,7 @@ Fullscreen layout checks include 1920×1080, 1280×720 and 1024×600 allocations
 
 ## Console navigation refinement — 0.4.1
 42 core tests pass. Extended native smoke exercises Games/Library/Home, installed-only filtering, missing/portrait artwork and one/two-line titles, equal card heights/top alignment, header tab activation through controller input, control-only focus cycling, stable row positioning, 1080p/720p/1024×600 allocations and small-display grids. Native screenshots use only fictional temporary data. Compilation and lint pass; game execution code is unchanged. Physical TV/controller gameplay remains a user acceptance check.
+
+
+## 0.4.2 verification
+Native checks cover repeated Back remaining fullscreen, removal of Home and desktop header utility actions, the two fullscreen exit options, and existing responsive grid/navigation flows. Tray checks exercise Activity, Settings and Appearance callbacks alongside mode switching and Exit. Core regression tests, lint and compilation are required before installation. Real games and installers are not run.

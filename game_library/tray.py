@@ -32,8 +32,8 @@ def close_action(tray_available):return 'hide' if tray_available else 'minimize'
 
 
 class Tray:
-    def __init__(self,show,exit_app,changed,fullscreen=None,desktop=None):
-        self.fullscreen=fullscreen;self.desktop=desktop
+    def __init__(self,show,exit_app,changed,fullscreen=None,desktop=None,activity=None,settings=None,appearance=None):
+        self.fullscreen=fullscreen;self.desktop=desktop;self.activity=activity;self.settings=settings;self.appearance=appearance
         self.show=show;self.exit_app=exit_app;self.changed=changed;self.available=False;self.connection=None;self.registrations=[];self.owner=None;self.signals=[]
         try:
             self.connection=Gio.bus_get_sync(Gio.BusType.SESSION,None)
@@ -67,7 +67,7 @@ class Tray:
     @staticmethod
     def properties(item):
         if item==0:return {'children-display':GLib.Variant('s','submenu')}
-        return {'label':GLib.Variant('s',{1:'Show Launcher',2:'Exit',3:'Switch to Fullscreen',4:'Switch to Desktop'}.get(item,'')),'enabled':GLib.Variant('b',True),'visible':GLib.Variant('b',True)}
+        return {'label':GLib.Variant('s',{1:'Show Launcher',2:'Exit',3:'Switch to Fullscreen',4:'Switch to Desktop',5:'Activity',6:'Settings',7:'Appearance'}.get(item,'')),'enabled':GLib.Variant('b',True),'visible':GLib.Variant('b',True)}
 
     def property(self,connection,sender,path,interface,name):
         if interface=='com.canonical.dbusmenu':
@@ -84,6 +84,9 @@ class Tray:
             elif item==2:self.exit_app()
             elif item==3 and self.fullscreen:self.fullscreen()
             elif item==4 and self.desktop:self.desktop()
+            elif item==5 and self.activity:self.activity()
+            elif item==6 and self.settings:self.settings()
+            elif item==7 and self.appearance:self.appearance()
 
     def method(self,connection,sender,path,interface,method,parameters,invocation):
         args=parameters.unpack()
@@ -92,9 +95,9 @@ class Tray:
             invocation.return_value(None);return
         if method=='GetLayout':
             item,depth,_=args
-            children=[GLib.Variant('(ia{sv}av)',(i,self.properties(i),[])) for i in (1,3,4,2)] if item==0 and depth!=0 else []
+            children=[GLib.Variant('(ia{sv}av)',(i,self.properties(i),[])) for i in (1,3,4,5,6,7,2)] if item==0 and depth!=0 else []
             result=GLib.Variant('(u(ia{sv}av))',(1,(item,self.properties(item),children)))
-        elif method=='GetGroupProperties':result=GLib.Variant('(a(ia{sv}))',([(i,self.properties(i)) for i in args[0] if i in (0,1,2,3,4)],))
+        elif method=='GetGroupProperties':result=GLib.Variant('(a(ia{sv}))',([(i,self.properties(i)) for i in args[0] if i in (0,1,2,3,4,5,6,7)],))
         elif method=='GetProperty':result=GLib.Variant('(v)',(self.properties(args[0]).get(args[1],GLib.Variant('s','')),))
         elif method=='Event':self.event(args[0],args[1]);result=None
         elif method=='EventGroup':

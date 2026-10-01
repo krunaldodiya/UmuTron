@@ -53,7 +53,7 @@ class Window(Adw.ApplicationWindow):
     def __init__(self, app, library, demo=False):
         super().__init__(application=app,title='Game Library Launcher',default_width=1120,default_height=800)
         css=Gtk.CssProvider()
-        css.load_from_data(b'.tv-mode { background: #111723; color: #f5f7fb; font-size: 20px; } .tv-mode button { min-height: 42px; padding: 10px 18px; border-radius: 12px; } .tv-mode .tv-card { padding: 5px; background: alpha(#202938, .8); border-radius: 10px; } .tv-mode .tv-card .art-frame { padding: 0; background: transparent; } .tv-mode .tv-tab-active { color: #fff; font-weight: 800; border-bottom: 2px solid #fff; border-radius: 0; } .tv-mode .tv-clock { font-size: 20px; } .tv-mode .tv-controls button { min-height: 30px; padding: 6px 12px; } .tv-mode button:focus-visible, .tv-mode .selected-game { outline: 3px solid #82bcff; outline-offset: 2px; } .tv-mode .tv-title { font-size: 42px; font-weight: 800; } .tv-mode .tv-hints { font-size: 16px; color: #c4d0e5; } .art-frame { background: alpha(@window_fg_color, 0.055); border-radius: 12px; padding: 8px; } .game-card { padding: 10px; } .game-card:hover { background: alpha(@accent_color, 0.09); }')
+        css.load_from_data(b'.tv-mode { background: #111723; color: #f5f7fb; font-size: 16px; } .tv-mode button { min-height: 42px; padding: 10px 18px; border-radius: 12px; } .tv-mode .tv-card { padding: 5px; background: alpha(#202938, .8); border-radius: 10px; } .tv-mode .tv-card .art-frame { padding: 0; background: transparent; } .tv-mode .tv-tab-active { color: #fff; font-weight: 800; border-bottom: 2px solid #fff; border-radius: 0; } .tv-mode .tv-clock { font-size: 20px; } .tv-mode .tv-controls button { min-height: 30px; padding: 6px 12px; } .tv-mode button:focus-visible, .tv-mode .selected-game { outline: 3px solid #82bcff; outline-offset: 2px; } .tv-mode .tv-title { font-size: 38px; font-weight: 700; } .tv-mode .tv-description { font-size: 16px; font-weight: 400; line-height: 1.4; } .tv-mode .tv-hints { font-size: 13px; color: #c4d0e5; } .art-frame { background: alpha(@window_fg_color, 0.055); border-radius: 12px; padding: 8px; } .game-card { padding: 10px; } .game-card:hover { background: alpha(@accent_color, 0.09); }')
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(),css,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self.demo=demo;self.tv_mode=False;self.tv_selected_id=None;self.tv_tiles=[];self.tv_section='games'
         self.library=library; self.launcher=Launcher(library.root); self.proton_manager=ProtonManager(library.root/'proton-manager'); self.launch_fields={}; self.play_buttons={}; self.installations=Installations(library,self.launcher);self.editor=None;self.editor_kind=None;self.exiting=False
@@ -74,13 +74,12 @@ class Window(Adw.ApplicationWindow):
         self.theme.set_tooltip_text('Appearance')
         self.theme.set_selected(['system','light','dark'].index(self.library.data['settings'].get('theme','system')))
         self.theme.connect('notify::selected',self.theme_changed)
-        self.header.pack_end(self.theme)
-        self.exit_button=button('Exit Launcher',self.explicit_exit,icon='application-exit-symbolic');self.header.pack_end(self.exit_button)
-        self.settings_button=button('Settings',self.open_settings,icon='preferences-system-symbolic');self.header.pack_end(self.settings_button)
+        self.theme.set_visible(False)
+        self.exit_button=button('Exit Launcher',self.explicit_exit,icon='application-exit-symbolic');self.exit_button.set_visible(False)
+        self.settings_button=button('Settings',self.open_settings,icon='preferences-system-symbolic');self.settings_button.set_visible(False)
         self.mode_button=button('Fullscreen',lambda:self.set_tv_mode(not self.tv_mode));self.mode_button.set_tooltip_text('Switch desktop / fullscreen mode (F11)');self.header.pack_start(self.mode_button)
         self.layout.append(self.header)
         self.tv_controls=box(False,16);self.tv_controls.add_css_class('tv-controls');margins(self.tv_controls,20);self.tv_controls.set_visible(False)
-        self.tv_home=button('Home',lambda:self.set_tv_section('games'),icon='go-home-symbolic');self.tv_home.add_css_class('flat');self.tv_controls.append(self.tv_home)
         self.tv_games_tab=button('Games',lambda:self.set_tv_section('games'));self.tv_games_tab.add_css_class('flat');self.tv_controls.append(self.tv_games_tab)
         self.tv_library_tab=button('Library',lambda:self.set_tv_section('library'));self.tv_library_tab.add_css_class('flat');self.tv_controls.append(self.tv_library_tab)
         spacer=Gtk.Box(hexpand=True);self.tv_controls.append(spacer)
@@ -89,7 +88,10 @@ class Window(Adw.ApplicationWindow):
         popover=Gtk.Popover();options=box();margins(options,8)
         def exit_fullscreen():
             popover.popdown();self.set_tv_mode(False)
-        options.append(button('Exit fullscreen',exit_fullscreen));popover.set_child(options);self.tv_menu.set_popover(popover);self.tv_menu.add_css_class('flat');self.tv_controls.append(self.tv_menu)
+        options.append(button('Exit fullscreen',exit_fullscreen))
+        def exit_launcher():
+            popover.popdown();self.explicit_exit()
+        options.append(button('Exit',exit_launcher));popover.set_child(options);self.tv_menu.set_popover(popover);self.tv_menu.add_css_class('flat');self.tv_controls.append(self.tv_menu)
         self.tv_clock=label('','tv-clock');self.tv_controls.append(self.tv_clock);self.update_tv_clock();GLib.timeout_add_seconds(30,self.update_tv_clock)
         self.layout.append(self.tv_controls)
         if demo:
@@ -100,7 +102,7 @@ class Window(Adw.ApplicationWindow):
         self.progress_label=label(''); self.progress.append(self.progress_label)
         self.progress.set_visible(False); self.layout.append(self.progress)
         self.body=box(spacing=0); self.body.set_vexpand(True); self.layout.append(self.body)
-        self.log_button=button('Activity',self.toggle_log,icon='view-list-symbolic'); self.header.pack_end(self.log_button)
+        self.log_button=button('Activity',self.toggle_log,icon='view-list-symbolic'); self.log_button.set_visible(False)
         self.log_revealer=Gtk.Revealer(); self.log_text=Gtk.TextView(editable=False,cursor_visible=False,wrap_mode=Gtk.WrapMode.WORD_CHAR)
         self.log_text.set_top_margin(10); self.log_text.set_left_margin(16)
         log_scroll=Gtk.ScrolledWindow(min_content_height=110,max_content_height=160,propagate_natural_height=True)
@@ -129,9 +131,9 @@ class Window(Adw.ApplicationWindow):
         self.backdrop.set_opacity(.4 if enabled and self.tv_section=='games' else 0)
         self.set_decorated(not enabled);self.header.set_visible(not enabled);self.tv_controls.set_visible(enabled)
         self.mode_button.set_label('Desktop mode' if enabled else 'Fullscreen')
-        self.theme.set_visible(not enabled);self.settings_button.set_visible(not enabled);self.log_button.set_visible(not enabled)
+        self.theme.set_visible(False);self.settings_button.set_visible(False);self.log_button.set_visible(False)
         self.log_revealer.set_reveal_child(False)
-        self.exit_button.set_visible(not enabled);self.header.set_show_end_title_buttons(not enabled);self.header.set_show_start_title_buttons(not enabled)
+        self.exit_button.set_visible(False);self.header.set_show_end_title_buttons(not enabled);self.header.set_show_start_title_buttons(not enabled)
         if enabled:
             self.add_css_class('tv-mode');self.fullscreen()
             Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)
@@ -188,21 +190,21 @@ class Window(Adw.ApplicationWindow):
         # Compact, fixed-height game row above the selected game's hero.
         self.tv_rail=box(False,16);margins(self.tv_rail,24)
         self.tv_scroll=Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.AUTOMATIC,vscrollbar_policy=Gtk.PolicyType.NEVER);self.tv_scroll.set_child(self.tv_rail);tv_content.append(self.tv_scroll)
-        self.tv_selected_title=label('','heading',xalign=0,ellipsize=Pango.EllipsizeMode.END);self.tv_selected_title.set_margin_start(36);self.tv_selected_title.set_margin_end(36);self.tv_selected_title.set_size_request(-1,32);tv_content.append(self.tv_selected_title)
+        self.tv_selected_title=label('','heading',xalign=0,ellipsize=Pango.EllipsizeMode.END);self.tv_selected_title.set_margin_start(36);self.tv_selected_title.set_margin_end(36);self.tv_selected_title.set_size_request(-1,32);self.tv_selected_title.set_visible(False);tv_content.append(self.tv_selected_title)
         for game in self.tv_games:
             tile=self.tv_tile(game);self.tv_rail.append(tile);self.tv_tiles.append((game['id'],tile))
         self.tv_hero=Gtk.Picture(content_fit=Gtk.ContentFit.COVER,can_shrink=True,opacity=0)
         hero=Gtk.Overlay();hero.set_child(self.tv_hero);hero.set_vexpand(True);hero.set_size_request(-1,360);tv_content.append(hero)
-        summary=box(spacing=12);margins(summary,24);summary.set_valign(Gtk.Align.END);hero.add_overlay(summary)
+        summary=box(spacing=10);margins(summary,24);summary.set_valign(Gtk.Align.END);hero.add_overlay(summary)
         self.tv_logo=Gtk.Picture(content_fit=Gtk.ContentFit.CONTAIN,can_shrink=True);self.tv_logo.set_halign(Gtk.Align.START);self.tv_logo.set_size_request(280,90)
-        brand=Gtk.Overlay();brand.set_child(self.tv_logo);brand.set_size_request(-1,104);summary.append(brand)
+        brand=Gtk.Overlay();brand.set_child(self.tv_logo);brand.set_size_request(-1,104);self.tv_logo.set_visible(False);summary.append(brand)
         self.tv_title=label('','tv-title',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END);self.tv_title.set_size_request(-1,104);brand.add_overlay(self.tv_title)
         self.tv_related=label('','tv-hints',xalign=0,ellipsize=Pango.EllipsizeMode.END);self.tv_related.set_size_request(-1,24);summary.append(self.tv_related)
-        self.tv_description=label('','body',xalign=0,wrap=True,lines=3,ellipsize=Pango.EllipsizeMode.END,max_width_chars=90);self.tv_description.set_size_request(-1,72);summary.append(self.tv_description)
+        self.tv_description=label('','tv-description',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END,max_width_chars=70);self.tv_description.set_size_request(-1,48);summary.append(self.tv_description)
         actions=box(False);summary.append(actions)
         self.tv_play=button('Play',lambda:self.play_game(self.tv_selected_game()),'suggested-action');self.tv_play.add_css_class('pill');actions.append(self.tv_play)
         self.tv_details=button('Game details',lambda:self.show_game(self.tv_selected_game()));actions.append(self.tv_details)
-        self.tv_hints=label('D-pad / stick: Move   A / Enter: Select   B / Esc: Back   X: Play / Stop   Start / F11: Desktop','tv-hints',wrap=True,xalign=0);margins(self.tv_hints,16);tv_content.append(self.tv_hints)
+        self.tv_hints=label('D-pad / stick: Move   A / Enter: Select   B / Esc: Back   X: Play / Stop   Start / F11: Options','tv-hints',wrap=True,xalign=0);margins(self.tv_hints,16);tv_content.append(self.tv_hints)
         game=next((g for g in self.tv_games if g['id']==self.tv_selected_id),self.tv_games[0]);self.select_tv_game(game)
         self.restrict_tv_focus(self.body)
         GLib.idle_add(lambda:(self.focus_tv_card(),False)[-1])
@@ -288,7 +290,7 @@ class Window(Adw.ApplicationWindow):
             if kind=='hero':
                 self.backdrop.set_filename(str(path)) if path and path.is_file() else self.backdrop.set_paintable(None)
             if kind=='logo':
-                picture.set_visible(True);self.tv_title.set_opacity(0 if path and path.is_file() else 1)
+                picture.set_visible(False);self.tv_title.set_opacity(1)
         self.play_buttons={game['id']:self.tv_play};self.refresh_launch_state()
 
     def navigation_window(self):
@@ -307,7 +309,7 @@ class Window(Adw.ApplicationWindow):
         popover=self.tv_menu.get_popover()
         if target is self and popover.get_visible():
             if action=='back':popover.popdown()
-            elif action=='desktop':popover.popdown();self.set_tv_mode(False)
+            elif action=='desktop':return
             elif action=='select':
                 focus=self.get_focus()
                 while focus and not isinstance(focus,Gtk.Button):focus=focus.get_parent()
@@ -315,7 +317,7 @@ class Window(Adw.ApplicationWindow):
             elif action in ('left','right','up','down','next','previous'):popover.child_focus(Gtk.DirectionType.TAB_FORWARD if action in ('right','down','next') else Gtk.DirectionType.TAB_BACKWARD)
             return
         if action=='desktop':
-            if target is self:self.set_tv_mode(False)
+            if target is self:self.tv_menu.grab_focus();self.tv_menu.popup()
             return
         if action=='back':
             if target is not self:
@@ -323,7 +325,7 @@ class Window(Adw.ApplicationWindow):
                 else:target.close()
             elif self.game:self.show_library()
             elif self.tv_section=='library':self.set_tv_section('games')
-            else:self.set_tv_mode(False)
+            else:self.tv_games_tab.grab_focus()
             return
         if action=='play':
             if target is self:
@@ -348,7 +350,10 @@ class Window(Adw.ApplicationWindow):
             else:self.move_control_focus(target,'next')
 
     def on_key(self,controller,keyval,keycode,state):
-        if keyval==Gdk.KEY_F11:self.set_tv_mode(not self.tv_mode);return True
+        if keyval==Gdk.KEY_F11:
+            if self.tv_mode:self.tv_menu.grab_focus();self.tv_menu.popup()
+            else:self.set_tv_mode(True)
+            return True
         if not self.tv_mode:return False
         focus=self.get_focus()
         if isinstance(focus,(Gtk.Entry,Gtk.Text,Gtk.TextView)):return False
@@ -837,7 +842,7 @@ class Window(Adw.ApplicationWindow):
         if self.tv_mode:self.notify('Switch to desktop mode to manage settings.');return
         dialog=Adw.PreferencesWindow(title='Settings',transient_for=self,modal=True,default_width=660,default_height=740)
         page=Adw.PreferencesPage(title='General',icon_name='preferences-system-symbolic'); dialog.add(page)
-        modes=Adw.PreferencesGroup(title='Display mode',description='Default mode applies on the next app start. F11 or the mode button switches the current window.');page.add(modes)
+        modes=Adw.PreferencesGroup(title='Display mode',description='Default mode applies on the next app start. Enter fullscreen from the mode button; leave through fullscreen options or the tray.');page.add(modes)
         mode_row=Adw.ActionRow(title='Default launch mode');self.default_mode_choice=Gtk.DropDown.new_from_strings(['Desktop','Fullscreen / TV']);self.default_mode_choice.set_selected(1 if self.library.data['settings'].get('default_display_mode')=='fullscreen' else 0);mode_row.add_suffix(self.default_mode_choice);modes.add(mode_row)
         self.default_mode_choice.connect('notify::selected',lambda choice,_:self.library.set_default_display_mode('fullscreen' if choice.get_selected()==1 else 'desktop'))
         page.add(Adw.PreferencesGroup(title='Game Library Launcher '+__version__,description='Standalone UMU/Proton game and installer library.'))
@@ -1078,7 +1083,7 @@ class Window(Adw.ApplicationWindow):
             control.set_tooltip_text(('Active: '+current.get('title','game')+'. Finish it before starting another.') if active and not own else 'Stop this game' if own else 'Play through UMU' if configured else 'Configure game files in Manage Game')
         if self.tv_mode and self.game is None and hasattr(self,'tv_hints'):
             status='Controller: '+self.controller.name if hasattr(self,'controller') and self.controller.name else ('Controller unavailable; keyboard/mouse works' if hasattr(self,'controller') and self.controller.error else 'Connect a controller, or use keyboard/mouse')
-            self.tv_hints.set_text('D-pad / stick: Move   A / Enter: Select   B / Esc: Back   X: Play / Stop   Start / F11: Desktop\n'+status)
+            self.tv_hints.set_text('D-pad / stick: Move   A / Enter: Select   B / Esc: Back   X: Play / Stop   Start / F11: Options\n'+status)
         if self.game is not None and hasattr(self,'launch_status'):
             if self.detail_install_status is not None:self.detail_install_status.set_text('Installation: '+self.installations.status(self.game)['phase'])
             state=self.launcher.snapshot(self.game['id']);self.launch_status.set_text(state['state'])
@@ -1136,7 +1141,9 @@ class Application(Adw.Application):
                 if not available and not window.get_visible():window.present()
             def switch_mode(enabled):
                 self.activate_window();window.set_tv_mode(enabled)
-            self.tray=Tray(self.activate_window,window.explicit_exit,availability,lambda:switch_mode(True),lambda:switch_mode(False))
+            def desktop_action(callback):
+                self.activate_window();window.set_tv_mode(False);callback()
+            self.tray=Tray(self.activate_window,window.explicit_exit,availability,lambda:switch_mode(True),lambda:switch_mode(False),lambda:desktop_action(window.toggle_log),lambda:desktop_action(window.open_settings),lambda:desktop_action(window.open_settings))
         window.present()
         if isinstance(window,Window) and window.editor:window.editor.present()
 

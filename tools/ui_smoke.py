@@ -185,7 +185,8 @@ with tempfile.TemporaryDirectory() as temp:
     assert not w.get_decorated() and not w.header.get_visible() and w.tv_controls.get_visible()
     assert library.path.read_bytes()==snapshot
     screenshot('fullscreen-library-dark.png')
-    assert w.tv_home.get_tooltip_text()=='Home' and w.tv_clock.get_text()
+    assert all(not control.get_visible() for control in (w.theme,w.settings_button,w.log_button,w.exit_button))
+    assert not hasattr(w,'tv_home') and w.tv_clock.get_text()
     assert not w.tv_clock.get_focusable()
     # Installed grid excludes metadata-only and unconfirmed installer entries.
     w.set_tv_section('library');settle()
@@ -199,6 +200,7 @@ with tempfile.TemporaryDirectory() as temp:
     for _ in range(8):
         navigate('next');settle();assert isinstance(w.focused_control(w),(Gtk.Button,Gtk.MenuButton))
     navigate('back');settle();assert w.tv_section=='games'
+    for _ in range(5):navigate('back');settle();assert w.tv_mode
     w.tv_games_tab.grab_focus();navigate('right');settle();assert w.focused_control(w) is w.tv_library_tab
     navigate('select');pump_until(lambda:w.tv_section=='library');settle()
     w.set_tv_section('games');settle()
@@ -249,7 +251,7 @@ with tempfile.TemporaryDirectory() as temp:
     w.open_manage();assert w.editor is None
     w.add_game();assert not any(d.get_title()=='Find game metadata' for d in Gtk.Window.get_toplevels())
     navigate('back');settle();assert w.game is None
-    w.tv_menu.popup();settle();w.tv_menu.get_popover().child_focus(Gtk.DirectionType.TAB_FORWARD);navigate('select');pump_until(lambda:not w.tv_mode);settle();assert not w.tv_mode and w.header.get_visible()
+    w.tv_menu.popup();settle();assert {b.get_label() for b in buttons(w.tv_menu.get_popover())}=={'Exit fullscreen','Exit'};next(b for b in buttons(w.tv_menu.get_popover()) if b.get_label()=='Exit fullscreen').grab_focus();navigate('select');pump_until(lambda:not w.tv_mode);settle();assert not w.tv_mode and w.header.get_visible()
     assert library.path.read_bytes()==snapshot
     # Default mode affects next launch, not the current window or game data.
     w.open_settings();settle();settings=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Settings')
