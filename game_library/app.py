@@ -157,7 +157,7 @@ class Window(Adw.ApplicationWindow):
         self.tv_section=section;self.show_library();self.section_tab_focus=None
 
     def tv_tile(self,game,grid=False):
-        tile=button(game['title'],lambda g=game:self.show_game(g));tile.add_css_class('tv-card');tile.set_valign(Gtk.Align.START);tile.set_tooltip_text('Open '+game['title'])
+        tile=button(game['title'],lambda g=game:self.show_game(g));tile.set_focusable(False);tile.add_css_class('tv-card');tile.set_valign(Gtk.Align.START);tile.set_tooltip_text('Open '+game['title'])
         tile.update_property([Gtk.AccessibleProperty.LABEL],['Open '+game['title']])
         content=box(spacing=8);tile.set_child(content)
         name=game['artwork'].get('portrait') or game['artwork'].get('landscape')
@@ -210,9 +210,9 @@ class Window(Adw.ApplicationWindow):
         self.tv_play=button('Play',lambda:self.play_game(self.tv_selected_game()),'suggested-action');self.tv_play.add_css_class('pill');actions.append(self.tv_play)
         self.tv_launch_status=label('','caption',xalign=0);summary.append(self.tv_launch_status);self.place_runtime_progress(summary)
         self.tv_hints=label('D-pad / stick: Move   A / Enter: Select   B / Esc: Back   X: Focus Play / Stop   Start / F11: Options','tv-hints',wrap=True,xalign=0);margins(self.tv_hints,16);tv_content.append(self.tv_hints)
-        game=next((g for g in self.tv_games if g['id']==self.tv_selected_id),self.tv_games[0]);self.select_tv_game(game)
+        game=next((g for g in self.tv_games if g['id']==return_id),self.tv_games[0]);self.select_tv_game(game)
         self.restrict_tv_focus(self.body)
-        GLib.idle_add(lambda tab=getattr(self,'section_tab_focus',None),gid=return_id:(tab.grab_focus() if tab else self.restore_tv_card(gid),False)[-1])
+        self.finish_tv_library_focus()
 
     def show_tv_grid(self,return_id=None):
         title=label('Installed games · '+str(len(self.tv_games)),'tv-title',xalign=0);margins(title,24);self.body.append(title)
@@ -225,8 +225,8 @@ class Window(Adw.ApplicationWindow):
             tile=self.tv_tile(game,grid=True);self.tv_grid.append(tile);self.tv_tiles.append((game['id'],tile))
         self.tv_hints=label('D-pad / stick: Move   A / Enter: Game details   B / Esc: Games   X: Focus Play / Stop','tv-hints',wrap=True,xalign=0);margins(self.tv_hints,16);self.body.append(self.tv_hints)
         if self.tv_games:
-            game=next((g for g in self.tv_games if g['id']==self.tv_selected_id),self.tv_games[0]);self.select_tv_game(game)
-            GLib.idle_add(lambda tab=getattr(self,'section_tab_focus',None),gid=return_id:(tab.grab_focus() if tab else self.restore_tv_card(gid),False)[-1])
+            game=next((g for g in self.tv_games if g['id']==return_id),self.tv_games[0]);self.select_tv_game(game)
+            self.finish_tv_library_focus()
         self.restrict_tv_focus(self.body)
 
     def restrict_tv_focus(self,widget):
@@ -279,19 +279,33 @@ class Window(Adw.ApplicationWindow):
 
     def tv_selected_game(self):return next(g for g in self.tv_games if g['id']==self.tv_selected_id)
 
-    def restore_tv_card(self,game_id):
-        game=next((g for g in self.tv_games if g['id']==game_id),None)
-        if game:self.select_tv_game(game)
-        self.focus_tv_card()
+    def finish_tv_library_focus(self):
+        tab=getattr(self,'section_tab_focus',None)
+        tile=next((tile for gid,tile in self.tv_tiles if gid==self.tv_selected_id),None)
+        # Keep every other card out of GTK's automatic focus fallback while rebuilding.
+        if tab:tab.grab_focus()
+        elif tile:
+            tile.set_focusable(True);tile.grab_focus()
+        for _,card in self.tv_tiles:card.set_focusable(True)
+        self.update_focus_outline()
+        if tile and not tab:
+            def allocated(widget,clock):
+                if widget.get_width()<=0:return True
+                if self.tv_section=='games':self.scroll_tv_card_into_view(widget)
+                return False
+            tile.add_tick_callback(allocated)
 
     def focus_tv_card(self):
         tile=next((t for gid,t in self.tv_tiles if gid==self.tv_selected_id),None)
         if tile:
             tile.grab_focus()
             if self.tv_section=='library':return
-            adjustment=self.tv_scroll.get_hadjustment();left=tile.get_allocation().x;right=left+tile.get_width()
-            if left<adjustment.get_value():adjustment.set_value(left)
-            elif right>adjustment.get_value()+adjustment.get_page_size():adjustment.set_value(right-adjustment.get_page_size())
+            self.scroll_tv_card_into_view(tile)
+
+    def scroll_tv_card_into_view(self,tile):
+        adjustment=self.tv_scroll.get_hadjustment();left=tile.get_allocation().x;right=left+tile.get_width()
+        if left<adjustment.get_value():adjustment.set_value(left)
+        elif right>adjustment.get_value()+adjustment.get_page_size():adjustment.set_value(right-adjustment.get_page_size())
 
     def select_tv_game(self,game):
         self.tv_selected_id=game['id']
@@ -470,6 +484,7 @@ class Window(Adw.ApplicationWindow):
 
     def show_library(self):
         if self.tv_mode:return self.show_tv_library()
+        self.rebuilding_desktop=True
         self.game=None; self.original=None; self.fields={};self.launch_fields={};self.description=None;self.play_buttons={}; clear(self.body)
         self.theme.set_selected(['system','light','dark'].index(self.library.data['settings'].get('theme','system'))); self.apply_theme()
         self.heading.set_title('Your game library'); self.heading.set_subtitle('Your games · UMU and Proton'); self.back.set_visible(False)
@@ -495,12 +510,20 @@ class Window(Adw.ApplicationWindow):
         self.library_stack.add_named(scroll,'games')
         self.filter.set_text(getattr(self,'desktop_library_query',''))
         self.render_cards()
-        GLib.idle_add(self.restore_desktop_card)
+        self.rebuilding_desktop=False
+        self.restore_desktop_card()
 
     def restore_desktop_card(self):
         tile=getattr(self,'desktop_tiles',{}).get(self.tv_selected_id)
-        if tile:tile.grab_focus()
-        self.desktop_library_scroll.get_vadjustment().set_value(getattr(self,'desktop_library_position',0))
+        if tile:tile.set_focusable(True);tile.grab_focus()
+        for card in self.desktop_tiles.values():card.set_focusable(True)
+        self.update_focus_outline()
+        if tile:
+            scroll=self.desktop_library_scroll;position=getattr(self,'desktop_library_position',0)
+            def allocated(widget,clock):
+                if widget.get_width()<=0:return True
+                scroll.get_vadjustment().set_value(position);return False
+            tile.add_tick_callback(allocated)
         return False
 
     def render_cards(self):
@@ -512,7 +535,7 @@ class Window(Adw.ApplicationWindow):
         if not shown and games:
             self.flow.append(label('No games match your search.','dim-label')); return
         for game in sorted(shown,key=lambda g:g['title'].casefold()):
-            tile=Gtk.Button(); tile.add_css_class('card'); tile.add_css_class('game-card')
+            tile=Gtk.Button();tile.set_focusable(False); tile.add_css_class('card'); tile.add_css_class('game-card')
             self.desktop_tiles[game['id']]=tile
             tile.set_tooltip_text('View '+game['title']); tile.connect('clicked',lambda _,g=game:self.show_game(g))
             content=box(spacing=8)
@@ -525,6 +548,8 @@ class Window(Adw.ApplicationWindow):
             wrapper=box(spacing=4); tile.set_child(content); wrapper.append(tile)
             play=button('Play',lambda g=game:self.play_game(g)); wrapper.append(play); self.play_buttons[game['id']]=play
             self.flow.append(wrapper)
+        if not getattr(self,'rebuilding_desktop',False):
+            for tile in self.desktop_tiles.values():tile.set_focusable(True)
 
     def add_game(self):
         if self.tv_mode:self.notify('Switch to desktop mode to add games.');return

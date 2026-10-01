@@ -77,3 +77,6 @@ Back restores the selected card in Games and Library rather than resetting to th
 
 ## Play confirmation — 0.4.7
 Play confirmation shows only the game title question and Cancel/Play actions, without executable, prefix or runtime details. Stop and Exit safety warnings remain unchanged.
+
+## Immediate Back focus — 0.4.8
+Library rebuilding keeps other cards out of automatic focus fallback until the selected card receives focus synchronously. Selection/background never pass through the first card on Back. A layout callback adjusts scrolling only and does not move focus. Native checks record every preview during Back and require immediate selected-card focus, with no intermediate first-game preview.

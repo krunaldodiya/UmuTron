@@ -232,7 +232,15 @@ with tempfile.TemporaryDirectory() as temp:
     for section in ('library','games'):
         w.set_tv_section(section);settle()
         selected=w.tv_games[-1];w.select_tv_game(selected);w.focus_tv_card();settle()
-        w.show_game(selected);settle();navigate('back');settle()
+        w.show_game(selected);settle()
+        previews=[];original_select=w.select_tv_game
+        def record_preview(game):
+            previews.append(game['id']);original_select(game)
+        w.select_tv_game=record_preview
+        navigate('back')
+        assert w.focused_control(w) is next(tile for gid,tile in w.tv_tiles if gid==selected['id'])
+        settle();w.select_tv_game=original_select
+        assert previews and all(gid==selected['id'] for gid in previews),previews
         assert w.tv_selected_id==selected['id']
         assert w.focused_control(w) is next(tile for gid,tile in w.tv_tiles if gid==selected['id'])
     w.set_tv_section('games');settle()
