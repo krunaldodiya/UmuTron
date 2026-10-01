@@ -70,3 +70,7 @@ The desktop header has no Fullscreen utility action; use the tray mode commands.
 
 ## Header navigation and Library background — 0.4.5
 Left/right on the fullscreen header stays within Games, Library and Settings. Activating a section keeps focus on its tab; Down moves into the game cards. Library remains a grid-only view: focused-card changes update just the subdued hero background, without adding metadata panels. Game icons never launch an operation.
+
+## Detail navigation — 0.4.6
+
+Back restores the selected card in Games and Library rather than resetting to the first item. Desktop Back also retains the library filter and scroll position. The redundant detail launch-status label is removed; Play/Stop and live preparation progress remain. Native regression checks cover returning to a non-first card in both fullscreen sections and a filtered desktop library.

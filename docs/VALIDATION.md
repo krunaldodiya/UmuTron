@@ -67,3 +67,7 @@ Final 0.4.4 validation: 44 core tests and the native GUI smoke pass. Header focu
 
 ## 0.4.5 verification
 44 core tests pass. Final native smoke verifies Games → Library → Settings direction navigation, section activation retaining header focus, Down entering the cards, and the Library hero changing without extra metadata panels. Native synthetic screenshots were inspected; compilation, lint and whitespace checks pass. No real game was launched.
+
+## Detail navigation — 0.4.6
+
+Back restores the selected card in Games and Library rather than resetting to the first item. Desktop Back also retains the library filter and scroll position. The redundant detail launch-status label is removed; Play/Stop and live preparation progress remain. Native regression checks cover returning to a non-first card in both fullscreen sections and a filtered desktop library.

@@ -151,7 +151,7 @@ with tempfile.TemporaryDirectory() as temp:
     fake.record={'game_id':game['id'],'title':game['title'],'state':'Downloading runtime','logs':['Downloading runtime.tar.gz...',f'Writing: {partial}']}
     w.refresh_launch_state();assert w.runtime_progress.get_visible() and '1.0 MiB downloaded' in w.runtime_label.get_text()
     partial.write_bytes(b'x'*2097152);w.refresh_launch_state();assert '2.0 MiB downloaded' in w.runtime_label.get_text()
-    assert w.runtime_progress.get_parent() is w.launch_status.get_parent()
+    assert not hasattr(w,'launch_status')
     screenshot('runtime-download-dark.png')
     fake.record={'game_id':game['id'],'title':game['title'],'state':'Running','operation':'installer','supervisor_pid':123}
     w.show_library();w.refresh_launch_state();assert not w.runtime_progress.get_visible();assert w.play_buttons[game['id']].get_label()=='Stop installer'
@@ -221,6 +221,12 @@ with tempfile.TemporaryDirectory() as temp:
     navigate('down');settle();assert w.focused_control(w) in [tile for _,tile in w.tv_tiles]
     library_game=next(g for g in w.tv_games if g['artwork'].get('hero'));w.select_tv_game(library_game)
     assert w.backdrop.get_file().get_path()==str(library.art_dir/library_game['artwork']['hero']) and w.backdrop.get_opacity()>0
+    for section in ('library','games'):
+        w.set_tv_section(section);settle()
+        selected=w.tv_games[-1];w.select_tv_game(selected);w.focus_tv_card();settle()
+        w.show_game(selected);settle();navigate('back');settle()
+        assert w.tv_selected_id==selected['id']
+        assert w.focused_control(w) is next(tile for gid,tile in w.tv_tiles if gid==selected['id'])
     w.set_tv_section('games');settle()
     rail_y=w.tv_scroll.get_allocation().y
     for selected in w.tv_games:
@@ -236,6 +242,9 @@ with tempfile.TemporaryDirectory() as temp:
     assert w.get_width()<=1024 and w.get_height()<=600,(w.get_width(),w.get_height())
     w.focus_tv_card();settle()
     assert w.tv_scroll.get_hadjustment().get_value()>0
+    selected=w.tv_selected_game();w.show_game(selected);settle();navigate('back');settle()
+    assert w.tv_selected_id==selected['id'] and w.tv_scroll.get_hadjustment().get_value()>0
+    assert w.focused_control(w) is next(tile for gid,tile in w.tv_tiles if gid==selected['id'])
     assert w.tv_menu.get_mapped()
     w.set_tv_section('library');settle();assert w.get_height()<=600
     assert len({tile.get_height() for _,tile in w.tv_tiles})==1
@@ -289,6 +298,10 @@ with tempfile.TemporaryDirectory() as temp:
     library.set_default_display_mode('desktop');w.present();settle()
     w.controller.close()
     w.show_library();w.filter.set_text('Nebula');w.render_cards();assert len(list(w.flow))==1
+    settle();selected=next(g for g in library.games() if 'Nebula' in g['title'])
+    w.show_game(selected);settle();w.go_back();settle()
+    assert w.filter.get_text()=='Nebula'
+    assert w.focused_control(w) is w.desktop_tiles[selected['id']]
     for window in list(Gtk.Window.get_toplevels()):window.destroy()
     w.pool.shutdown(wait=True)
     print('PASS: readonly details, modal Save/Cancel, metadata-first Add Game and later launch choices, collapsed advanced settings, metadata switching/default public search, tray hide/reopen/fallback/Exit cancel, operation controls, ZIP, Proton Manager, fullscreen Games/installed Library grid, control-only navigation, controller scroll and default mode')

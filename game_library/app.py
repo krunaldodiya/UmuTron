@@ -177,6 +177,7 @@ class Window(Adw.ApplicationWindow):
         return tile
 
     def show_tv_library(self):
+        return_id=self.tv_selected_id
         self.game=None;self.original=None;self.fields={};self.launch_fields={};self.description=None;self.play_buttons={};clear(self.body)
         self.back.set_visible(False);self.heading.set_title('Your games');self.heading.set_subtitle('Fullscreen · TV mode')
         for tab,section in ((self.tv_games_tab,'games'),(self.tv_library_tab,'library')):
@@ -186,7 +187,7 @@ class Window(Adw.ApplicationWindow):
         self.tv_games=sorted(self.library.games(),key=lambda g:g['title'].casefold());self.tv_tiles=[]
         if self.tv_section=='library':
             self.tv_games=[g for g in self.tv_games if g.get('executable') and (g.get('installation',{}).get('mode')!='installer' or g['installation'].get('confirmed'))]
-            self.show_tv_grid();return
+            self.show_tv_grid(return_id);return
         if not self.tv_games:
             empty=Adw.StatusPage(title='Your library is ready to grow',description='Switch to desktop mode to add games and set them up.',icon_name='applications-games-symbolic');self.body.append(empty);self.tv_games_tab.grab_focus();return
         tv_content=box(spacing=0);tv_content.set_vexpand(True)
@@ -211,9 +212,9 @@ class Window(Adw.ApplicationWindow):
         self.tv_hints=label('D-pad / stick: Move   A / Enter: Select   B / Esc: Back   X: Focus Play / Stop   Start / F11: Options','tv-hints',wrap=True,xalign=0);margins(self.tv_hints,16);tv_content.append(self.tv_hints)
         game=next((g for g in self.tv_games if g['id']==self.tv_selected_id),self.tv_games[0]);self.select_tv_game(game)
         self.restrict_tv_focus(self.body)
-        GLib.idle_add(lambda tab=getattr(self,'section_tab_focus',None):(tab.grab_focus() if tab else self.focus_tv_card(),False)[-1])
+        GLib.idle_add(lambda tab=getattr(self,'section_tab_focus',None),gid=return_id:(tab.grab_focus() if tab else self.restore_tv_card(gid),False)[-1])
 
-    def show_tv_grid(self):
+    def show_tv_grid(self,return_id=None):
         title=label('Installed games · '+str(len(self.tv_games)),'tv-title',xalign=0);margins(title,24);self.body.append(title)
         self.tv_grid=Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE,homogeneous=True,min_children_per_line=2,max_children_per_line=10,column_spacing=20,row_spacing=20);margins(self.tv_grid,24);self.tv_grid.set_valign(Gtk.Align.START)
         self.tv_scroll=self.scrolled(self.tv_grid);self.body.append(self.tv_scroll)
@@ -225,7 +226,7 @@ class Window(Adw.ApplicationWindow):
         self.tv_hints=label('D-pad / stick: Move   A / Enter: Game details   B / Esc: Games   X: Focus Play / Stop','tv-hints',wrap=True,xalign=0);margins(self.tv_hints,16);self.body.append(self.tv_hints)
         if self.tv_games:
             game=next((g for g in self.tv_games if g['id']==self.tv_selected_id),self.tv_games[0]);self.select_tv_game(game)
-            GLib.idle_add(lambda tab=getattr(self,'section_tab_focus',None):(tab.grab_focus() if tab else self.focus_tv_card(),False)[-1])
+            GLib.idle_add(lambda tab=getattr(self,'section_tab_focus',None),gid=return_id:(tab.grab_focus() if tab else self.restore_tv_card(gid),False)[-1])
         self.restrict_tv_focus(self.body)
 
     def restrict_tv_focus(self,widget):
@@ -277,6 +278,11 @@ class Window(Adw.ApplicationWindow):
         if candidates:min(candidates,key=lambda pair:pair[0])[1].grab_focus()
 
     def tv_selected_game(self):return next(g for g in self.tv_games if g['id']==self.tv_selected_id)
+
+    def restore_tv_card(self,game_id):
+        game=next((g for g in self.tv_games if g['id']==game_id),None)
+        if game:self.select_tv_game(game)
+        self.focus_tv_card()
 
     def focus_tv_card(self):
         tile=next((t for gid,t in self.tv_tiles if gid==self.tv_selected_id),None)
@@ -475,7 +481,7 @@ class Window(Adw.ApplicationWindow):
         top.append(intro); top.append(button('Add game',self.add_game,'suggested-action'))
         toolbar=box(False,8); panel.append(toolbar)
         self.filter=Gtk.SearchEntry(placeholder_text='Search your library',hexpand=True)
-        self.filter.connect('search-changed',lambda _:self.render_cards())
+        self.filter.connect('notify::text',lambda *_:self.render_cards())
         toolbar.append(self.filter)
         self.library_status=label('','dim-label',xalign=0); panel.append(self.library_status)
         self.library_stack=Gtk.Stack(); self.library_stack.set_vexpand(True); self.body.append(self.library_stack)
@@ -485,12 +491,20 @@ class Window(Adw.ApplicationWindow):
         self.library_stack.add_named(empty,'empty')
         self.flow=Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE,column_spacing=12,row_spacing=12,homogeneous=True,min_children_per_line=1,max_children_per_line=7)
         self.flow.set_valign(Gtk.Align.START); self.flow.set_halign(Gtk.Align.START); margins(self.flow)
-        scroll=Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER); scroll.set_child(self.flow)
+        scroll=Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER); scroll.set_child(self.flow);self.desktop_library_scroll=scroll
         self.library_stack.add_named(scroll,'games')
+        self.filter.set_text(getattr(self,'desktop_library_query',''))
         self.render_cards()
+        GLib.idle_add(self.restore_desktop_card)
+
+    def restore_desktop_card(self):
+        tile=getattr(self,'desktop_tiles',{}).get(self.tv_selected_id)
+        if tile:tile.grab_focus()
+        self.desktop_library_scroll.get_vadjustment().set_value(getattr(self,'desktop_library_position',0))
+        return False
 
     def render_cards(self):
-        clear(self.flow)
+        clear(self.flow);self.desktop_tiles={}
         games=self.library.games(); query=self.filter.get_text().casefold()
         shown=[g for g in games if query in g['title'].casefold()]
         self.library_status.set_text(f'{len(games)} games')
@@ -499,6 +513,7 @@ class Window(Adw.ApplicationWindow):
             self.flow.append(label('No games match your search.','dim-label')); return
         for game in sorted(shown,key=lambda g:g['title'].casefold()):
             tile=Gtk.Button(); tile.add_css_class('card'); tile.add_css_class('game-card')
+            self.desktop_tiles[game['id']]=tile
             tile.set_tooltip_text('View '+game['title']); tile.connect('clicked',lambda _,g=game:self.show_game(g))
             content=box(spacing=8)
             content.append(self.picture(game['artwork'].get('portrait'),128,170))
@@ -524,6 +539,10 @@ class Window(Adw.ApplicationWindow):
         container.append(wrapper); return entry
 
     def show_game(self,game):
+        if not self.tv_mode and self.game is None and hasattr(self,'desktop_library_scroll'):
+            self.desktop_library_position=self.desktop_library_scroll.get_vadjustment().get_value()
+            self.desktop_library_query=self.filter.get_text()
+        self.tv_selected_id=game['id']
         self.game=deepcopy(game);self.original=deepcopy(game);self.fields={};self.launch_fields={};self.description=None;self.play_buttons={};self.last_launch_output=None;self.detail_install_status=None;clear(self.body)
         self.back.set_visible(True);self.heading.set_title(game['title'] or 'New game');self.heading.set_subtitle(self.source_text())
         overlay=Gtk.Overlay();overlay.set_size_request(-1,340)
@@ -559,7 +578,7 @@ class Window(Adw.ApplicationWindow):
         if game.get('installation',{}).get('mode')=='installer':
             self.detail_install_status=label('Installation: '+self.installations.status(game)['phase'],'heading',wrap=True,xalign=0);details.append(self.detail_install_status)
         info_button=button('Game Info',lambda:self.show_game_info(self.game));info_button.set_halign(Gtk.Align.START);details.append(info_button)
-        self.launch_status=label('Not started','caption',xalign=0);details.append(self.launch_status);self.place_runtime_progress(details)
+        self.place_runtime_progress(details)
         self.launch_output=Gtk.TextView(editable=False,cursor_visible=False,wrap_mode=Gtk.WrapMode.WORD_CHAR)
         log_group=Adw.ExpanderRow(title='Operation status and logs');log_group.add_row(self.scrolled(self.launch_output));log_group.set_visible(not self.tv_mode);details.append(log_group)
         if self.tv_mode:
@@ -1134,9 +1153,9 @@ class Window(Adw.ApplicationWindow):
         if self.tv_mode and self.game is None and hasattr(self,'tv_hints'):
             status='Controller: '+self.controller.name if hasattr(self,'controller') and self.controller.name else ('Controller unavailable; keyboard/mouse works' if hasattr(self,'controller') and self.controller.error else 'Connect a controller, or use keyboard/mouse')
             self.tv_hints.set_text('D-pad / stick: Move   A / Enter: Select   B / Esc: Back   X: Focus Play / Stop   Start / F11: Options\n'+status)
-        if self.game is not None and hasattr(self,'launch_status'):
+        if self.game is not None and hasattr(self,'launch_output'):
             if self.detail_install_status is not None:self.detail_install_status.set_text('Installation: '+self.installations.status(self.game)['phase'])
-            state=self.launcher.snapshot(self.game['id']);self.launch_status.set_text(state['state'])
+            state=self.launcher.snapshot(self.game['id'])
             text='\n'.join(state.get('logs',[])[-200:])
             if text!=getattr(self,'last_launch_output',None):self.launch_output.get_buffer().set_text(text);self.last_launch_output=text
         if self.editor_kind=='manage':
