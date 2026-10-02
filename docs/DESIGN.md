@@ -176,3 +176,10 @@ The UMU-Proton tab shows one baseline using the existing `UMU-Latest` folder's b
 The existing fresh-library fallback remains `UMU-Latest`; no settings migration or launch behavior changes. An explicit saved default, including GE, an exact UMU release or custom path, is retained on reopen and refresh. Only an explicit Set as default action changes it. Selecting the baseline saves the mutable alias, never the currently reported version. An existing absolute baseline path remains recognized without rewriting it.
 
 When the baseline is absent, the UI states that the runner is prepared by UMU on first Play, reflecting the existing explicit-launch behavior. Opening Settings performs no runner installation or UMU catalog request. This is unrelated to the separate prefix/runtime recovery POC and does not deploy recovery functionality.
+
+
+## UMU catalog and tab synchronization — 0.4.22
+
+This revision restores cached, background and paginated UMU-Proton releases alongside the protected baseline, superseding 0.4.21's baseline-only catalog presentation. Only entries reporting the current baseline version are suppressed from the list. Other installed UMU versions and available official releases retain their existing path-specific actions. The baseline stays a nonremovable UMU-managed alias; version text never adopts another installation's receipt, path or exact release identity. A saved exact/default selection for the hidden same-version entry is retained and identified as a separate saved selection rather than falsely marking the mutable baseline as selected.
+
+Two linked native toggle headers derive their checked and accent states from the visible stack page. Left/Right and Home/End select and focus the corresponding family. Background rendering preserves the visible family and restores row focus only within that page. Catalog activity does not install runners or change saved defaults. No launch, download, uninstall, prefix or recovery implementation changes.
