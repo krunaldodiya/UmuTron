@@ -167,3 +167,12 @@ Catalog completion is scoped to its living Settings dialog or exact Setup draft,
 The current manager has exactly two tabs, GE-Proton and UMU-Proton, opening on GE-Proton. The former local-only official Proton tab, empty channel groups and folder picker are removed. This supersedes the three-tab presentation in 0.4.19; it does not change runner selection or launch contracts. Existing saved Valve/custom paths, symlink spellings, global defaults and installation pins remain usable and are not migrated or deleted. The per-game selector continues to include saved local runners.
 
 Rows identify their source in the heading: UmuTron download, UMU-managed copy, or Local copy. Two copies reporting the same version remain distinct installations with unchanged selectors, receipt requirements and uninstall safeguards. The change does not merge files, adopt unverified folders, remove runners or touch prefixes.
+
+
+## Protected UMU baseline — 0.4.21
+
+The UMU-Proton tab shows one baseline using the existing `UMU-Latest` folder's bounded version metadata. It is labeled Managed by UMU and has no install/uninstall action. This is provenance, not proof that the mutable folder matches an exact verified release. Extra managed/local UMU installations and receipts remain intact; they are not listed repeatedly here. GE-Proton remains an optional catalog with no fresh-install runner or default.
+
+The existing fresh-library fallback remains `UMU-Latest`; no settings migration or launch behavior changes. An explicit saved default, including GE, an exact UMU release or custom path, is retained on reopen and refresh. Only an explicit Set as default action changes it. Selecting the baseline saves the mutable alias, never the currently reported version. An existing absolute baseline path remains recognized without rewriting it.
+
+When the baseline is absent, the UI states that the runner is prepared by UMU on first Play, reflecting the existing explicit-launch behavior. Opening Settings performs no runner installation or UMU catalog request. This is unrelated to the separate prefix/runtime recovery POC and does not deploy recovery functionality.

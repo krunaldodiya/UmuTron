@@ -174,3 +174,12 @@ Legacy UMU/GE automatic policy resolution, actual vendor binaries, real game com
 106 core tests, Ruff F checks and Python compilation pass. The native Proton fixture asserts exactly GE-Proton/UMU-Proton tabs, preserves a saved Valve global default and custom symlink selection without rewriting the library, and distinguishes two installed same-version UMU copies while retaining their selectors and removal rules. Cached/background results, pagination, explicit install/default/uninstall, cancellation, offline retry and stale Setup callbacks remain covered. The complete native UI smoke suite also passes.
 
 Inspected actual GTK test renders at 660×720 show both tabs and the differentiated copy headings without clipping. These are temporary Broadway fixtures with inert runners, not live-desktop screenshots or real vendor installations. No launch/download/uninstall implementation changed. Existing runners, prefixes and saved configuration are not migrated or removed.
+
+
+## Single protected UMU baseline — 0.4.21
+
+108 core tests, Ruff F checks and compilation pass. New persistence fixtures establish that fresh libraries inherit UMU-Latest without installing GE or persisting a version pin, and existing explicit GE/UMU/custom selections survive reopen.
+
+The focused native GTK fixture verifies exactly one protected baseline row despite separate same-version installations, no removal action or verified-receipt claim for the UMU-managed folder, unchanged baseline presentation under a wrong receipt elsewhere, and no downloads or UMU catalog calls when Settings opens. A manual GE default survives reopen and background refresh; explicit baseline selection retains the mutable alias as its reported version changes. Saved custom paths and existing folders remain intact. GE catalog/pagination/install/default/removal guards/cancel/offline and stale Setup callbacks pass. The full native UI smoke suite passes.
+
+Inspected 660×720 GTK test renders show a single baseline and optional GE catalog without copy labels. No real runner, game, installer or prefix was created/deleted by these fixtures; no live-desktop or hardware-controller QA is claimed. Prefix/runtime recovery remains a separate undeployed POC.

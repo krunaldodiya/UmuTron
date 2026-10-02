@@ -318,7 +318,7 @@ class ProtonManager:
                 return dict(job)
         collision = target.exists() or target.is_symlink()
         return {'state': 'Available', 'path': '', 'progress': 0,
-                'error': 'A local copy occupies this installation folder. It is preserved and listed separately; remove that local copy before downloading this release.' if collision else ''}
+                'error': 'An existing installation occupies this destination. It is preserved; this release cannot be downloaded into the same folder.' if collision else ''}
 
     def local_origin(self, path):
         path = Path(path).absolute()
@@ -400,7 +400,7 @@ class ProtonManager:
                 self.downloader(release['url'], archive, release['size'], cancel,
                                 lambda n: progress(state='Downloading', progress=min(1, n / release['size']), downloaded_bytes=n, total_bytes=release['size']))
                 if archive.stat().st_size != release['size']:
-                    raise ValueError('Incomplete runner download. Retry to download a fresh copy.')
+                    raise ValueError('Incomplete runner download. Retry to download the archive again.')
                 progress(state='Verifying')
                 digest = release.get('digest', '')
                 if digest:

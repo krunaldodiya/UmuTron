@@ -70,7 +70,7 @@ class ProtonPanel(Gtk.Box):
         self.rows, self.statuses, self.retry, self.scrolls = {}, {}, {}, {}
         for family in DOWNLOAD_FAMILIES:
             page = box()
-            page.append(text('Official ' + family + ' releases · ' + self.manager.arch, 'title-3'))
+            page.append(text('UMU-Proton baseline' if family == 'UMU-Proton' else 'Optional GE-Proton releases · ' + self.manager.arch, 'title-3'))
             status = text('', 'dim-label')
             page.append(status)
             self.statuses[family] = status
@@ -87,7 +87,7 @@ class ProtonPanel(Gtk.Box):
             self.rows[family], self.scrolls[family] = rows, scroll
             scroll.connect('edge-reached', lambda _, edge, f=family: self.next_page(f) if edge == Gtk.PositionType.BOTTOM else None)
             self.stack.add_titled(page, family, family)
-            if family in REPOS:
+            if family == 'GE-Proton':
                 for release in cached_all(self.manager, family):
                     self.items[family][release_selector(release)] = release
         self.stack.set_visible_child_name('GE-Proton')
@@ -102,8 +102,7 @@ class ProtonPanel(Gtk.Box):
         self.started = True
         GLib.timeout_add(250, self.update)
         if not self.window.demo:
-            for family in REPOS:
-                self.load(family, 1)
+            self.load('GE-Proton', 1)
         else:
             for family in REPOS:
                 self.messages[family] = 'Demo catalog · downloads disabled'
@@ -111,15 +110,15 @@ class ProtonPanel(Gtk.Box):
 
     def maybe_load_visible(self):
         family = self.stack.get_visible_child_name()
-        if family in REPOS and not self.window.demo and not self.items[family] and family not in self.loading:
+        if family == 'GE-Proton' and not self.window.demo and not self.items[family] and family not in self.loading:
             self.load(family, 1)
 
     def next_page(self, family):
-        if family in REPOS and self.more[family] and family not in self.loading:
+        if family == 'GE-Proton' and self.more[family] and family not in self.loading:
             self.load(family, self.pages[family] + 1)
 
     def load(self, family, page):
-        if family in self.loading or not self.alive:
+        if family != 'GE-Proton' or family in self.loading or not self.alive:
             return
         self.loading.add(family)
         self.retry_pages[family] = page
@@ -192,6 +191,12 @@ class ProtonPanel(Gtk.Box):
             rows = self.rows[family]
             while child := rows.get_first_child():
                 rows.remove(child)
+            if family == 'UMU-Proton':
+                baseline = self.manager.umu_tools / 'UMU-Latest'
+                title = runner_label(str(baseline)).removesuffix(' — installed') if (baseline / 'proton').is_file() else 'UMU-Proton — automatic latest'
+                self.statuses[family].set_text('Managed by UMU. Used by default until you explicitly choose another version.')
+                self.add_row(rows, title, 'UMU-Latest', selected, baseline=True)
+                continue
             covered = set()
             releases = self.items.get(family, {})
             pending = []
@@ -218,7 +223,7 @@ class ProtonPanel(Gtk.Box):
         for family, value in scroll_values.items():
             self.scrolls[family].get_vadjustment().set_value(value)
 
-    def add_row(self, rows, title, value, selected, release=None):
+    def add_row(self, rows, title, value, selected, release=None, baseline=False):
         card = box()
         card.add_css_class('card')
         for edge in ('top', 'bottom', 'start', 'end'):
@@ -227,12 +232,14 @@ class ProtonPanel(Gtk.Box):
         for edge in ('top', 'bottom', 'start', 'end'):
             getattr(inner, 'set_margin_' + edge)(12)
         card.append(inner)
-        if release:
+        if baseline:
+            origin = 'Baseline'
+        elif release:
             origin = 'UmuTron download'
         elif Path(value).absolute().parent == self.manager.umu_tools.absolute():
-            origin = 'UMU-managed copy'
+            origin = 'Managed by UMU'
         else:
-            origin = 'Local copy'
+            origin = 'Local installation'
         heading = text(title + ' · ' + origin, 'heading')
         inner.append(heading)
         status = text('', 'dim-label')
@@ -245,12 +252,14 @@ class ProtonPanel(Gtk.Box):
         row.append(primary)
         cancel = action('Cancel', lambda: self.manager.cancel(release))
         row.append(cancel)
-        control = dict(card=card, heading=heading, status=status, default=default, primary=primary, cancel=cancel, value=value, release=release)
+        control = dict(card=card, heading=heading, status=status, default=default, primary=primary, cancel=cancel, value=value, release=release, baseline=baseline)
         primary.connect('clicked', lambda _: self.primary(control))
         self.controls.append(control)
         rows.append(card)
 
     def primary(self, control):
+        if control['baseline']:
+            return
         release = control['release']
         path = self.manager.status(release).get('path') if release else control['value']
         try:
@@ -266,7 +275,13 @@ class ProtonPanel(Gtk.Box):
         selected = self.window.library.data['settings'].get('default_proton') or 'UMU-Latest'
         for control in self.controls:
             release, value = control['release'], control['value']
-            status = self.manager.status(release) if release else {'state': 'Installed', 'path': value, 'error': ''}
+            baseline = control['baseline']
+            if baseline:
+                folder = self.manager.umu_tools / 'UMU-Latest'
+                present = (folder / 'proton').is_file()
+                status = {'state': 'Installed' if present else 'Not installed', 'path': str(folder) if present else '', 'error': ''}
+            else:
+                status = self.manager.status(release) if release else {'state': 'Installed', 'path': value, 'error': ''}
             phase, path = status['state'], status.get('path', '')
             active = phase in BUSY
             same = selected == value or bool(release and selected == release_selector(release))
@@ -274,11 +289,13 @@ class ProtonPanel(Gtk.Box):
                 same = same or Path(selected).resolve() == Path(path).resolve()
             control['default'].set_label('Default' if same else 'Set as default')
             control['default'].set_sensitive(not same and not active)
-            managed = bool(path and self.manager.managed(path))
+            managed = bool(not baseline and path and self.manager.managed(path))
             detail = phase + (' · Default' if same else '')
             if active and phase == 'Downloading':
                 detail += f" · {int(status.get('progress', 0) * 100)}%"
-            if path and not release:
+            if baseline:
+                detail += ' · Managed by UMU · Protected baseline' if path else ' · Runner prepared by UMU on first Play'
+            elif path and not release:
                 detail += ' · ' + self.manager.local_origin(path)
             if status.get('error'):
                 detail += ' · ' + status['error']

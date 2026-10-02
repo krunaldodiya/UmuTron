@@ -61,6 +61,20 @@ with tempfile.TemporaryDirectory(prefix='umutron-proton-ui-') as temp:
     with tarfile.open(archive,'w:gz') as output:
         data=b'inert';item=tarfile.TarInfo(tag+'/proton');item.size=len(data);item.mode=0o755;output.addfile(item,io.BytesIO(data))
     manager=ProtonManager(library.root/'proton-manager',arch='x86_64',umu_root=Path(temp)/'umu/compatibilitytools');window.proton_manager=manager
+    # Fresh setup inherits UMU-Latest; Settings never installs either family.
+    fresh_before=library.path.read_bytes()
+    with patch.object(manager,'install') as install, patch.object(manager,'downloader') as downloader:
+        window.open_settings();settle()
+        fresh_settings=next(w for w in Gtk.Window.get_toplevels() if w.get_title()=='Settings' and w.get_visible())
+        fresh=window.proton_panel
+        baseline=next(c for c in fresh.controls if c['baseline'])
+        assert baseline['value']=='UMU-Latest' and baseline['default'].get_label()=='Default'
+        assert 'Not installed' in baseline['status'].get_text() and 'first Play' in baseline['status'].get_text()
+        assert not baseline['primary'].get_visible()
+        baseline['primary'].emit('clicked');install.assert_not_called();downloader.assert_not_called()
+        assert manager.installed()==[] and not fresh.items['GE-Proton']
+        assert library.path.read_bytes()==fresh_before
+        fresh_settings.close();settle()
     def payload(family,page):
         versions=range(7,3,-1) if page==1 else range(3,0,-1)
         return [dict(tag_name=(family+('11-' if family=='GE-Proton' else '-10.0-')+str(i)),assets=[dict(name=(family+('11-' if family=='GE-Proton' else '-10.0-')+str(i))+'.tar.gz',size=archive.stat().st_size,digest='sha256:'+hashlib.sha256(archive.read_bytes()).hexdigest(),browser_download_url='https://github.com/'+REPOS[family]+'/releases/download/'+(family+('11-' if family=='GE-Proton' else '-10.0-')+str(i))+'/'+(family+('11-' if family=='GE-Proton' else '-10.0-')+str(i))+'.tar.gz')]) for i in versions]
@@ -84,7 +98,9 @@ with tempfile.TemporaryDirectory(prefix='umutron-proton-ui-') as temp:
         family=next(f for f,r in REPOS.items() if r in url)
         return payload(family,int(url.rsplit('=',1)[1]))
     manager.transport=transport
+    download_calls=[]
     def download(url,path,limit,cancel,progress):
+        download_calls.append(url)
         Path(path).write_bytes(archive.read_bytes());progress(archive.stat().st_size)
     manager.downloader=download
     window.demo=False
@@ -105,20 +121,29 @@ with tempfile.TemporaryDirectory(prefix='umutron-proton-ui-') as temp:
     assert settings.get_focus() is refreshed['primary'], 'Background catalog must retain the active row control'
     assert len(panel.items['GE-Proton'])==4
     assert library.path.read_bytes()==saved_before, 'Opening/loading the manager must preserve saved Valve/custom selections'
+    assert download_calls==[], 'Normal Settings catalog loading must not install runners'
     assert 'Proton 11.0-2' in panel.default.get_text()
     catalog=next(c for c in panel.controls if c['release'] and c['release']['version']=='GE-Proton11-6')
     assert catalog['value']=='release:GE-Proton:GE-Proton11-6'
     assert manager.status(catalog['release'])['state']=='Available'
     preserved=next(c for c in panel.controls if not c['release'] and c['value']==str(local))
     assert 'unverified' in preserved['status'].get_text()
-    local_umu=next(c for c in panel.controls if not c['release'] and c['value']==str(umu))
-    assert 'UMU-managed' in local_umu['status'].get_text() and not local_umu['primary'].get_visible()
-    downloaded_umu=next(c for c in panel.controls if c['release'] and c['value']==release_selector(umu_release))
-    assert 'UmuTron download' in downloaded_umu['heading'].get_text()
-    assert 'UMU-managed copy' in local_umu['heading'].get_text()
-    assert downloaded_umu['heading'].get_text()!=local_umu['heading'].get_text()
-    assert downloaded_umu['primary'].get_label()=='Uninstall' and downloaded_umu['primary'].get_visible()
+    local_umu=next(c for c in panel.controls if c['baseline'])
+    assert local_umu['value']=='UMU-Latest'
+    assert 'Managed by UMU' in local_umu['status'].get_text() and not local_umu['primary'].get_visible()
+    assert 'UMU-Proton-10.0-4' in local_umu['heading'].get_text()
+    assert panel.rows['UMU-Proton'].get_first_child().get_next_sibling() is None
+    assert not any(c['release'] and c['release']['family']=='UMU-Proton' for c in panel.controls)
+    assert 'verified' not in local_umu['status'].get_text().lower()
+    assert not any(isinstance(w,Gtk.Label) and 'copy' in w.get_text().lower() for w in widgets(panel))
     assert manager.status(umu_release)['state']=='Installed'
+    # A receipt in a different installation never establishes the UMU baseline's identity.
+    receipt=managed_umu/'umutron-release.json';valid_receipt=receipt.read_bytes()
+    receipt.write_text(json.dumps(manager.cached('GE-Proton')[0]));panel.render()
+    assert manager.status(umu_release)['state']=='Available'
+    assert panel.rows['UMU-Proton'].get_first_child().get_next_sibling() is None
+    assert not next(c for c in panel.controls if c['baseline'])['primary'].get_visible()
+    receipt.write_bytes(valid_receipt)
     manager.has_more=lambda family,page:page==1
     panel.more['GE-Proton']=True
     panel.scrolls['GE-Proton'].emit('edge-reached',Gtk.PositionType.BOTTOM)
@@ -131,6 +156,13 @@ with tempfile.TemporaryDirectory(prefix='umutron-proton-ui-') as temp:
     assert library.data['settings']['default_proton']==release_selector(first['release'])
     first=next(c for c in panel.controls if c['release'] and c['release']['version']==tag)
     assert first['default'].get_label()=='Default' and not first['default'].get_sensitive()
+    saved_manual=library.path.read_bytes();settings.close();settle();window.open_settings();settle()
+    settings=next(w for w in Gtk.Window.get_toplevels() if w.get_title()=='Settings' and w.get_visible())
+    settings.set_visible_page(window.proton_settings_page);panel=window.proton_panel
+    wait(lambda:not panel.loading)
+    assert library.path.read_bytes()==saved_manual, 'Reopen/background refresh must retain the chosen GE default'
+    assert next(c for c in panel.controls if c['baseline'])['default'].get_label()=='Set as default'
+    first=next(c for c in panel.controls if c['release'] and c['release']['version']==tag)
     capture(settings,args.output/'proton-ge.png')
     # Referenced removal is blocked before confirmation and leaves the runner intact.
     first['primary'].emit('clicked');settle()
@@ -143,16 +175,25 @@ with tempfile.TemporaryDirectory(prefix='umutron-proton-ui-') as temp:
     assert confirmation.get_heading().startswith('Uninstall ')
     confirmation.emit('response','cancel');settle()
     assert manager.target(first['release']).is_dir(), 'Cancelling uninstall must keep files'
+    # An explicit baseline action selects the mutable UMU alias, not a fixed archive.
     panel.set_default(release_selector(first['release']))
+    next(c for c in panel.controls if c['baseline'])['default'].emit('clicked')
+    assert library.data['settings']['default_proton']=='UMU-Latest'
+    automatic_before=library.path.read_bytes()
+    (umu/'version').write_text('1774856027 UMU-Proton-10.0-5\n');panel.render()
+    assert 'UMU-Proton-10.0-5' in next(c for c in panel.controls if c['baseline'])['heading'].get_text()
+    assert library.path.read_bytes()==automatic_before
+    (umu/'version').write_text('1774856027 UMU-Proton-10.0-4\n');panel.render()
     panel.set_default(str(umu))
     panel.stack.set_visible_child_name('UMU-Proton');settle();capture(settings,args.output/'proton-umu.png')
-    local_umu=next(c for c in panel.controls if not c['release'] and c['value']==str(umu))
+    local_umu=next(c for c in panel.controls if c['baseline'])
     assert local_umu['default'].get_label()=='Default'
     assert managed_umu.is_dir() and umu.is_dir(), 'Presentation must not merge or remove separate installations'
+    assert not any(REPOS['UMU-Proton'] in url for url in calls), 'Settings must not request a UMU release catalog'
     manager.transport=lambda _:(_ for _ in ()).throw(OSError('Fixture offline'))
-    panel.load('UMU-Proton',1);wait(lambda:not panel.loading)
-    assert 'cached' in panel.statuses['UMU-Proton'].get_text().lower() and panel.retry['UMU-Proton'].get_visible()
-    assert len(panel.items['UMU-Proton'])==4
+    panel.stack.set_visible_child_name('GE-Proton');panel.load('GE-Proton',1);wait(lambda:not panel.loading)
+    assert 'cached' in panel.statuses['GE-Proton'].get_text().lower() and panel.retry['GE-Proton'].get_visible()
+    assert len(panel.items['GE-Proton'])==7
     capture(settings,args.output/'proton-offline.png')
     settings.close();settle()
     # A previously saved custom/Valve path remains a usable Setup choice, even
@@ -181,4 +222,4 @@ with tempfile.TemporaryDirectory(prefix='umutron-proton-ui-') as temp:
     capture(window.editor,args.output/'proton-game-setup.png')
     window.cancel_editor();manager.releases=original_releases
     window.controller.close();window.destroy();window.pool.shutdown(wait=True)
-print('PASS: exactly GE/UMU tabs; saved Valve/custom selectors preserved; distinct same-version copy labels and ownership; cached/background catalog; scroll pagination; install/default/uninstall state; referenced removal blocked; offline retention; visible Setup selector; stale async cancellation; no live data or execution')
+print('PASS: one protected UMU baseline; fresh UMU default with no GE preinstall; no Settings downloads or UMU catalog; manual defaults survive reopen/refresh; mutable alias and custom selections preserved; duplicate folders/receipts untouched; GE pagination/install/default/uninstall/cancel/offline; stale Setup cancellation; no live data or execution')
