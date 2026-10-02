@@ -167,3 +167,10 @@ Native isolated GTK Broadway fixtures cover the three family tabs, cached-first 
 Core tests exercise the actual launch supervisor with only its network transport replaced by a local fixture archive: exact PROTONPATH after verified install, no execution/prefix on download failure or cancellation, successful retry, and runner leases retained for an orphaned descendant. Two separate Python processes request the same build and perform one download. Additional checks cover inherited defaults, installer continuity, checksum/source/architecture/space rejection, cancellation isolation, reference reassignment, and managed-only removal preserving fixtures representing games, saves and prefixes.
 
 Legacy UMU/GE automatic policy resolution, actual vendor binaries, real game compatibility, hardware controllers, Valve distribution, and Wayland/X11 capture remain outside this isolated acceptance run. No live games, installers, runner installations/removals or profile activation are performed. CI uses Ubuntu’s system Python and native GI packages because tray tests require GLib; a generic setup-python interpreter lacks that binding.
+
+
+## GE/UMU manager simplification — 0.4.20
+
+106 core tests, Ruff F checks and Python compilation pass. The native Proton fixture asserts exactly GE-Proton/UMU-Proton tabs, preserves a saved Valve global default and custom symlink selection without rewriting the library, and distinguishes two installed same-version UMU copies while retaining their selectors and removal rules. Cached/background results, pagination, explicit install/default/uninstall, cancellation, offline retry and stale Setup callbacks remain covered. The complete native UI smoke suite also passes.
+
+Inspected actual GTK test renders at 660×720 show both tabs and the differentiated copy headings without clipping. These are temporary Broadway fixtures with inert runners, not live-desktop screenshots or real vendor installations. No launch/download/uninstall implementation changed. Existing runners, prefixes and saved configuration are not migrated or removed.

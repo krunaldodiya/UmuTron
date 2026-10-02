@@ -16,7 +16,7 @@ from fullscreen_preview import settle
 from game_library.app import Application, Window
 from game_library.demo import prepare_demo
 from game_library.proton_manager import ProtonManager, REPOS
-from game_library.runner_selection import FAMILIES, release_selector
+from game_library.runner_selection import release_selector
 from gi.repository import Adw, Gio, Gtk
 
 
@@ -67,7 +67,16 @@ with tempfile.TemporaryDirectory(prefix='umutron-proton-ui-') as temp:
     for family in REPOS:
         (manager.root/f'releases-{family}-1.json').write_text(json.dumps(payload(family,1)))
     umu=manager.umu_tools/'UMU-Latest';umu.mkdir(parents=True);(umu/'proton').write_text('inert');(umu/'version').write_text('1774856027 UMU-Proton-10.0-4\n')
+    umu_release=next(r for r in manager.cached('UMU-Proton') if r['version']=='UMU-Proton-10.0-4')
+    managed_umu=manager.target(umu_release);managed_umu.mkdir()
+    (managed_umu/'proton').write_text('inert');(managed_umu/'version').write_bytes((umu/'version').read_bytes())
+    (managed_umu/'umutron-release.json').write_text(json.dumps(umu_release))
     local=manager.tools/'GE-Proton11-6';local.mkdir();(local/'proton').write_text('unreceipted fixture')
+    valve=Path(temp)/'Valve-Proton';valve.mkdir();(valve/'proton').write_text('inert');(valve/'version').write_text('1774856027 Proton 11.0-2\n')
+    custom=Path(temp)/'saved-custom-link';custom.symlink_to(valve,target_is_directory=True)
+    library.set_default_proton(str(valve))
+    custom_game=library.games()[-1];custom_game.setdefault('launch',{})['proton']=str(custom);library.save(custom_game)
+    saved_before=library.path.read_bytes()
     gate=threading.Event();calls=[]
     def transport(url):
         calls.append(url)
@@ -82,8 +91,10 @@ with tempfile.TemporaryDirectory(prefix='umutron-proton-ui-') as temp:
     window.open_settings();settle()
     settings=next(w for w in Gtk.Window.get_toplevels() if w.get_title()=='Settings' and w.get_visible())
     settings.set_visible_page(window.proton_settings_page);panel=window.proton_panel
-    assert [panel.stack.get_pages().get_item(i).get_title() for i in range(3)]==list(FAMILIES)
-    assert not any(isinstance(w,Gtk.Button) and w.get_label() in ('Refresh','Load older versions','Refresh installed') for w in widgets(panel))
+    assert panel.stack.get_pages().get_n_items()==2
+    assert [panel.stack.get_pages().get_item(i).get_title() for i in range(2)]==['GE-Proton','UMU-Proton']
+    assert panel.stack.get_visible_child_name()=='GE-Proton'
+    assert not any(isinstance(w,Gtk.Button) and w.get_label() in ('Refresh','Load older versions','Refresh installed','Choose local Proton folder') for w in widgets(panel))
     panel.stack.set_visible_child_name('GE-Proton');settle()
     assert len(panel.items['GE-Proton'])==4 and panel.loading, 'Cached rows must precede background results'
     assert window.get_sensitive() and settings.get_sensitive() and not window.busy
@@ -93,6 +104,8 @@ with tempfile.TemporaryDirectory(prefix='umutron-proton-ui-') as temp:
     refreshed=next(c for c in panel.controls if c['release'] and c['release']['version']==tag)
     assert settings.get_focus() is refreshed['primary'], 'Background catalog must retain the active row control'
     assert len(panel.items['GE-Proton'])==4
+    assert library.path.read_bytes()==saved_before, 'Opening/loading the manager must preserve saved Valve/custom selections'
+    assert 'Proton 11.0-2' in panel.default.get_text()
     catalog=next(c for c in panel.controls if c['release'] and c['release']['version']=='GE-Proton11-6')
     assert catalog['value']=='release:GE-Proton:GE-Proton11-6'
     assert manager.status(catalog['release'])['state']=='Available'
@@ -100,6 +113,12 @@ with tempfile.TemporaryDirectory(prefix='umutron-proton-ui-') as temp:
     assert 'unverified' in preserved['status'].get_text()
     local_umu=next(c for c in panel.controls if not c['release'] and c['value']==str(umu))
     assert 'UMU-managed' in local_umu['status'].get_text() and not local_umu['primary'].get_visible()
+    downloaded_umu=next(c for c in panel.controls if c['release'] and c['value']==release_selector(umu_release))
+    assert 'UmuTron download' in downloaded_umu['heading'].get_text()
+    assert 'UMU-managed copy' in local_umu['heading'].get_text()
+    assert downloaded_umu['heading'].get_text()!=local_umu['heading'].get_text()
+    assert downloaded_umu['primary'].get_label()=='Uninstall' and downloaded_umu['primary'].get_visible()
+    assert manager.status(umu_release)['state']=='Installed'
     manager.has_more=lambda family,page:page==1
     panel.more['GE-Proton']=True
     panel.scrolls['GE-Proton'].emit('edge-reached',Gtk.PositionType.BOTTOM)
@@ -125,14 +144,24 @@ with tempfile.TemporaryDirectory(prefix='umutron-proton-ui-') as temp:
     confirmation.emit('response','cancel');settle()
     assert manager.target(first['release']).is_dir(), 'Cancelling uninstall must keep files'
     panel.set_default(release_selector(first['release']))
-    panel.stack.set_visible_child_name('Proton');settle();capture(settings,args.output/'proton-official.png')
+    panel.set_default(str(umu))
     panel.stack.set_visible_child_name('UMU-Proton');settle();capture(settings,args.output/'proton-umu.png')
+    local_umu=next(c for c in panel.controls if not c['release'] and c['value']==str(umu))
+    assert local_umu['default'].get_label()=='Default'
+    assert managed_umu.is_dir() and umu.is_dir(), 'Presentation must not merge or remove separate installations'
     manager.transport=lambda _:(_ for _ in ()).throw(OSError('Fixture offline'))
     panel.load('UMU-Proton',1);wait(lambda:not panel.loading)
     assert 'cached' in panel.statuses['UMU-Proton'].get_text().lower() and panel.retry['UMU-Proton'].get_visible()
     assert len(panel.items['UMU-Proton'])==4
     capture(settings,args.output/'proton-offline.png')
     settings.close();settle()
+    # A previously saved custom/Valve path remains a usable Setup choice, even
+    # though its former catalog tab no longer exists. Cancel preserves spelling.
+    custom_before=library.path.read_bytes();window.show_game(custom_game);window.open_manage();settle()
+    assert window.launch_fields['proton'].get_text()==str(custom)
+    assert window.proton_choice.get_selected_item().get_string().startswith('Proton 11.0-2')
+    window.cancel_editor();assert library.path.read_bytes()==custom_before
+    assert (valve/'proton').read_text()=='inert' and custom.is_symlink()
     # A delayed Setup catalog response cannot change a new draft after Cancel.
     before=library.path.read_bytes();game=library.games()[0];window.show_game(game)
     entered=threading.Event();release=threading.Event()
@@ -152,4 +181,4 @@ with tempfile.TemporaryDirectory(prefix='umutron-proton-ui-') as temp:
     capture(window.editor,args.output/'proton-game-setup.png')
     window.cancel_editor();manager.releases=original_releases
     window.controller.close();window.destroy();window.pool.shutdown(wait=True)
-print('PASS: exactly three tabs; cached/background catalog; scroll pagination; install/default/uninstall state; referenced removal blocked; offline retention; visible Setup selector; stale async cancellation; no live data or execution')
+print('PASS: exactly GE/UMU tabs; saved Valve/custom selectors preserved; distinct same-version copy labels and ownership; cached/background catalog; scroll pagination; install/default/uninstall state; referenced removal blocked; offline retention; visible Setup selector; stale async cancellation; no live data or execution')

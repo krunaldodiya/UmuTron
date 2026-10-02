@@ -27,7 +27,7 @@ The app now appears as **UmuTron** in its window, Settings information, applicat
 - Optional overrides in collapsed **Advanced launch settings**, including Reset to defaults and custom paths. Normal Proton selection is visible in Setup.
 - Close to tray; **Show UmuTron** and explicit **Exit**. Without a supported tray host, close minimizes instead of making the app inaccessible. Reopening activates the existing instance.
 - One app-owned game or installer at a time. Stop targets only that launch's verified owned processes. Active operations continue under their supervisor if you explicitly Exit; reopening reconnects.
-- Three-tab Proton Manager: official **Proton**, **GE-Proton**, **UMU-Proton**. Cached catalogs update in the background and load older releases while scrolling. Installed/default/available states share one list. Verified GE/UMU downloads support cancellation, retry and guarded uninstall of managed runners.
+- Two-tab Proton Manager: **GE-Proton** and **UMU-Proton**. Cached catalogs update in the background and load older releases while scrolling. Installed/default/available states share one list. Verified GE/UMU downloads support cancellation, retry and guarded uninstall of managed runners.
 - Local ZIP import/export, compact cards, filtering, light/dark/system themes and provider artwork.
 
 ## Desktop and fullscreen
@@ -54,7 +54,7 @@ This user-level installer writes code to `~/.local/opt/game-library-launcher` an
 
 ## Proton versions
 
-Settings → Proton Manager has exactly three family tabs. **Proton** groups local official Stable, Experimental, Next and legacy builds; **GE-Proton** and **UMU-Proton** browse their official release archives for this computer’s architecture. Valve distributes official binaries through Steam and currently exposes no direct verified binary assets in its GitHub release feed. UmuTron can use a compatible local official build through UMU; it does not install Steam/SteamCMD, fetch source archives as runners, or integrate external launcher libraries.
+Settings → Proton Manager has two tabs: **GE-Proton** and **UMU-Proton**, with official release archives for this computer’s architecture. The local-only Valve Proton tab has been removed. Existing explicit Valve/custom runner paths and saved defaults remain usable through UMU and the per-game Setup selector; removing the tab does not uninstall software or rewrite selections. Same-version copies have distinct headings for **UmuTron download**, **UMU-managed copy**, or **Local copy**, retaining separate paths, receipts and removal rules.
 
 Choose **Set as default** on a build. Manage Game → **Proton version** offers **Use default** and exact available/installed versions. Saving a choice never downloads or executes a game. After explicit Play or Launch Installer, a missing exact GE/UMU build downloads, checks its published digest, installs atomically, and only then starts UMU with its absolute path. Failed/cancelled preparation never starts the game; retry keeps the selected version. Concurrent requests reuse the same completed verified installation. Partial archives are discarded and retries fetch a fresh copy.
 

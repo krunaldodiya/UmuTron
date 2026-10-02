@@ -4,7 +4,6 @@ import re
 INHERIT = 'default'
 AUTOMATIC = {'UMU-Latest': 'UMU-Proton', 'GE-Latest': 'GE-Proton'}
 DOWNLOAD_FAMILIES = ('GE-Proton', 'UMU-Proton')
-FAMILIES = ('Proton', 'GE-Proton', 'UMU-Proton')
 
 
 def parse_release(value):

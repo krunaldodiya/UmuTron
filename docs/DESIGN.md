@@ -160,3 +160,10 @@ Explicit execution may prepare a missing exact release under the independent sup
 Every concrete runner operation holds a shared canonical-path lease through preparation and all owned descendants. Removal requires an exclusive runner lease and the library’s launch guard, rechecks effective saved references, and rejects observed same-user process use or inaccessible process evidence. Only direct, unlinked children of the app’s managed runners folder can be removed after confirmation. Historical installer metadata is retained, but a deliberate replacement selection allows reassignment. Paths, prefixes, saves and custom/external runner folders remain untouched. No OS-wide exclusion is claimed for nonparticipating processes.
 
 Catalog completion is scoped to its living Settings dialog or exact Setup draft, so closing/cancelling cannot mutate a later editor or save a choice. Tests cover real independent inert supervisors and multiprocess install contention, exact selection, inherited defaults, failed/cancelled preparation, retry, orphan descendants, referenced/in-use removal, archive/source/space rejection and native dialog transitions.
+
+
+## Focused Proton Manager — 0.4.20
+
+The current manager has exactly two tabs, GE-Proton and UMU-Proton, opening on GE-Proton. The former local-only official Proton tab, empty channel groups and folder picker are removed. This supersedes the three-tab presentation in 0.4.19; it does not change runner selection or launch contracts. Existing saved Valve/custom paths, symlink spellings, global defaults and installation pins remain usable and are not migrated or deleted. The per-game selector continues to include saved local runners.
+
+Rows identify their source in the heading: UmuTron download, UMU-managed copy, or Local copy. Two copies reporting the same version remain distinct installations with unchanged selectors, receipt requirements and uninstall safeguards. The change does not merge files, adopt unverified folders, remove runners or touch prefixes.

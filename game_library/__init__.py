@@ -1,6 +1,6 @@
 """UmuTron: a standalone installed-game library and UMU launcher."""
 
-__version__ = "0.4.19"
+__version__ = "0.4.20"
 
 APP_NAME = "UmuTron"
 APP_ID = "io.github.game_library_launcher"

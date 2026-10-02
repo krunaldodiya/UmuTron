@@ -1,8 +1,8 @@
-"""Three-family Proton browsing and ordinary per-game runner selection."""
+"""GE/UMU Proton browsing and ordinary per-game runner selection."""
 from pathlib import Path
 from gi.repository import Adw, GLib, Gtk
 from .proton_manager import BUSY, REPOS, runner_label
-from .runner_selection import FAMILIES, INHERIT, parse_release, release_selector
+from .runner_selection import DOWNLOAD_FAMILIES, INHERIT, parse_release, release_selector
 
 
 def text(value, css=None):
@@ -68,14 +68,9 @@ class ProtonPanel(Gtk.Box):
         self.append(switcher)
         self.append(self.stack)
         self.rows, self.statuses, self.retry, self.scrolls = {}, {}, {}, {}
-        for family in FAMILIES:
+        for family in DOWNLOAD_FAMILIES:
             page = box()
-            if family == 'Proton':
-                page.append(text('Official Valve Proton', 'title-3'))
-                page.append(text('Stable, Experimental, Next and legacy versions can run through UMU when a compatible local build is available. Valve distributes these builds through Steam; its release feed provides no verified direct binary downloads for UmuTron.', 'dim-label'))
-                page.append(action('Choose local Proton folder', self.choose_official))
-            else:
-                page.append(text('Official ' + family + ' releases · ' + self.manager.arch, 'title-3'))
+            page.append(text('Official ' + family + ' releases · ' + self.manager.arch, 'title-3'))
             status = text('', 'dim-label')
             page.append(status)
             self.statuses[family] = status
@@ -95,7 +90,7 @@ class ProtonPanel(Gtk.Box):
             if family in REPOS:
                 for release in cached_all(self.manager, family):
                     self.items[family][release_selector(release)] = release
-        self.stack.set_visible_child_name('Proton')
+        self.stack.set_visible_child_name('GE-Proton')
         self.stack.connect('notify::visible-child-name', lambda *_: self.maybe_load_visible())
         dialog.connect('unrealize', lambda *_: setattr(self, 'alive', False))
         self.render()
@@ -153,25 +148,6 @@ class ProtonPanel(Gtk.Box):
             return False
         future.add_done_callback(lambda _: GLib.idle_add(finish))
 
-    def choose_official(self):
-        def chosen(path):
-            if not self.alive:
-                return
-            try:
-                if not (path / 'proton').is_file():
-                    raise ValueError('Choose a folder containing the Proton launcher.')
-                self.window.library.set_default_proton(str(path))
-                self.render()
-            except Exception as error:
-                self.error(error)
-        chooser = Gtk.FileChooserNative.new('Choose local Proton folder', self.dialog, Gtk.FileChooserAction.SELECT_FOLDER, 'Use as default', 'Cancel')
-        def response(widget, response):
-            if response == Gtk.ResponseType.ACCEPT and widget.get_file():
-                chosen(Path(widget.get_file().get_path()))
-            widget.destroy()
-        chooser.connect('response', response)
-        chooser.show()
-
     def error(self, error):
         dialog = Adw.MessageDialog.new(self.dialog, 'Could not complete this action', str(error)[:2000])
         dialog.add_response('ok', 'OK')
@@ -212,7 +188,7 @@ class ProtonPanel(Gtk.Box):
         scroll_values = {family: scroll.get_vadjustment().get_value() for family, scroll in self.scrolls.items()}
         self.controls.clear()
         installed = self.manager.installed()
-        for family in FAMILIES:
+        for family in DOWNLOAD_FAMILIES:
             rows = self.rows[family]
             while child := rows.get_first_child():
                 rows.remove(child)
@@ -229,19 +205,9 @@ class ProtonPanel(Gtk.Box):
                 else:
                     pending.append((value,release))
             local = [path for path in installed if family_of(path) == family and str(Path(path).resolve()) not in covered]
-            if family == 'Proton':
-                self.statuses[family].set_text('Local builds only · direct download unavailable')
-                for channel in ('Stable', 'Experimental', 'Next', 'Legacy / older'):
-                    rows.append(text(channel, 'heading'))
-                    group = [p for p in local if official_channel(p) == channel]
-                    for path in group:
-                        self.add_row(rows, runner_label(path).removesuffix(' — installed'), path, selected)
-                    if not group:
-                        rows.append(text('No local build selected', 'dim-label'))
-            else:
-                self.statuses[family].set_text(self.messages[family])
-                for path in local:
-                    self.add_row(rows, runner_label(path).removesuffix(' — installed'), path, selected)
+            self.statuses[family].set_text(self.messages[family])
+            for path in local:
+                self.add_row(rows, runner_label(path).removesuffix(' — installed'), path, selected)
             for value, release in pending:
                 self.add_row(rows, release['version'], value, selected, release)
         self.update_controls()
@@ -261,7 +227,14 @@ class ProtonPanel(Gtk.Box):
         for edge in ('top', 'bottom', 'start', 'end'):
             getattr(inner, 'set_margin_' + edge)(12)
         card.append(inner)
-        inner.append(text(title, 'heading'))
+        if release:
+            origin = 'UmuTron download'
+        elif Path(value).absolute().parent == self.manager.umu_tools.absolute():
+            origin = 'UMU-managed copy'
+        else:
+            origin = 'Local copy'
+        heading = text(title + ' · ' + origin, 'heading')
+        inner.append(heading)
         status = text('', 'dim-label')
         inner.append(status)
         row = box(False)
@@ -272,7 +245,7 @@ class ProtonPanel(Gtk.Box):
         row.append(primary)
         cancel = action('Cancel', lambda: self.manager.cancel(release))
         row.append(cancel)
-        control = dict(card=card, status=status, default=default, primary=primary, cancel=cancel, value=value, release=release)
+        control = dict(card=card, heading=heading, status=status, default=default, primary=primary, cancel=cancel, value=value, release=release)
         primary.connect('clicked', lambda _: self.primary(control))
         self.controls.append(control)
         rows.append(card)
@@ -320,19 +293,6 @@ class ProtonPanel(Gtk.Box):
             return False
         self.update_controls()
         return True
-
-
-def official_channel(path):
-    name = (Path(path).name + ' ' + runner_label(path)).lower()
-    if 'experimental' in name:
-        return 'Experimental'
-    if 'next' in name:
-        return 'Next'
-    # Local folders do not provide a trusted latest-version catalog. Explicitly
-    # named legacy builds are grouped; other local official builds remain Stable.
-    if any(word in name for word in ('legacy', 'older', 'proton 3.', 'proton 4.', 'proton 5.', 'proton 6.', 'proton 7.', 'proton 8.')):
-        return 'Legacy / older'
-    return 'Stable'
 
 
 def build_game_selector(window, content, dialog):
