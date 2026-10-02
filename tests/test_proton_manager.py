@@ -1,5 +1,7 @@
 import hashlib
 import io
+import os
+from unittest.mock import patch
 from pathlib import Path
 import tarfile
 import tempfile
@@ -12,10 +14,11 @@ from game_library.proton_manager import ProtonManager, extract, release_items
 class ProtonTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name)
+        env=patch.dict(os.environ,XDG_DATA_HOME=str(self.root/'data'));env.start();self.addCleanup(env.stop)
         self.archive=self.root/'source.tar.gz'
         with tarfile.open(self.archive,'w:gz') as t:
             item=tarfile.TarInfo('GE-Proton11-test/proton');data=b'#!/bin/sh\nexit 0\n';item.size=len(data);item.mode=0o755;t.addfile(item,io.BytesIO(data))
-        self.release={'family':'GE-Proton','version':'GE-Proton11-test','name':'GE-Proton11-test.tar.gz','architecture':'x86_64','url':'https://github.com/GloriousEggroll/proton-ge-custom/releases/download/test/GE-Proton11-test.tar.gz','size':self.archive.stat().st_size,'digest':'sha256:'+hashlib.sha256(self.archive.read_bytes()).hexdigest(),'checksum_url':''}
+        self.release={'family':'GE-Proton','version':'GE-Proton11-test','name':'GE-Proton11-test.tar.gz','architecture':'x86_64','url':'https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-test/GE-Proton11-test.tar.gz','size':self.archive.stat().st_size,'digest':'sha256:'+hashlib.sha256(self.archive.read_bytes()).hexdigest(),'checksum_url':''}
     def wait(self,manager):
         deadline=time.monotonic()+4
         while manager.busy() and time.monotonic()<deadline:time.sleep(.01)
@@ -37,7 +40,9 @@ class ProtonTests(unittest.TestCase):
             if cancel.is_set():raise InterruptedError('cancelled')
             self.fake(url,path,limit,cancel,progress)
         manager=ProtonManager(self.root/'manager',downloader=slow);manager.install(self.release)
-        with self.assertRaises(RuntimeError):manager.install(self.release)
+        original=manager.jobs[self.release['name']]
+        manager.install(self.release)
+        self.assertIs(manager.jobs[self.release['name']],original)
         manager.cancel(self.release);gate.set();self.wait(manager)
         self.assertEqual(manager.status(self.release)['state'],'Cancelled')
         bad=dict(self.release,digest='sha256:'+'0'*64);manager.downloader=self.fake;manager.install(bad);self.wait(manager)
@@ -56,7 +61,7 @@ class ProtonTests(unittest.TestCase):
     def test_cached_paginated_releases_and_architecture(self):
         calls=[]
         asset={'name':self.release['name'],'size':self.release['size'],'digest':self.release['digest'],'browser_download_url':self.release['url']}
-        arm=dict(asset,name='GE-Proton11-test-aarch64.tar.gz')
+        arm=dict(asset,name='GE-Proton11-test-aarch64.tar.gz',browser_download_url=self.release['url'].replace('.tar.gz','-aarch64.tar.gz'))
         payload=[{'tag_name':'GE-Proton11-test','assets':[asset,arm]}]
         def transport(url):calls.append(url);return payload
         manager=ProtonManager(self.root/'manager',transport=transport,arch='x86_64')
@@ -79,3 +84,38 @@ class ProtonTests(unittest.TestCase):
         self.assertEqual(manager.status(self.release)['state'],'Installed')
         self.assertFalse(stale.exists())
         self.assertEqual((Path(manager.status(self.release)['path'])/'proton').read_bytes(),b'runner')
+
+    def test_runner_labels_distinguish_automatic_alias_from_installed_version(self):
+        from game_library.proton_manager import runner_choices
+        tool=self.root/'UMU-Latest';tool.mkdir();(tool/'proton').write_text('fixture')
+        (tool/'version').write_text('1774856027 UMU-Proton-10.0-4\n')
+        values,labels=runner_choices([str(tool)],'UMU-Latest')
+        self.assertEqual(values,['UMU-Latest','GE-Latest',str(tool)])
+        self.assertEqual(labels,['UMU-Proton — automatic latest','GE-Proton — automatic latest','UMU-Proton-10.0-4 — installed'])
+        self.assertEqual(values.index('UMU-Latest'),0)
+
+    def test_runner_labels_fallback_and_distinguish_same_version_installs(self):
+        from game_library.proton_manager import runner_choices,runner_label
+        first=self.root/'first'/'Proton';second=self.root/'second'/'Proton'
+        for path in (first,second):path.mkdir(parents=True);(path/'proton').write_text('fixture')
+        values,labels=runner_choices([str(first),str(second)],str(first))
+        self.assertEqual(len(set(labels)),len(labels))
+        self.assertIn(str(first),labels[2]);self.assertIn(str(second),labels[3])
+        self.assertEqual(runner_label(str(self.root/'missing')),'missing — unavailable')
+        (first/'version').write_bytes(b'x'*5000)
+        self.assertEqual(runner_label(str(first)),'Proton — installed')
+
+    def test_canonical_discovery_dedupes_without_changing_saved_symlink_selection(self):
+        from game_library.proton_manager import runner_choices
+        from game_library.library import Library
+        tool=self.root/'Proton';tool.mkdir();(tool/'proton').write_text('fixture')
+        manager=ProtonManager(self.root/'manager')
+        alias=manager.tools/'alias';alias.symlink_to(tool,target_is_directory=True)
+        library=Library(self.root);library.set_default_proton(str(alias))
+        paths=manager.installed()
+        self.assertEqual(paths,[str(alias)])
+        self.assertFalse(manager.managed(alias))
+        values,labels=runner_choices([str(tool),str(alias)],str(alias))
+        self.assertEqual(len(values),3)
+        self.assertEqual(values[2],str(alias))
+        self.assertEqual(len(set(labels)),3)

@@ -4,11 +4,14 @@ permissions:
   contents: read
 jobs:
   core:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: python -m unittest discover -s tests -v
-      - run: python -m compileall -q game_library
+      - name: Install native Python bindings
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-gi python3-cairo gir1.2-gtk-4.0 gir1.2-adw-1
+      - name: Test isolated core fixtures
+        run: /usr/bin/python3 -m unittest discover -s tests -v
+      - name: Compile application
+        run: /usr/bin/python3 -m compileall -q game_library

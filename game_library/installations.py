@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from uuid import UUID
 from .launcher import ACTIVE, defaults, build_command, pid_identity
+from .runner_selection import AUTOMATIC, parse_release
 
 
 def validate_installation(value):
@@ -48,10 +49,13 @@ class Installations:
         if not setup.is_absolute() or not setup.is_file():raise ValueError('Choose an existing installer executable.')
         context=defaults(candidate,self.library.root)
         previous=self.status(candidate).get('proton')
-        context['proton']=(previous if previous not in (None,'UMU-Latest','GE-Latest') else config.get('proton')) or candidate.get('launch',{}).get('proton') or self.library.data['settings'].get('default_proton') or context['proton']
-        if context['proton'] in ('UMU-Latest','GE-Latest') and candidate.get('launch',{}).get('proton') not in (None,'','UMU-Latest','GE-Latest'):context['proton']=candidate['launch']['proton']
+        # Resume the resolved installer build when the user has not chosen a new
+        # override. Explicit Use default deliberately opts out of a legacy pin.
+        selected=candidate.get('launch',{}).get('proton','')
+        resume_policy=not selected or (selected in AUTOMATIC and selected==config.get('proton'))
+        if resume_policy and previous and previous not in AUTOMATIC and not parse_release(previous):
+            context['proton']=previous
         context['prefix']=config.get('prefix') or context['prefix']
-        if context['proton'] not in ('UMU-Latest','GE-Latest'):context['proton']=str(Path(context['proton']).resolve())
         launch=deepcopy(candidate);launch.update(executable=str(setup),working_dir=str(setup.parent),launch={**context,'arguments':[]})
         config.update(mode='installer',installer=str(setup),prefix=context['prefix'],proton=context['proton'],confirmed=False)
         candidate['installation']=config

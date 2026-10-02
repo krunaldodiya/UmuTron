@@ -48,8 +48,31 @@ def main(request_path):
             if not request.get('session_id') or path.stat().st_size>4096:return False
             value=json.loads(path.read_text());return value.get('session_id')==request['session_id'] and value.get('game_id')==request['game_id']
         except (OSError,ValueError):return False
+    runtime_temp=None;runner_lease=None
     try:
         if cancel_requested():state['state']='Stopped';logs.append('Operation cancelled before execution.');return
+        from game_library.runner_preparation import prepare_runner
+        class Cancellation:
+            def is_set(self):return stopping[0] or cancel_requested()
+        def runner_progress(**changes):
+            stage=changes.pop('state','Preparing')
+            if not logs or logs[-1] != 'Proton: '+stage:logs.append('Proton: '+stage)
+            state.update(changes);state['preparation_stage']='Proton: '+stage;state['state']='Downloading runtime';save()
+        runner_lease=prepare_runner(request,Cancellation(),runner_progress)
+        state['proton']=request['env']['PROTONPATH']
+        state.pop('preparation_stage',None);state.pop('downloaded_bytes',None);state.pop('total_bytes',None)
+        if request.get('operation')=='runtime':
+            from game_library.runtime_maintenance import prepare
+            state['state']='Downloading runtime';logs.append('Downloading official Microsoft runtime after explicit confirmation.');save()
+            def downloaded(size):
+                if stopping[0] or cancel_requested():raise InterruptedError('Runtime download cancelled.')
+                state['downloaded_bytes']=size;save()
+            runtime_temp,argv,cwd,env,digest=prepare(request,lambda:stopping[0] or cancel_requested(),downloaded)
+            request.update(argv=argv,cwd=cwd,env=env)
+            logs.append('Microsoft HTTPS download SHA-256: '+digest)
+            logs.append('Review and accept the license in the Microsoft installer, or cancel. No unattended acceptance.')
+        from game_library.prefix_guard import ensure_idle
+        if request.get('operation')=='runtime':ensure_idle(request['env']['WINEPREFIX'])
         prefix=Path(request['env']['WINEPREFIX']);prefix.mkdir(parents=True,exist_ok=True,mode=0o700)
         if prefix.is_symlink() or (any(prefix.iterdir()) and not (prefix/MARKER).is_file()):raise ValueError('Prefix changed before launch. Existing data was preserved.')
         if not (prefix/MARKER).exists():
@@ -60,6 +83,8 @@ def main(request_path):
             state['diagnostics_dir']=str(folder)
             logs.append('Detailed Proton logs: '+str(folder))
         save()
+        if stopping[0] or cancel_requested():
+            state['state']='Stopped';logs.append('Operation cancelled before execution.');return
         with subprocess.Popen(request['argv'],cwd=request['cwd'],env=request['env'],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True) as process:
             owned[process.pid]=pid_identity(process.pid)
             os.set_blocking(process.stdout.fileno(),False)
@@ -116,9 +141,19 @@ def main(request_path):
         if pending:logs.append(clean_log(pending.decode('utf-8',errors='replace')))
         state['code']=code;state['state']='Stopped' if stopping[0] else ('Finished' if code==0 else 'Error')
         logs.append('Launch stopped.' if stopping[0] else f'UMU exited with code {code}.')
+        if request.get('operation')=='runtime':
+            from game_library.runtime_maintenance import verify
+            verified,detail=verify(request);logs.append(detail)
+            state['runtime_verified']=bool(verified and not stopping[0] and code in (0,3010))
+            state['state']='Stopped' if stopping[0] else ('Finished' if state['runtime_verified'] else 'Error')
+            if not state['runtime_verified']:logs.append('Installation was not accepted as successful. Refresh inventory before retrying; partial changes are kept.')
+    except InterruptedError as error:
+        state['state']='Stopped';logs.append(clean_log(str(error)))
     except Exception as error:
         state['state']='Error';logs.append(clean_log(str(error)))
     finally:
+        if runtime_temp is not None:runtime_temp.cleanup()
+        if runner_lease is not None:os.close(runner_lease)
         save()
         from game_library.diagnostics import cleanup
         try:cleanup(Path(request['record']).parent)

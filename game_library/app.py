@@ -16,7 +16,8 @@ from .installations import Installations
 from .tray import Tray, close_action
 from .controller import Controller
 from .providers import Credentials, IGDB, SteamGridDB
-from . import metadata, __version__
+from .fullscreen import CSS as FULLSCREEN_CSS, cover as console_cover, set_art, CoverLayout
+from . import APP_ID, APP_NAME, ICON_NAME, metadata, __version__
 
 
 def label(text, css=None, **kwargs):
@@ -52,12 +53,12 @@ def clear(container):
 
 class Window(Adw.ApplicationWindow):
     def __init__(self, app, library, demo=False):
-        super().__init__(application=app,title='Game Library Launcher',default_width=1120,default_height=800)
+        super().__init__(application=app,title=APP_NAME,default_width=1120,default_height=800)
         css=Gtk.CssProvider()
-        css.load_from_data(b'.tv-mode { background: #111723; color: #f5f7fb; font-size: 16px; } .tv-mode button { min-height: 42px; padding: 10px 18px; border-radius: 12px; } .tv-mode .tv-card { padding: 5px; background: alpha(#202938, .8); border-radius: 10px; } .tv-mode .tv-game-chip { transform: scale(.666667); transition: transform 160ms ease-out; } .tv-mode .tv-game-chip.selected-game, .tv-mode .tv-game-chip.control-focused, .tv-mode .tv-game-chip:focus { transform: scale(1); } .tv-mode .tv-card .art-frame { padding: 0; background: transparent; } .tv-mode .tv-tab-active { color: #fff; font-weight: 800; border-bottom: 2px solid #fff; border-radius: 0; } .tv-mode .tv-clock { font-size: 20px; } .tv-mode .tv-controls button { min-height: 30px; padding: 6px 12px; } .control-focused, button:focus, .tv-mode button:focus-visible { outline: 3px solid #82bcff; outline-offset: 2px; } .tv-mode .selected-game { background: alpha(#82bcff, .18); } .tv-mode .tv-title { font-size: 38px; font-weight: 700; } .tv-mode .tv-description { font-size: 16px; font-weight: 400; line-height: 1.4; } .tv-mode .tv-hints { font-size: 13px; color: #c4d0e5; } .art-frame { background: alpha(@window_fg_color, 0.055); border-radius: 12px; padding: 8px; } .game-card { padding: 10px; } .game-card:hover { background: alpha(@accent_color, 0.09); }')
+        css.load_from_data(FULLSCREEN_CSS + b'.control-focused, button:focus { outline: 3px solid #82bcff; outline-offset: 2px; } .art-frame { background: alpha(@window_fg_color, 0.055); border-radius: 12px; padding: 8px; } .game-card { padding: 10px; } .game-card:hover { background: alpha(@accent_color, 0.09); }')
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(),css,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self.demo=demo;self.tv_mode=False;self.tv_selected_id=None;self.tv_tiles=[];self.tv_section='games'
-        self.library=library; self.launcher=Launcher(library.root); self.proton_manager=ProtonManager(library.root/'proton-manager'); self.launch_fields={}; self.play_buttons={}; self.installations=Installations(library,self.launcher);self.editor=None;self.editor_kind=None;self.exiting=False
+        self.library=library; self.launcher=Launcher(library.root); self.proton_manager=ProtonManager(library.root/'proton-manager',umu_root=library.root/'demo-umu-runners' if demo else None); self.launch_fields={}; self.play_buttons={}; self.installations=Installations(library,self.launcher);self.editor=None;self.editor_kind=None;self.exiting=False
         self.credentials=Credentials(library.root/'demo-provider-settings') if demo else Credentials(); self.igdb=IGDB(self.credentials); self.sgdb=SteamGridDB(self.credentials)
         self.pool=ThreadPoolExecutor(max_workers=2)
         self.busy=False; self.game=None; self.original=None; self.fields={}; self.log_lines=[]
@@ -66,21 +67,24 @@ class Window(Adw.ApplicationWindow):
         self.layout=box(spacing=0)
         self.scene=Gtk.Overlay();self.backdrop=Gtk.Picture(content_fit=Gtk.ContentFit.COVER,can_shrink=True,opacity=0);self.backdrop.set_visible(True);self.backdrop.set_can_target(False)
         self.scene.set_child(self.backdrop);self.toast.set_child(self.layout)
+        shade=Gtk.Box();shade.add_css_class('tv-scrim');shade.set_can_target(False);self.scene.add_overlay(shade)
         self.header=Adw.HeaderBar()
         self.back=button('Back to library',self.go_back,icon='go-previous-symbolic')
         self.back.set_visible(False); self.header.pack_start(self.back)
-        self.heading=Adw.WindowTitle(title='Your game library',subtitle='Your games · UMU and Proton')
+        self.heading=Adw.WindowTitle(title=APP_NAME,subtitle='Your games · UMU and Proton')
         self.header.set_title_widget(self.heading)
         self.theme=Gtk.DropDown.new_from_strings(['Follow system','Light','Dark'])
         self.theme.set_tooltip_text('Appearance')
         self.theme.set_selected(['system','light','dark'].index(self.library.data['settings'].get('theme','system')))
         self.theme.connect('notify::selected',self.theme_changed)
         self.theme.set_visible(False)
-        self.exit_button=button('Exit Launcher',self.explicit_exit,icon='application-exit-symbolic');self.exit_button.set_visible(False)
+        self.exit_button=button('Exit '+APP_NAME,self.explicit_exit,icon='application-exit-symbolic');self.exit_button.set_visible(False)
         self.settings_button=button('Settings',self.open_settings,icon='preferences-system-symbolic');self.settings_button.set_visible(False)
         self.mode_button=button('Fullscreen',lambda:self.set_tv_mode(not self.tv_mode));self.mode_button.set_tooltip_text('Switch desktop / fullscreen mode (F11)');self.mode_button.set_visible(False)
         self.layout.append(self.header)
-        self.tv_controls=box(False,16);self.tv_controls.add_css_class('tv-controls');margins(self.tv_controls,20);self.tv_controls.set_visible(False)
+        self.tv_controls=box(False,16);self.tv_controls.add_css_class('tv-controls');margins(self.tv_controls,0);self.tv_controls.set_visible(False)
+        brand=box(False,10);brand.set_valign(Gtk.Align.CENTER);brand.add_css_class('tv-brand')
+        brand_icon=Gtk.Image.new_from_icon_name(ICON_NAME);brand_icon.set_pixel_size(34);brand.append(brand_icon);brand.append(label(APP_NAME));self.tv_controls.append(brand)
         self.tv_games_tab=button('Games',lambda:self.set_tv_section('games'));self.tv_games_tab.add_css_class('flat');self.tv_controls.append(self.tv_games_tab)
         self.tv_library_tab=button('Library',lambda:self.set_tv_section('library'));self.tv_library_tab.add_css_class('flat');self.tv_controls.append(self.tv_library_tab)
         spacer=Gtk.Box(hexpand=True);self.tv_controls.append(spacer)
@@ -110,6 +114,7 @@ class Window(Adw.ApplicationWindow):
         app.connect('shutdown',lambda *_:self.controller.close())
         if self.library.data['settings'].get('default_display_mode','desktop')=='fullscreen':self.set_tv_mode(True)
         GLib.timeout_add(250,self.refresh_launch_state)
+        self.console_size=None;self.add_tick_callback(self.resize_console)
 
     def set_tv_mode(self,enabled):
         enabled=bool(enabled)
@@ -149,81 +154,100 @@ class Window(Adw.ApplicationWindow):
         self.section_tab_focus=self.tv_games_tab if section=='games' else self.tv_library_tab
         self.tv_section=section;self.show_library();self.section_tab_focus=None
 
+    def console_dimensions(self):
+        compact=self.get_width()<1400 or self.get_height()<850
+        return (80,120) if self.get_height()<650 else (96,144) if compact else (152,228)
+
+    def resize_console(self,widget,clock):
+        if not self.tv_mode:return True
+        size=self.console_dimensions()
+        if size==self.console_size:return True
+        self.console_size=size
+        if size[0]<152:self.add_css_class('tv-compact')
+        else:self.remove_css_class('tv-compact')
+        if self.game is None and hasattr(self,'tv_title'):
+            self.tv_title.set_size_request(-1,74 if size[0]<152 else 116)
+            self.tv_description.set_size_request(-1,44 if size[0]<152 else 56)
+            self.tv_description.set_visible(size[0]!=80);self.tv_eyebrow.set_visible(size[0]!=80)
+        if self.game is not None and hasattr(self,'cover') and self.cover.has_css_class('tv-cover'):
+            self.cover.set_size_request(144 if size[0]<152 else 180,216 if size[0]<152 else 270)
+            play=self.play_buttons.get(self.game['id'])
+            if play:play.set_size_request(144 if size[0]<152 else 180,-1)
+        for _,tile in self.tv_tiles:
+            tile.console_width=size[0];tile.queue_resize()
+            tile.console_cover.set_size_request(*size)
+            tile.console_title.set_size_request(size[0],42 if size[0]<152 else 48)
+        return True
+
     def tv_tile(self,game,grid=False):
-        tile=button(game['title'],lambda g=game:self.show_game(g));tile.set_focusable(False);tile.add_css_class('tv-card');tile.set_valign(Gtk.Align.START);tile.set_tooltip_text('Open '+game['title'])
+        tile=button(game['title'],lambda g=game:self.show_game(g));tile.set_focusable(False);tile.add_css_class('tv-card');tile.set_valign(Gtk.Align.START);tile.set_halign(Gtk.Align.CENTER);tile.set_tooltip_text('Open '+game['title'])
         tile.update_property([Gtk.AccessibleProperty.LABEL],['Open '+game['title']])
         if not grid:tile.add_css_class('tv-game-chip')
-        content=box(spacing=8);tile.set_child(content)
+        content=box(spacing=10);tile.set_child(content)
         name=game['artwork'].get('portrait') or game['artwork'].get('landscape')
-        size=160 if grid else 88
-        artwork=Gtk.AspectFrame(xalign=.5,yalign=.5,ratio=1,obey_child=False);artwork.set_size_request(size,size);artwork.set_halign(Gtk.Align.CENTER)
-        path=self.library.art_dir/name if name else None
-        image=Gtk.Image(icon_name='applications-games-symbolic',pixel_size=48)
-        if path and path.is_file():
-            try:
-                pixbuf=GdkPixbuf.Pixbuf.new_from_file_at_scale(str(path),size,size,True)
-                image=Gtk.Picture.new_for_paintable(Gdk.Texture.new_for_pixbuf(pixbuf));image.set_can_shrink(True);image.set_content_fit(Gtk.ContentFit.COVER)
-            except GLib.Error:pass
-        artwork.set_child(image);content.append(artwork)
-        if grid:
-            title=label(game['title'],'heading',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END,max_width_chars=16);title.set_size_request(-1,54);content.append(title)
+        width,height=self.console_dimensions()
+        tile.console_width=width;tile.set_layout_manager(CoverLayout())
+        artwork=console_cover(self.library.art_dir/name if name else None,width,height);content.append(artwork);tile.console_cover=artwork
+        title=label(game['title'],'tv-card-title',xalign=0,wrap=True,wrap_mode=Pango.WrapMode.WORD_CHAR,lines=2,ellipsize=Pango.EllipsizeMode.END,width_chars=1,max_width_chars=1);title.set_size_request(width,42 if width<152 else 48);content.append(title);tile.console_title=title
         focus=Gtk.EventControllerFocus();focus.connect('enter',lambda _,g=game:self.select_tv_game(g));tile.add_controller(focus)
         return tile
 
     def show_tv_library(self):
         return_id=self.tv_selected_id
         self.game=None;self.original=None;self.fields={};self.launch_fields={};self.description=None;self.play_buttons={};clear(self.body)
-        self.back.set_visible(False);self.heading.set_title('Your games');self.heading.set_subtitle('Fullscreen · TV mode')
+        self.console_size=None;self.resize_console(self,None)
+        self.back.set_visible(False);self.heading.set_title('Your games');self.heading.set_subtitle('Fullscreen')
         for tab,section in ((self.tv_games_tab,'games'),(self.tv_library_tab,'library')):
             if section==self.tv_section:tab.add_css_class('tv-tab-active')
             else:tab.remove_css_class('tv-tab-active')
-        self.backdrop.set_opacity(.4 if self.tv_section=='games' else 0)
+        self.backdrop.set_opacity(1);self.backdrop.set_paintable(None)
         self.tv_games=sorted(self.library.games(),key=lambda g:g['title'].casefold());self.tv_tiles=[]
         if self.tv_section=='library':
             self.tv_games=[g for g in self.tv_games if g.get('executable') and (g.get('installation',{}).get('mode')!='installer' or g['installation'].get('confirmed'))]
             self.show_tv_grid(return_id);return
         if not self.tv_games:
-            empty=Adw.StatusPage(title='Your library is ready to grow',description='Switch to desktop mode to add games and set them up.',icon_name='applications-games-symbolic');self.body.append(empty);self.tv_games_tab.grab_focus();return
+            empty=Adw.StatusPage(title='Your next adventure starts here',description='Add games in desktop mode, then return to browse your collection.',icon_name=ICON_NAME);self.body.append(empty);self.tv_games_tab.grab_focus();return
         tv_content=box(spacing=0);tv_content.set_vexpand(True)
-        self.tv_page=Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER,vscrollbar_policy=Gtk.PolicyType.AUTOMATIC);self.tv_page.set_vexpand(True);self.tv_page.set_child(tv_content);self.body.append(self.tv_page)
-        # Compact, fixed-height game row above the selected game's hero.
-        self.tv_rail=box(False,16);margins(self.tv_rail,24)
-        self.tv_scroll=Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.EXTERNAL,vscrollbar_policy=Gtk.PolicyType.NEVER);self.tv_scroll.set_child(self.tv_rail);self.tv_scroll.get_child().set_hscroll_policy(Gtk.ScrollablePolicy.NATURAL);tv_content.append(self.tv_scroll)
+        self.tv_page=self.scrolled(tv_content);self.body.append(self.tv_page)
+        hero=box(spacing=0);hero.set_vexpand(True);hero.set_size_request(-1,180);tv_content.append(hero)
+        summary=box(spacing=8);summary.add_css_class('tv-summary');summary.set_valign(Gtk.Align.END);summary.set_vexpand(True);summary_limit=Adw.Clamp(maximum_size=790,tightening_threshold=790);summary_limit.set_halign(Gtk.Align.START);summary_limit.set_child(summary);hero.append(summary_limit)
+        self.tv_eyebrow=label('IN YOUR COLLECTION','tv-eyebrow',xalign=0);summary.append(self.tv_eyebrow)
+        self.tv_title=label('','tv-title',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END,max_width_chars=25,halign=Gtk.Align.START);self.tv_title.set_size_request(-1,74 if self.console_dimensions()[0]<152 else 116);summary.append(self.tv_title)
+        self.tv_related=label('','tv-meta',xalign=0,ellipsize=Pango.EllipsizeMode.END);self.tv_related.set_size_request(-1,24);summary.append(self.tv_related)
+        self.tv_description=label('','tv-description',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END,max_width_chars=62,halign=Gtk.Align.START);self.tv_description.set_size_request(-1,44 if self.console_dimensions()[0]<152 else 56);summary.append(self.tv_description)
+        actions=box(False,14);summary.append(actions)
+        self.tv_play=button('Play',lambda:self.play_game(self.tv_selected_game()),'tv-play');actions.append(self.tv_play)
+        self.tv_open=button('View game',lambda:self.show_game(self.tv_selected_game()),'tv-secondary');actions.append(self.tv_open)
+        self.tv_launch_status=label('','tv-meta',xalign=0,ellipsize=Pango.EllipsizeMode.END,width_chars=1,hexpand=True);self.tv_launch_status.set_size_request(-1,24);self.tv_launch_status.set_valign(Gtk.Align.CENTER);actions.append(self.tv_launch_status);self.place_runtime_progress(summary)
+        collection=box(spacing=0);collection.add_css_class('tv-collection');tv_content.append(collection)
+        heading=box(False);heading.append(label('Your collection','tv-section-heading',xalign=0,hexpand=True));self.tv_counter=label('','tv-counter');heading.append(self.tv_counter);collection.append(heading)
+        self.tv_rail=box(False,20);margins(self.tv_rail,12);self.tv_rail.set_margin_start(48);self.tv_rail.set_margin_end(48)
+        self.tv_scroll=Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.EXTERNAL,vscrollbar_policy=Gtk.PolicyType.NEVER);self.tv_scroll.set_child(self.tv_rail);self.tv_scroll.get_child().set_hscroll_policy(Gtk.ScrollablePolicy.NATURAL);collection.append(self.tv_scroll)
         self.tv_scroll.get_hadjustment().connect('changed',lambda adjustment:GLib.idle_add(self.pad_tv_rail,adjustment))
-        self.tv_selected_title=label('','heading',xalign=0,ellipsize=Pango.EllipsizeMode.END);self.tv_selected_title.set_margin_start(36);self.tv_selected_title.set_margin_end(36);self.tv_selected_title.set_size_request(-1,32);self.tv_selected_title.set_visible(False);tv_content.append(self.tv_selected_title)
         for game in self.tv_games:
             tile=self.tv_tile(game);self.tv_rail.append(tile);self.tv_tiles.append((game['id'],tile))
         self.tv_rail_end=Gtk.Box();self.tv_rail.append(self.tv_rail_end)
-        self.tv_hero=Gtk.Picture(content_fit=Gtk.ContentFit.COVER,can_shrink=True,opacity=0)
-        hero=Gtk.Overlay();hero.set_child(self.tv_hero);hero.set_vexpand(True);hero.set_size_request(-1,360);tv_content.append(hero)
-        summary=box(spacing=10);margins(summary,24);summary.set_valign(Gtk.Align.END);hero.add_overlay(summary)
-        self.tv_logo=Gtk.Picture(content_fit=Gtk.ContentFit.CONTAIN,can_shrink=True);self.tv_logo.set_halign(Gtk.Align.START);self.tv_logo.set_size_request(280,90)
-        brand=Gtk.Overlay();brand.set_child(self.tv_logo);brand.set_size_request(-1,104);self.tv_logo.set_visible(False);summary.append(brand)
-        self.tv_title=label('','tv-title',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END);self.tv_title.set_size_request(-1,104);brand.add_overlay(self.tv_title)
-        self.tv_related=label('','tv-hints',xalign=0,ellipsize=Pango.EllipsizeMode.END);self.tv_related.set_size_request(-1,24);summary.append(self.tv_related)
-        self.tv_description=label('','tv-description',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END,max_width_chars=70);self.tv_description.set_size_request(-1,48);summary.append(self.tv_description)
-        actions=box(False);summary.append(actions)
-        self.tv_play=button('Play',lambda:self.play_game(self.tv_selected_game()),'suggested-action');self.tv_play.add_css_class('pill');actions.append(self.tv_play)
-        self.tv_launch_status=label('','caption',xalign=0);summary.append(self.tv_launch_status);self.place_runtime_progress(summary)
-        self.tv_hints=label('D-pad / stick: Move   A / Enter: Select   B / Esc: Back   X: Focus Play / Stop   Start / F11: Options','tv-hints',wrap=True,xalign=0);margins(self.tv_hints,16);tv_content.append(self.tv_hints)
+        self.tv_hints=label('','tv-hints',xalign=0,ellipsize=Pango.EllipsizeMode.END);self.body.append(self.tv_hints)
         game=next((g for g in self.tv_games if g['id']==return_id),self.tv_games[0]);self.select_tv_game(game)
-        self.restrict_tv_focus(self.body)
-        self.finish_tv_library_focus()
+        self.console_size=None;self.resize_console(self,None)
+        self.restrict_tv_focus(self.body);self.finish_tv_library_focus()
 
     def show_tv_grid(self,return_id=None):
-        title=label('Installed games · '+str(len(self.tv_games)),'tv-title',xalign=0);margins(title,24);self.body.append(title)
-        self.tv_grid=Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE,homogeneous=True,min_children_per_line=2,max_children_per_line=10,column_spacing=20,row_spacing=20);margins(self.tv_grid,24);self.tv_grid.set_valign(Gtk.Align.START)
+        heading=box(spacing=8);margins(heading,32);heading.set_margin_start(48)
+        heading.append(label('READY WHEN YOU ARE','tv-eyebrow',xalign=0))
+        heading.append(label('Installed games','tv-title',xalign=0))
+        heading.append(label(str(len(self.tv_games))+' games · Choose your next adventure','tv-meta',xalign=0));self.body.append(heading)
+        self.tv_grid=Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE,homogeneous=True,min_children_per_line=1,max_children_per_line=10,column_spacing=20,row_spacing=24);margins(self.tv_grid,32);self.tv_grid.set_margin_start(40);self.tv_grid.set_margin_top(8);self.tv_grid.set_valign(Gtk.Align.START)
         self.tv_scroll=self.scrolled(self.tv_grid);self.body.append(self.tv_scroll)
         if not self.tv_games:
-            empty=Adw.StatusPage(title='No installed games yet',description='Set up game files in desktop mode. Your metadata entries are still available under Games.',icon_name='applications-games-symbolic');self.body.append(empty)
-            self.tv_library_tab.grab_focus()
+            self.tv_scroll.set_visible(False)
+            empty=Adw.StatusPage(title='A place for your installed games',description='Set up game files in desktop mode. All saved titles are still available in Games.',icon_name='applications-games-symbolic');self.body.append(empty);self.tv_library_tab.grab_focus()
         for game in self.tv_games:
             tile=self.tv_tile(game,grid=True);self.tv_grid.append(tile);self.tv_tiles.append((game['id'],tile))
-        self.tv_hints=label('D-pad / stick: Move   A / Enter: Game details   B / Esc: Games   X: Focus Play / Stop','tv-hints',wrap=True,xalign=0);margins(self.tv_hints,16);self.body.append(self.tv_hints)
+        self.tv_hints=label('','tv-hints',xalign=0,ellipsize=Pango.EllipsizeMode.END);self.body.append(self.tv_hints)
         if self.tv_games:
-            game=next((g for g in self.tv_games if g['id']==return_id),self.tv_games[0]);self.select_tv_game(game)
-            self.finish_tv_library_focus()
-        self.restrict_tv_focus(self.body)
+            game=next((g for g in self.tv_games if g['id']==return_id),self.tv_games[0]);self.select_tv_game(game);self.finish_tv_library_focus()
+        self.restrict_tv_focus(self.body);self.refresh_launch_state()
 
     def restrict_tv_focus(self,widget):
         if isinstance(widget,Gtk.Label):widget.set_selectable(False)
@@ -245,6 +269,9 @@ class Window(Adw.ApplicationWindow):
             if previous:previous.remove_css_class('control-focused')
             if focused:focused.add_css_class('control-focused')
             self.outlined_control=focused
+            if self.tv_mode and self.game and hasattr(self,'detail_scroll'):
+                viewport=self.detail_scroll.get_child()
+                if isinstance(viewport,Gtk.Viewport):viewport.set_scroll_to_focus(True)
 
     def move_control_focus(self,target,action):
         # Explicit control-only navigation; text, scrollbars and containers never become stops.
@@ -287,7 +314,11 @@ class Window(Adw.ApplicationWindow):
         if tile and not tab:
             def allocated(widget,clock):
                 if widget.get_width()<=0:return True
-                if self.tv_section=='games':self.scroll_tv_card_into_view(widget)
+                if self.tv_section=='games':
+                    self.pad_tv_rail(self.tv_scroll.get_hadjustment())
+                    adjustment=self.tv_scroll.get_hadjustment()
+                    if adjustment.get_page_size()<=0 or (len(self.tv_tiles)>1 and adjustment.get_upper()<=adjustment.get_page_size()):return True
+                    self.scroll_tv_card_into_view(widget)
                 return False
             tile.add_tick_callback(allocated)
 
@@ -302,7 +333,7 @@ class Window(Adw.ApplicationWindow):
         if adjustment!=self.tv_scroll.get_hadjustment():return False
         # Trailing room lets even a short library slide to each selected icon.
         if self.tv_mode and self.game is None and self.tv_section=='games':
-            padding=max(24,int(adjustment.get_page_size())-116)
+            padding=max(24,int(adjustment.get_page_size())-self.console_dimensions()[0]-64)
             if hasattr(self,'tv_rail_end') and self.tv_rail_end.get_size_request()[0]!=padding:self.tv_rail_end.set_size_request(padding,-1)
         return False
 
@@ -336,20 +367,13 @@ class Window(Adw.ApplicationWindow):
             if gid==game['id']:tile.add_css_class('selected-game')
             else:tile.remove_css_class('selected-game')
         name=game['artwork'].get('hero') or game['artwork'].get('landscape')
-        path=self.library.art_dir/name if name else None
-        self.backdrop.set_filename(str(path)) if path and path.is_file() else self.backdrop.set_paintable(None)
-        self.backdrop.set_opacity(.22 if self.tv_section=='library' else .4)
+        set_art(self.backdrop,self.library.art_dir/name if name else None)
+        self.backdrop.set_opacity(.38 if self.tv_section=='library' else 1)
         if self.tv_section=='library':return
-        self.tv_selected_title.set_text(game['title']);self.tv_title.set_text(game['title']);self.tv_description.set_text(description_excerpt(game['description']))
+        self.tv_title.set_text(game['title']);self.tv_description.set_text(description_excerpt(game['description']) or 'Discover this title in your collection. More information can be added in desktop mode.')
         self.tv_related.set_text(' · '.join(filter(None,(game.get('release_date'),game.get('genres')))))
-        for picture,kind in ((self.tv_hero,'hero'),(self.tv_logo,'logo')):
-            name=game['artwork'].get(kind) or (game['artwork'].get('landscape') if kind=='hero' else None)
-            path=self.library.art_dir/name if name else None
-            picture.set_filename(str(path)) if path and path.is_file() else picture.set_paintable(None)
-            if kind=='hero':
-                self.backdrop.set_filename(str(path)) if path and path.is_file() else self.backdrop.set_paintable(None)
-            if kind=='logo':
-                picture.set_visible(False);self.tv_title.set_opacity(1)
+        index=next((i for i,g in enumerate(self.tv_games,1) if g['id']==game['id']),1)
+        self.tv_counter.set_text(f'{index:02d} / {len(self.tv_games):02d}')
         self.play_buttons={game['id']:self.tv_play};self.refresh_launch_state()
         tile=next((tile for gid,tile in self.tv_tiles if gid==game['id']),None)
         if tile and tile.get_width()>0:self.scroll_tv_card_into_view(tile,True)
@@ -417,11 +441,18 @@ class Window(Adw.ApplicationWindow):
         if action=='play':
             if target is self:
                 control=self.play_buttons.get(self.game['id'] if self.game else self.tv_selected_id)
-                if control:control.grab_focus();self.update_focus_outline()
+                if control:
+                    if self.game and hasattr(self,'detail_scroll'):
+                        viewport=self.detail_scroll.get_child()
+                        if isinstance(viewport,Gtk.Viewport):viewport.set_scroll_to_focus(True)
+                    control.grab_focus();self.update_focus_outline()
             return
         if action in ('pageup','pagedown'):
             if hasattr(target,'info_scroll') or (target is self and self.game and hasattr(self,'detail_scroll')):
-                adjustment=(target.info_scroll if hasattr(target,'info_scroll') else self.detail_scroll).get_vadjustment()
+                scroll=target.info_scroll if hasattr(target,'info_scroll') else self.detail_scroll
+                viewport=scroll.get_child()
+                if isinstance(viewport,Gtk.Viewport):viewport.set_scroll_to_focus(False)
+                adjustment=scroll.get_vadjustment()
                 adjustment.set_value(max(adjustment.get_lower(),min(adjustment.get_upper()-adjustment.get_page_size(),adjustment.get_value()+(.8 if action=='pagedown' else -.8)*adjustment.get_page_size())))
             return
         if action in ('left','right','up','down','next','previous'):
@@ -539,7 +570,7 @@ class Window(Adw.ApplicationWindow):
         self.rebuilding_desktop=True
         self.game=None; self.original=None; self.fields={};self.launch_fields={};self.description=None;self.play_buttons={}; clear(self.body)
         self.theme.set_selected(['system','light','dark'].index(self.library.data['settings'].get('theme','system'))); self.apply_theme()
-        self.heading.set_title('Your game library'); self.heading.set_subtitle('Your games · UMU and Proton'); self.back.set_visible(False)
+        self.heading.set_title(APP_NAME); self.heading.set_subtitle('Your games · UMU and Proton'); self.back.set_visible(False)
         panel=box(); margins(panel); self.body.append(panel)
         top=box(False); panel.append(top)
         intro=box(spacing=4); intro.set_hexpand(True)
@@ -622,6 +653,7 @@ class Window(Adw.ApplicationWindow):
         self.tv_selected_id=game['id']
         self.game=deepcopy(game);self.original=deepcopy(game);self.fields={};self.launch_fields={};self.description=None;self.play_buttons={};self.last_launch_output=None;self.detail_install_status=None;clear(self.body)
         self.back.set_visible(True);self.heading.set_title(game['title'] or 'New game');self.heading.set_subtitle(self.source_text())
+        if self.tv_mode:return self.show_console_detail(game)
         overlay=Gtk.Overlay();overlay.set_size_request(-1,340)
         hero_name=game['artwork'].get('hero') or game['artwork'].get('landscape')
         hero=Gtk.Picture();hero.set_content_fit(Gtk.ContentFit.COVER);hero.set_can_shrink(True);hero.set_opacity(.28)
@@ -670,6 +702,40 @@ class Window(Adw.ApplicationWindow):
         if self.tv_mode:
             self.restrict_tv_focus(self.body);GLib.idle_add(lambda:(play.grab_focus(),False)[-1])
 
+    def show_console_detail(self,game):
+        name=game['artwork'].get('hero') or game['artwork'].get('landscape')
+        set_art(self.backdrop,self.library.art_dir/name if name else None);self.backdrop.set_opacity(1)
+        content=box(spacing=24);content.add_css_class('tv-detail-content');content.set_vexpand(True)
+        back=button('Back to collection',self.go_back,'tv-secondary',icon='go-previous-symbolic');back.set_halign(Gtk.Align.START);content.append(back)
+        space=Gtk.Box(vexpand=True);space.set_size_request(-1,0);content.append(space)
+        panel=box(False,32);panel.add_css_class('tv-detail-panel');panel.set_valign(Gtk.Align.END);panel_limit=Adw.Clamp(maximum_size=1140,tightening_threshold=1140);panel_limit.set_halign(Gtk.Align.START);panel_limit.set_child(panel);content.append(panel_limit)
+        cover_column=box(spacing=14);cover_column.set_valign(Gtk.Align.START);cover_column.set_hexpand(False);cover_column.set_halign(Gtk.Align.START);panel.append(cover_column)
+        name=game['artwork'].get('portrait') or game['artwork'].get('landscape')
+        compact=self.console_dimensions()[0]<152
+        self.cover=console_cover(self.library.art_dir/name if name else None,144 if compact else 180,216 if compact else 270);cover_column.append(self.cover)
+        play=button('Play',lambda:self.play_game(self.game),'tv-play');play.set_size_request(144 if compact else 180,-1);play.get_child().set_wrap(True);play.get_child().set_width_chars(1);play.get_child().set_max_width_chars(14);cover_column.append(play);self.play_buttons[game['id']]=play
+        summary=box(spacing=16);summary.set_hexpand(True);panel.append(summary)
+        summary.append(label(game['title'],'tv-title',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END,max_width_chars=30))
+        related=' · '.join(filter(None,(game.get('release_date'),game.get('genres'))))
+        if related:summary.append(label(related,'tv-meta',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END))
+        description=label(description_excerpt(game['description']) or 'No description yet. Add game information in desktop mode.','tv-description',wrap=True,xalign=0,max_width_chars=64,lines=3,ellipsize=Pango.EllipsizeMode.END);summary.append(description)
+        credits=' · '.join(dict.fromkeys(filter(None,(game.get('developers'),game.get('publishers')))))
+        if credits:summary.append(label(credits,'tv-meta',xalign=0,ellipsize=Pango.EllipsizeMode.END))
+        self.console_status=label('','tv-meta',xalign=0,wrap=True);self.console_status.set_size_request(-1,24);summary.append(self.console_status)
+        info=button('Game Info',lambda:self.show_game_info(self.game),'tv-secondary');info.set_halign(Gtk.Align.START);summary.append(info)
+        self.place_runtime_progress(summary)
+        self.detail_scroll=self.scrolled(content);self.body.append(self.detail_scroll)
+        self.body.append(label('Esc / B  Back     Enter / A  Select     X  Focus Play / Stop     LB / RB  Scroll','tv-hints',xalign=0,ellipsize=Pango.EllipsizeMode.END))
+        self.restrict_tv_focus(self.body);self.refresh_launch_state()
+        # Guard against a queued detail focus stealing focus after immediate Back.
+        def focus_play(widget,clock):
+            if not (self.tv_mode and self.game and self.game['id']==game['id'] and play.get_root() is self):return False
+            if not play.is_sensitive():return False
+            if not play.get_mapped() or play.get_width()<=0:return True
+            play.grab_focus();self.update_focus_outline()
+            return False
+        play.add_tick_callback(focus_play)
+
     def place_runtime_progress(self,container):
         parent=self.runtime_progress.get_parent()
         if parent:parent.remove(self.runtime_progress)
@@ -698,6 +764,7 @@ class Window(Adw.ApplicationWindow):
 
     def cancel_editor(self):
         if not self.editor:return
+        if self.editor_kind=='manage':self.prefix_panel.cancel_scan.set()
         dialog=self.editor;saved=deepcopy(self.original);self.editor=None;self.editor_kind=None;dialog.destroy()
         if any(g['id']==saved['id'] for g in self.library.games()):self.show_game(saved)
         else:self.show_library()
@@ -707,6 +774,7 @@ class Window(Adw.ApplicationWindow):
             candidate=self.collect()
             if self.editor_kind=='manage' and self.launcher.active():raise ValueError('Finish the active operation before changing game files.')
             if self.editor_kind=='manage' and candidate.get('installation',{}).get('mode')=='installer' and candidate['executable']!=self.original['executable']:candidate['installation']['confirmed']=False
+            if self.editor_kind=='manage':self.prefix_panel.cancel_scan.set()
             self.library.save(candidate);dialog=self.editor;self.editor=None;self.editor_kind=None
             if dialog:dialog.destroy()
             self.show_game(candidate);self.notify('Saved locally.')
@@ -740,6 +808,7 @@ class Window(Adw.ApplicationWindow):
         self.install_tab=button('1 · Install',lambda:self.stage_stack.set_visible_child_name('install'))
         self.game_tab=button('2 · Game setup',lambda:self.stage_stack.set_visible_child_name('game'))
         tabs.append(self.install_tab);tabs.append(self.game_tab)
+        self.prefix_tab=button('Prefix',lambda:self.stage_stack.set_visible_child_name('prefix'));tabs.append(self.prefix_tab)
         self.stage_stack=Gtk.Stack();self.stage_stack.set_vexpand(True);content.append(self.stage_stack)
         self.installer_panel=box();self.stage_stack.add_named(self.installer_panel,'install')
         self.installer_entry=Gtk.Entry(text=self.game.get('installation',{}).get('installer',''));self.installer_entry.set_tooltip_text('Installer executable')
@@ -764,8 +833,13 @@ class Window(Adw.ApplicationWindow):
         advanced=Adw.ExpanderRow(title='Advanced launch settings',subtitle='Optional overrides. Working defaults are applied automatically.');content.append(advanced);self.advanced=advanced
         advanced_content=box();margins(advanced_content,12);advanced.add_row(advanced_content);self.build_advanced(advanced_content)
         advanced_content.append(button('Reset to defaults',self.reset_launch_defaults))
+        from .proton_ui import build_game_selector
+        proton_section=box();content.insert_child_after(proton_section,row)
+        build_game_selector(self,proton_section,dialog)
         content.append(button('Open diagnostic logs',self.open_diagnostic_logs))
         footer.append(button('Find metadata',self.find_metadata))
+        from .prefix_tab import PrefixPanel
+        self.prefix_panel=PrefixPanel(self);self.stage_stack.add_named(self.prefix_panel,'prefix')
         dialog.present();self.refresh_launch_state()
 
     def return_to_installation(self):
@@ -783,14 +857,13 @@ class Window(Adw.ApplicationWindow):
         for tab,enabled in ((self.install_tab,not game_stage),(self.game_tab,game_stage)):
             if enabled:tab.add_css_class('suggested-action')
             else:tab.remove_css_class('suggested-action')
-        self.stage_stack.set_visible_child_name('game' if game_stage else 'install')
+        if self.stage_stack.get_visible_child_name()!='prefix':self.stage_stack.set_visible_child_name('game' if game_stage else 'install')
         self.executable_stage.set_text('Step 2 · Select the installed game executable' if installer else 'Select the installed game executable')
         self.confirm_executable_button.set_visible(installer and selecting)
         self.retry_stage_button.set_visible(installer and selecting)
 
     def reset_launch_defaults(self):
         for field in self.launch_fields.values():field.set_text('')
-        self.proton_choice.set_selected(0)
         self.game['launch']={}
         self.notify('Defaults selected in this draft. Installer prefix and runner continuity are preserved.')
 
@@ -858,7 +931,7 @@ class Window(Adw.ApplicationWindow):
         app=self.get_application();tray=getattr(app,'tray',None)
         if close_action(bool(tray and tray.available))=='hide':self.set_visible(False)
         else:
-            self.notify('No tray host is available. Launcher is minimized instead; reopen it from the applications menu. Use Exit to quit.')
+            self.notify('No tray host is available. '+APP_NAME+' is minimized instead; reopen it from the applications menu. Use Exit to quit.')
             self.minimize()
         return True
 
@@ -867,7 +940,7 @@ class Window(Adw.ApplicationWindow):
         if self.busy or self.proton_manager.busy():
             self.error(ValueError('Finish or cancel metadata/runner work before exiting.'));return
         current=self.launcher.current();active=self.launcher.active()
-        body='Exit the background launcher?'
+        body='Exit '+APP_NAME+'?'
         if active:body='An installer or game is active: '+current.get('title','current operation')+'. It will CONTINUE running under its supervisor after Exit. Reopen the launcher to track or stop it. Files, saves and prefixes are kept.'
         if self.dirty():body+=' Unsaved dialog edits will be discarded.'
         def exit_app():
@@ -875,7 +948,7 @@ class Window(Adw.ApplicationWindow):
             self.controller.close()
             if getattr(app,'tray',None):app.tray.close()
             app.quit()
-        self.confirm('Exit Launcher?',body,'Exit; keep operation running' if active else 'Exit',exit_app,active or self.dirty())
+        self.confirm('Exit '+APP_NAME+'?',body,'Exit; keep operation running' if active else 'Exit',exit_app,active or self.dirty())
 
     def pick_executable(self):
         def selected(path):
@@ -990,7 +1063,7 @@ class Window(Adw.ApplicationWindow):
         modes=Adw.PreferencesGroup(title='Display mode',description='Default mode applies on the next app start. Enter fullscreen from the mode button; leave through fullscreen options or the tray.');page.add(modes)
         mode_row=Adw.ActionRow(title='Default launch mode');self.default_mode_choice=Gtk.DropDown.new_from_strings(['Desktop','Fullscreen / TV']);self.default_mode_choice.set_selected(1 if self.library.data['settings'].get('default_display_mode')=='fullscreen' else 0);mode_row.add_suffix(self.default_mode_choice);modes.add(mode_row)
         self.default_mode_choice.connect('notify::selected',lambda choice,_:self.library.set_default_display_mode('fullscreen' if choice.get_selected()==1 else 'desktop'))
-        page.add(Adw.PreferencesGroup(title='Game Library Launcher '+__version__,description='Standalone UMU/Proton game and installer library.'))
+        page.add(Adw.PreferencesGroup(title=APP_NAME+' '+__version__,description='Standalone UMU/Proton game and installer library.'))
         appearance=Adw.PreferencesGroup(title='Appearance',description='Choose how the app looks.'); page.add(appearance)
         theme_row=Adw.ActionRow(title='Theme')
         theme=Gtk.DropDown.new_from_strings(['Follow system','Light','Dark']); theme.set_valign(Gtk.Align.CENTER)
@@ -998,6 +1071,10 @@ class Window(Adw.ApplicationWindow):
         theme.connect('notify::selected',lambda dropdown,_:self.theme.set_selected(dropdown.get_selected()))
         theme_row.add_suffix(theme); appearance.add(theme_row)
         diagnostics=Adw.PreferencesGroup(title='Diagnostic logs',description='One local folder per game. Completed logs: 8 MiB per file, 100 MiB total, 14-day retention. Cleanup runs before and after launches; active logs are never cleared.');page.add(diagnostics)
+        def show_activity():
+            dialog.close()
+            self.log_revealer.set_reveal_child(True)
+        diagnostics.add(button('Activity',show_activity))
         diagnostics.add(button('Clear all diagnostic logs',self.clear_diagnostic_logs,'destructive-action'))
         backup=Adw.PreferencesGroup(title='Backup and restore',description='Portable metadata, artwork and appearance. Game files, saves and provider credentials are not included.'); page.add(backup)
         def leave_then(callback): dialog.close(); callback()
@@ -1029,66 +1106,10 @@ class Window(Adw.ApplicationWindow):
         dialog.present()
 
     def build_proton_manager_tab(self,dialog):
+        from .proton_ui import ProtonPanel
         page=Adw.PreferencesPage(title='Proton Manager',icon_name='application-x-executable-symbolic');dialog.add(page);self.proton_settings_page=page
-        defaults_group=Adw.PreferencesGroup(title='Installed runners',description='Use an installed runner or let UMU obtain a current release. Custom paths are available in Manage Game → Advanced launch settings.');page.add(defaults_group)
-        installed=box();defaults_group.add(installed)
-        def render_installed():
-            clear(installed)
-            paths=self.proton_manager.installed();choices=['UMU-Latest','GE-Latest',*paths]
-            selected=self.library.data['settings'].get('default_proton') or defaults({'id':'default'},self.library.root)['proton']
-            if selected not in choices:choices.append(selected)
-            row=box(False);row.append(label('Default Proton','heading',xalign=0));dropdown=Gtk.DropDown.new_from_strings([Path(c).name if c.startswith('/') else c for c in choices]);dropdown.set_hexpand(True);dropdown.set_selected(choices.index(selected));row.append(dropdown);installed.append(row)
-            def changed(w,_):
-                try:self.library.set_default_proton(choices[w.get_selected()])
-                except Exception as error:self.error(error)
-            dropdown.connect('notify::selected',changed)
-            for path in paths:installed.append(label(Path(path).name+' · '+self.proton_manager.arch+' · Installed','caption',xalign=0))
-            if not paths:installed.append(label('No installed runners discovered. Choose an available release below.','caption',wrap=True,xalign=0))
-        render_installed()
-        available=Adw.PreferencesGroup(title='Available upstream releases',description='GE-Proton and UMU-Proton, matched to this host’s architecture. Load older pages to browse supported historical releases. UMU resolves the required runtime at launch.');page.add(available)
-        toolbar=box(False);family=Gtk.DropDown.new_from_strings(['GE-Proton','UMU-Proton']);toolbar.append(family);available.add(toolbar)
-        message=label('Choose Refresh to load official releases.','caption',wrap=True,xalign=0);available.add(message)
-        rows=box();available.add(rows);seen={};pages=[0];loading=[False];controls=[]
-        def load(older=False):
-            if loading[0]:return
-            if not older:pages[0]=0;seen.clear();controls.clear();clear(rows)
-            pages[0]+=1;name=['GE-Proton','UMU-Proton'][family.get_selected()];loading[0]=True;message.set_text('Loading '+name+' releases…')
-            def result(items):
-                loading[0]=False;message.set_text(f'{len(seen)+len(items)} releases shown · '+self.proton_manager.arch+(' · no more supported releases on this page' if not items else ''))
-                for release in items:
-                    if release['name'] in seen:continue
-                    seen[release['name']]=release
-                    card=box();card.add_css_class('card');margins(card,12)
-                    card.append(label(release['version']+' · '+release['architecture'],'heading',xalign=0))
-                    card.append(label('Source: '+release['source'],'caption',wrap=True,xalign=0))
-                    state=label('Available','caption',xalign=0);card.append(state)
-                    row=box(False);card.append(row)
-                    def install(item=release):
-                        try:self.proton_manager.install(item,active_runner=self.launcher.current().get('proton'))
-                        except Exception as error:self.error(error)
-                    action=button('Install',install);row.append(action)
-                    cancel=button('Cancel',lambda item=release:self.proton_manager.cancel(item));row.append(cancel)
-                    controls.append((release,state,action,cancel));rows.append(card)
-            def work():
-                try:return self.proton_manager.releases(name,pages[0],refresh=not older)
-                finally:GLib.idle_add(lambda:(loading.__setitem__(0,False),False)[-1])
-            self.async_job('Loading official runner releases…',work,result)
-        toolbar.append(button('Refresh',load));toolbar.append(button('Load older versions',lambda:load(True)))
-        toolbar.append(button('Refresh installed',render_installed))
-        family.connect('notify::selected',lambda *_:load())
-        remembered={}
-        def update():
-            if not dialog.get_visible():return False
-            refresh=False
-            for release,state,action,cancel in controls:
-                status=self.proton_manager.status(release);phase=status['state'];active=phase in ('Downloading','Verifying','Installing')
-                state.set_text(phase+(f" · {int(status['progress']*100)}%" if active else '')+(' · '+status['error'] if status['error'] else ''))
-                action.set_label('Installed' if phase=='Installed' else ('Retry' if phase in ('Failed','Cancelled') else 'Install'));action.set_sensitive(not active and phase!='Installed');cancel.set_sensitive(active)
-                if phase=='Installed' and remembered.get(release['name'])!='Installed':refresh=True
-                remembered[release['name']]=phase
-            if refresh:render_installed()
-            return True
-        dialog.connect('map',lambda *_:GLib.timeout_add(300,update))
+        group=Adw.PreferencesGroup();page.add(group)
+        self.proton_panel=ProtonPanel(self,dialog);group.add(self.proton_panel)
 
     def find_sgdb(self):
         dialog=Gtk.Window(title='Community artwork (SGDB) artwork',transient_for=self.editor or self,modal=True,destroy_with_parent=True,default_width=650,default_height=520)
@@ -1172,18 +1193,11 @@ class Window(Adw.ApplicationWindow):
 
     def build_advanced(self,page):
         settings=self.game.get('launch',{})
-        for key,title,hint in (('runner','UMU executable','Blank discovers umu-run on your PATH.'),('proton','Proton folder or release','Blank uses your default. You can also use UMU-Latest or GE-Latest.'),('prefix','Dedicated prefix folder','Blank creates a per-game prefix in app data. Existing unrelated prefixes are preserved.')):
+        for key,title,hint in (('runner','UMU executable','Blank discovers umu-run on your PATH.'),('proton','Custom Proton path or policy','Use the Proton version selector for normal choices. Existing UMU-Latest and GE-Latest policies remain supported.'),('prefix','Dedicated prefix folder','Blank creates a per-game prefix in app data. Existing unrelated prefixes are preserved.')):
             page.append(label(title,'heading',xalign=0));entry=Gtk.Entry(text=settings.get(key,''));self.launch_fields[key]=entry;page.append(entry)
             page.append(label(hint,'caption',wrap=True,xalign=0))
             if key!='proton':page.append(button('Choose '+title.lower(),lambda k=key:self.choose_file('Choose '+k,lambda p:self.launch_fields[k].set_text(str(p)),folder=k=='prefix')))
-            else:
-                choices=['Use app default','UMU-Latest','GE-Latest',*self.proton_manager.installed()]
-                current=settings.get('proton','')
-                if current and current not in choices:choices.append(current)
-                select=Gtk.DropDown.new_from_strings([Path(c).name if c.startswith('/') else c for c in choices]);select.set_selected(choices.index(current) if current else 0);select.set_tooltip_text('Installed Proton or automatic release')
-                self.proton_choice=select
-                select.connect('notify::selected',lambda w,_:self.launch_fields['proton'].set_text('' if w.get_selected()==0 else choices[w.get_selected()]))
-                page.append(select);page.append(button('Choose custom Proton folder',lambda:self.choose_file('Choose Proton',lambda p:self.launch_fields['proton'].set_text(str(p)),folder=True)))
+            else:page.append(button('Choose custom Proton folder',lambda:self.choose_file('Choose Proton',lambda p:self.launch_fields['proton'].set_text(str(p)),folder=True)))
 
         page.append(label('DLL compatibility overrides','heading',xalign=0))
         overrides=Gtk.Entry(text=settings.get('dll_overrides',''),placeholder_text='Example: winmm=n,b')
@@ -1217,9 +1231,9 @@ class Window(Adw.ApplicationWindow):
                 if self.tv_mode:self.notify('Set up this game in desktop mode before playing.');return
                 self.show_game(game);self.open_manage();return
             if self.demo:raise ValueError('Play is disabled in the demo. Synthetic game files are inert.')
-            settings=defaults(game,self.library.root);settings['proton']=game.get('launch',{}).get('proton') or game.get('installation',{}).get('proton') or self.library.data['settings'].get('default_proton') or settings['proton']
+            settings=defaults(game,self.library.root)
             game=deepcopy(game);game['launch']=settings
-            build_command(game,self.library.root)
+            build_command(game,self.library.root,allow_prepare=True)
             if self.editor:raise ValueError('Save or cancel your dialog before playing.')
             def launch():
                 try:self.launcher.start(game);self.refresh_launch_state()
@@ -1236,7 +1250,12 @@ class Window(Adw.ApplicationWindow):
         current=self.launcher.current();active=self.launcher.active();active_id=current.get('game_id')
         selected_id=self.game['id'] if self.game else self.tv_selected_id if self.tv_mode and self.tv_section=='games' else None
         preparing_runtime=active and active_id==selected_id and current.get('state') in ('Preparing','Downloading runtime')
-        if self.tv_mode and self.game is None and hasattr(self,'tv_launch_status'):self.tv_launch_status.set_text(current.get('state','') if active and active_id==selected_id else '')
+        if self.tv_mode:
+            entry=self.game or next((g for g in getattr(self,'tv_games',[]) if g['id']==selected_id),{})
+            configured=bool(entry.get('executable')) and (entry.get('installation',{}).get('mode')!='installer' or entry['installation'].get('confirmed'))
+            status=current.get('state','') if active and active_id==selected_id else ('Another game is active' if active else '' if configured else 'Set up in desktop mode to play')
+            status_label=getattr(self,'console_status' if self.game else 'tv_launch_status',None)
+            if status_label:status_label.set_text(status)
         self.runtime_progress.set_visible(preparing_runtime)
         if preparing_runtime:
             self.runtime_spinner.start();info=preparation_progress(current)
@@ -1246,21 +1265,25 @@ class Window(Adw.ApplicationWindow):
         for game_id,control in self.play_buttons.items():
             own=active and active_id==game_id;stopping=own and current.get('state')=='Stopping'
             preparing=own and current.get('state')=='Preparing' and not current.get('supervisor_pid')
-            installer=own and current.get('operation')=='installer'
+            installer=own and current.get('operation') in ('installer','runtime')
             entry=next((g for g in self.library.games() if g['id']==game_id),self.game or {})
             configured=bool(entry.get('executable')) and (entry.get('installation',{}).get('mode')!='installer' or entry['installation'].get('confirmed'))
+            if self.tv_mode:
+                if own:control.add_css_class('destructive-action')
+                else:control.remove_css_class('destructive-action')
             control.set_label('Preparing…' if preparing else 'Stopping…' if stopping else ('Stop installer' if installer else 'Stop' if own else 'Play' if configured else 'Setup'))
             control.set_sensitive(not self.demo and not stopping and not preparing and (not active or own) and (not self.tv_mode or configured or own))
             control.set_tooltip_text(('Active: '+current.get('title','game')+'. Finish it before starting another.') if active and not own else 'Stop this game' if own else 'Play through UMU' if configured else 'Configure game files in Manage Game')
         if self.tv_mode and self.game is None and hasattr(self,'tv_hints'):
-            status='Controller: '+self.controller.name if hasattr(self,'controller') and self.controller.name else ('Controller unavailable; keyboard/mouse works' if hasattr(self,'controller') and self.controller.error else 'Connect a controller, or use keyboard/mouse')
-            self.tv_hints.set_text('D-pad / stick: Move   A / Enter: Select   B / Esc: Back   X: Focus Play / Stop   Start / F11: Options\n'+status)
+            status=' · '+self.controller.name if hasattr(self,'controller') and self.controller.name else ''
+            self.tv_hints.set_text('← → / D-pad  Browse     Enter / A  View game     Esc / B  Back     X  Focus Play / Stop     F11 / Start  Options'+status)
         if self.game is not None and hasattr(self,'launch_output'):
             if self.detail_install_status is not None:self.detail_install_status.set_text('Installation: '+self.installations.status(self.game)['phase'])
             state=self.launcher.snapshot(self.game['id'])
             text='\n'.join(state.get('logs',[])[-200:])
             if text!=getattr(self,'last_launch_output',None):self.launch_output.get_buffer().set_text(text);self.last_launch_output=text
         if self.editor_kind=='manage':
+            self.prefix_panel.poll(active,current)
             self.update_install_stage()
             candidate=self.collect();status=self.installations.status(candidate);self.install_status.set_text(status['phase'])
             self.manage_logs.get_buffer().set_text('\n'.join(status.get('logs',[])[-200:]))
@@ -1291,7 +1314,11 @@ class Window(Adw.ApplicationWindow):
 class Application(Adw.Application):
     def __init__(self,demo=False):
         self.demo=demo
-        super().__init__(application_id='io.github.game_library_launcher'+('.demo' if demo else ''),flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
+        app_id=APP_ID+('.demo' if demo else '')
+        GLib.set_prgname(app_id)  # GTK uses this as the X11 WM_CLASS instance.
+        GLib.set_application_name(APP_NAME)
+        Gtk.Window.set_default_icon_name(ICON_NAME)
+        super().__init__(application_id=app_id,flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
         self.add_main_option('fullscreen',0,GLib.OptionFlags.NONE,GLib.OptionArg.NONE,'Open in fullscreen for this activation',None)
         self.connect('command-line',self.command_line)
         self.connect('activate',self.activate_window)
@@ -1322,7 +1349,7 @@ class Application(Adw.Application):
                 self.activate_window();window.set_tv_mode(enabled)
             def desktop_action(callback):
                 self.activate_window();window.set_tv_mode(False);callback()
-            self.tray=Tray(self.activate_window,window.explicit_exit,availability,lambda:switch_mode(True),lambda:switch_mode(False),lambda:desktop_action(window.toggle_log),lambda:desktop_action(window.open_settings),lambda:desktop_action(window.open_settings))
+            self.tray=Tray(self.activate_window,window.explicit_exit,availability,lambda:switch_mode(True),lambda:switch_mode(False),lambda:desktop_action(window.open_settings))
         window.present()
         if isinstance(window,Window) and window.editor:window.editor.present()
 

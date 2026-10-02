@@ -1,26 +1,42 @@
-# Game Library Launcher
+# UmuTron
+
+[Source repository](https://github.com/krunaldodiya/UmuTron)
 
 A native Linux library for preinstalled games and Windows installers, metadata/artwork, and explicit Play through **UMU + Proton**. No Steam client, account or synchronization is required. Public Steam catalogue search works without credentials.
 
 ![Game details](docs/screenshots/details-dark.png)
 
-## Version 0.4.10
+## GNOME dock identity — 0.4.15
+
+The visible application entry is now `io.github.game_library_launcher.desktop`, matching the unchanged GTK/Gio application ID. GNOME could not associate the earlier `game-library-launcher.desktop` name with the running window, resulting in a generic dock icon and missing pin/favorites action. The installer retains that older desktop ID as a launchable `NoDisplay=true` compatibility entry, with the same Exec and icon, so existing shortcuts and Workstation Modes still work without a duplicate applications-menu item. It is not marked `Hidden` or deleted.
+
+The canonical entry declares `StartupWMClass=io.github.game_library_launcher`; GTK's program name is set to the same identity before startup for X11 matching. The existing `game-library-launcher` icon name, install/data/config directories, Python package, library IDs and Workstation `app:game-library-launcher` resource stay unchanged. No favorites are added, removed or reordered. New pinning uses the canonical desktop ID. Close/reopen an older running instance with its normal explicit Exit action if necessary; no game or desktop session restart is needed.
+
+This follows [GNOME's application-ID contract](https://developer.gnome.org/documentation/tutorials/application-id.html) and [desktop entry NoDisplay/StartupWMClass semantics](https://specifications.freedesktop.org/desktop-entry-spec/latest/recognized-keys.html).
+
+## UmuTron branding — 0.4.14
+
+The app now appears as **UmuTron** in its window, Settings information, application menu and tray, with an original orbital/play SVG icon. Existing `game-library-launcher` install/data/config paths, compatibility desktop and icon identifiers, Python package name and Gio application ID remain stable. The rename requires no library or prefix migration. Prefix runtime maintenance and Proton labels from 0.4.13 are retained. Earlier screenshots below predate this branding update.
+
+## Features
 
 - Metadata-first **Add Game**: search by title/ID, select, then automatically save metadata/artwork and open details. No executable or runtime settings required.
 - Persistent installation status/logs; cancel/retry keeps installed files. Select and confirm the game executable after setup. Setup exit alone never means the game is ready.
 - Reuse the installer prefix, registry/runtimes and resolved Proton version for Play. Play never reruns setup.
 - Read-only game details with hero/cover/logo; **pencil → Edit Metadata**, **controller → Manage Game**. Normal Play/Stop remains on cards/details.
-- Optional overrides in collapsed **Advanced launch settings**, including Reset to defaults and per-game runner selection.
-- Close to tray; **Show Launcher** and explicit **Exit**. Without a supported tray host, close minimizes instead of making the app inaccessible. Reopening activates the existing instance.
+- Optional overrides in collapsed **Advanced launch settings**, including Reset to defaults and custom paths. Normal Proton selection is visible in Setup.
+- Close to tray; **Show UmuTron** and explicit **Exit**. Without a supported tray host, close minimizes instead of making the app inaccessible. Reopening activates the existing instance.
 - One app-owned game or installer at a time. Stop targets only that launch's verified owned processes. Active operations continue under their supervisor if you explicitly Exit; reopening reconnects.
-- Existing Proton Manager: installed/available official GE-Proton/UMU-Proton releases, paging/cache, architecture filtering, progress, cancel/retry, published checksums and safe atomic installation.
+- Three-tab Proton Manager: official **Proton**, **GE-Proton**, **UMU-Proton**. Cached catalogs update in the background and load older releases while scrolling. Installed/default/available states share one list. Verified GE/UMU downloads support cancellation, retry and guarded uninstall of managed runners.
 - Local ZIP import/export, compact cards, filtering, light/dark/system themes and provider artwork.
 
 ## Desktop and fullscreen
 
-Desktop handles adding/installing games, metadata/artwork editing, launch setup, settings and Proton Manager. Fullscreen is a console-inspired, dark browse-and-play view. Home, Games and Library sit at the top left; only the settings gear and current clock sit at the right. Games uses a compact square game row above full-screen selected-game artwork and lower logo/description/Play controls. Library shows a responsive, top-aligned grid of installed games with equal-height square-art cards. Read-only details remain available. Text/descriptions are never controller or keyboard focus stops; only buttons are navigable. There are no media, search, profile, playtime or achievement/progress panels. There is no title bar or native window chrome. Metadata-only games remain visible with **Set up in desktop**; setup controls are unavailable in fullscreen.
+Desktop handles adding/installing games, metadata/artwork editing, launch setup, settings, Prefix maintenance and Proton Manager. Fullscreen is a native GTK console view: UmuTron branding, Games and Library tabs, local Search, Options and a clock. Games pairs cinematic artwork and a legible hero with a consistent portrait-cover collection rail. Library uses the same cover language in an installed-only grid. Details show game artwork, title, concise metadata and a prominent Play/Stop below the cover; Game Info opens the full description. Setup and advanced launch settings remain in desktop dialogs.
 
-Use **Fullscreen** in desktop, **F11**, or the tray's **Switch to Fullscreen / Switch to Desktop** actions. The small fullscreen settings icon offers **Exit fullscreen**. Settings → General → **Default launch mode** selects the next-start mode and is included in library ZIP backups. Switching modes preserves the current selection and active operation; save/cancel an open editing dialog first.
+Arrow keys / the existing controller mappings move focus. Card activation opens details; only explicit Play/Stop activation can start or stop an operation. Back restores the selected card. Motion follows GTK's reduced-motion preference. Cards and text adapt to 1080p, 720p and smaller windows; very short windows omit the home excerpt and keep full information on details. Metadata-only games stay visible with a desktop-setup explanation. No play history or Continue/Recent data is invented.
+
+Use **F11** or the tray's **Switch to Fullscreen / Switch to Desktop** actions. Fullscreen Options offers **Exit fullscreen** and **Exit**. Settings → General → **Default launch mode** selects the next-start mode and is included in library ZIP backups. Switching modes preserves the current selection and active operation; save/cancel an open editing dialog first.
 
 Controller: D-pad/left stick navigates, A selects, B goes back, X invokes Play/Stop confirmation, Start returns to desktop, and LB/RB scroll details. Keyboard arrows, Enter, Escape and Page Up/Down are also supported. Optional native SDL2 (`libsdl2-2.0-0` on Ubuntu) reads mapped controllers only while the launcher has focus; it does not inject keys, grab the controller or consume game input in the background. Keyboard/mouse remain available without SDL2 or a controller.
 
@@ -34,13 +50,23 @@ Use native Ubuntu packages `python3-gi python3-cairo gir1.2-gtk-4.0 gir1.2-adw-1
 /usr/bin/python3 tools/install.py
 ```
 
-This user-level installer writes code to `~/.local/opt/game-library-launcher` and creates the application menu entry. No root, game execution or library rewrite is performed. Open **Game Library Launcher**. Reopen an older running app to load the updated code; do not restart a game just to update its UI.
+This user-level installer writes code to `~/.local/opt/game-library-launcher` and creates the application menu entry. No root, game execution or library rewrite is performed. Open **UmuTron**. Use explicit **Exit**, then reopen an older running app to load the updated code (closing alone hides it to the tray); do not restart a game just to update its UI.
+
+## Proton versions
+
+Settings → Proton Manager has exactly three family tabs. **Proton** groups local official Stable, Experimental, Next and legacy builds; **GE-Proton** and **UMU-Proton** browse their official release archives for this computer’s architecture. Valve distributes official binaries through Steam and currently exposes no direct verified binary assets in its GitHub release feed. UmuTron can use a compatible local official build through UMU; it does not install Steam/SteamCMD, fetch source archives as runners, or integrate external launcher libraries.
+
+Choose **Set as default** on a build. Manage Game → **Proton version** offers **Use default** and exact available/installed versions. Saving a choice never downloads or executes a game. After explicit Play or Launch Installer, a missing exact GE/UMU build downloads, checks its published digest, installs atomically, and only then starts UMU with its absolute path. Failed/cancelled preparation never starts the game; retry keeps the selected version. Concurrent requests reuse the same completed verified installation. Partial archives are discarded and retries fetch a fresh copy.
+
+Existing `UMU-Latest`/`GE-Latest` policies remain UMU-managed automatic selections. Existing custom paths and legacy installer pins stay readable without migration. Deliberate **Use default** overrides a historical installer runner pin while preserving the prefix; a blank legacy setting retains that pin. The installer’s resolved exact build is pinned at executable confirmation.
+
+**Uninstall** applies only to UmuTron-managed runner folders and requires confirmation. Reassign the app default and affected game selections first. Active operations and runner leases block removal; detectable same-user process use is also checked. These advisory locks do not exclude programs outside UmuTron. Game files, prefixes, saves and custom runner folders are never removed by this action.
 
 ## Add and play
 
 Choose Add Game, search the public Steam catalogue (or select IGDB), and select a result. Metadata and available artwork are saved automatically; the read-only detail page opens. Manual entry is an optional fallback. Metadata-only entries are valid and show **Set up to play**.
 
-Later, controller → Manage Game uses an already-installed switch and installation/setup stage tabs. Select executable/working directory when ready. Working defaults discover UMU and installed Proton (or use the app default/automatic runtime). Configuration never runs anything by itself.
+Later, controller → Manage Game uses an already-installed switch and installation/setup stage tabs. Select executable/working directory when ready. UMU is discovered on PATH. The visible Proton version selector inherits the app default or selects a specific installed/downloadable build. Configuration never runs anything by itself.
 
 For Install from installer, select a trusted setup executable and Run installer. The review is explicit; you handle its agreements and destination. Watch status/logs in Manage Game. On success, failure or cancellation, files stay intact. Reopen Manage Game later to retry or select/confirm the installed game executable and working directory. The picker opens the owned prefix's drive_c when available. Play uses the confirmed game file and pinned prefix/runtime. An unresolved automatic runner requires a concrete installed version and a retry rather than silently switching an installed game's runtime.
 
@@ -96,3 +122,9 @@ Manage Game → Advanced launch settings includes optional DLL compatibility ove
 All automatic Proton logs live in the single app-data diagnostics directory, under game UUID folders. Routine logs request errors and exception warnings instead of verbose traces. Before launches and after owned processes finish, completed logs older than 14 days are deleted, each file is trimmed to its last 8 MiB, and oldest files are removed to enforce a 100 MiB total cap. Active log growth is not truncated while Proton is writing; these caps apply after completion.
 
 Settings → General → Diagnostic logs → Clear all diagnostic logs asks for confirmation and removes only regular .log files in managed game folders. Symlinks and other files are ignored. The launch lock blocks clearing while any game or installer is active. Games, saves, prefixes, artwork and operation records are never deleted by this control.
+
+
+### Prefix information and runtime maintenance (0.4.13)
+Setup / Manage Game now includes **Prefix** alongside Install and Game setup. It displays read-only prefix storage, creation state, runner version and conservative native/builtin/game-local runtime evidence. Game-specific requirements remain explicitly unknown. Manual VC++ v14 core installation requires a separate confirmation and interactive Microsoft license acceptance; .NET, legacy DirectX and runner components have no manual install/replacement actions. See [the behavior contract](docs/DESIGN.md#prefix-inventory-and-install-only-maintenance) and [validation and limitations](docs/PREFIX-VALIDATION.md).
+
+Proton Manager distinguishes automatic latest selectors from installed versions without changing existing selections.

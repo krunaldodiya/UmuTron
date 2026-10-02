@@ -11,6 +11,7 @@ import signal
 import sys
 import time
 from uuid import UUID
+from .runner_selection import effective_selector, global_selector, parse_release
 
 FIELDS={'runner','proton','prefix','arguments','dll_overrides'}
 ACTIVE={'Preparing','Downloading runtime','Running','Stopping'}
@@ -21,7 +22,7 @@ def preparation_progress(record):
     """Report observed UMU output and bytes, never invent a total or percentage."""
     logs=record.get('logs',[])
     stage=next((line for line in reversed(logs) if any(word in line.lower() for word in ('downloading','extracting','verifying','restoring','setting up','updating steamrt'))),record.get('state','Preparing'))
-    transferred=None
+    transferred=record.get('downloaded_bytes')
     for line in reversed(logs):
         match=re.search(r"Writing: (.+\.parts)$",line)
         if not match:continue
@@ -30,7 +31,7 @@ def preparation_progress(record):
             if path.is_absolute() and not path.is_symlink() and path.is_file():transferred=path.stat().st_size
         except OSError:pass
         break
-    return {'stage':stage,'bytes':transferred}
+    return {'stage':record.get('preparation_stage') or stage,'bytes':transferred}
 
 
 def validate_settings(settings):
@@ -60,12 +61,12 @@ def defaults(game,root):
     try:arguments=list(settings['arguments']) if 'arguments' in settings else shlex.split(game.get('arguments',''))
     except ValueError:raise ValueError('Legacy launch arguments have unmatched quotes. Set the Direct Play argument list explicitly.') from None
     return {'runner':settings.get('runner') or found['runner'],
-            'proton':settings.get('proton') or installed.get('proton') or (found['protons'][0] if found['protons'] else 'UMU-Latest'),
+            'proton':effective_selector(game,global_selector(root)),
             'prefix':settings.get('prefix') or installed.get('prefix') or str(Path(root)/'prefixes'/game['id']),
             'arguments':arguments,'dll_overrides':settings.get('dll_overrides','')}
 
 
-def build_command(game,root,inherited=None):
+def build_command(game,root,inherited=None,allow_prepare=False):
     settings=defaults(game,root)
     runner=Path(settings['runner']).expanduser()
     if not runner.is_absolute() or not runner.is_file() or not os.access(runner,os.X_OK): raise ValueError('Install umu-run or choose its executable path in Direct Play.')
@@ -74,7 +75,12 @@ def build_command(game,root,inherited=None):
     cwd=Path(game['working_dir']).expanduser() if game['working_dir'] else exe.parent
     if not cwd.is_absolute() or not cwd.is_dir(): raise ValueError('The working directory does not exist.')
     proton=settings['proton']
-    if proton not in ('UMU-Latest','GE-Latest'):
+    if parse_release(proton):
+        from .proton_manager import ProtonManager
+        installed=ProtonManager(Path(root)/'proton-manager').installed_release(proton)
+        if installed:proton=installed
+        elif not allow_prepare:raise ValueError('This Proton version is not installed yet. Play or Launch Installer will download and verify it first.')
+    if proton not in ('UMU-Latest','GE-Latest') and not parse_release(proton):
         tool=Path(proton).expanduser()
         if not tool.is_absolute() or not tool.is_dir() or not (tool/'proton').is_file(): raise ValueError('Choose a Proton folder containing the proton launcher, or UMU-Latest / GE-Latest.')
         proton=str(tool)
@@ -181,27 +187,42 @@ class Launcher:
             state['state']='Error';state['logs']=[*state.get('logs',[])[-199:],'Launch supervisor ended unexpectedly. Review before retrying.']
         return state
 
-    def start(self,game,operation='play',before_start=None):
+    def start(self,game,operation='play',before_start=None,runtime_recipe=None,runtime_context=None):
         from .library import atomic_write
-        if operation not in ('play','installer'):raise ValueError('Unknown operation.')
+        if operation not in ('play','installer','runtime'):raise ValueError('Unknown operation.')
+        runtime_plan=None
+        if operation=='runtime':
+            from .runtime_maintenance import install_plan
+            runtime_plan=install_plan(game,self.root,runtime_recipe)
+            if runtime_context is None or tuple(runtime_context)!=runtime_plan['context']:raise ValueError('Runtime confirmation context changed; review again.')
+            game=runtime_plan['game']
         if operation=='play' and game.get('installation',{}).get('mode')=='installer' and not game['installation'].get('confirmed'):raise ValueError('Confirm the installed game executable in Manage Game before playing.')
         if operation=='play' and game.get('installation',{}).get('mode')=='installer' and Path(game['executable']).resolve()==Path(game['installation'].get('installer','')).resolve():raise ValueError('Play cannot run setup. Confirm the installed game executable.')
-        argv,cwd,env=build_command(game,self.root)
+        if runtime_plan:
+            from copy import deepcopy
+            probe=deepcopy(game);probe.update(executable=str(Path(__file__).resolve()),working_dir=str(Path(__file__).parent.resolve()))
+            argv,cwd,env=build_command(probe,self.root)
+        else:argv,cwd,env=build_command(game,self.root,allow_prepare=True)
+        prefix_fd=None
         fd=os.open(self.root/'launch.lock',os.O_CREAT|os.O_RDWR,0o600)
         try:
             try:fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
             except BlockingIOError:raise RuntimeError('A game is already active. Stop or finish it before launching another.') from None
+            from .prefix_guard import acquire
+            prefix_fd=acquire(env['WINEPREFIX'],check_processes=operation=='runtime')
             from .diagnostics import cleanup
             cleanup(self.root)
             session=str(__import__('uuid').uuid4())
             request={'operation':operation,'session_id':session,'game_id':game['id'],'title':game['title'],'argv':argv,'cwd':cwd,'env':env,'record':str(self.record)}
+            if runtime_plan:
+                request.update(recipe=runtime_recipe,runtime_game=game,runtime_context=list(runtime_plan['context']))
             atomic_write(self.root/'launch-request.json',json.dumps(request).encode())
             state={'operation':operation,'session_id':session,'game_id':game['id'],'title':game['title'],'state':'Preparing','logs':['Preparing UMU. First use may download Proton and runtime assets.'],'code':None}
             if before_start:before_start(state,env)
             atomic_write(self.record,json.dumps(state).encode())
             if operation=='installer':atomic_write(self.root/'installation-sessions'/ (game['id']+'.json'),json.dumps(state).encode())
             supervisor=Path(__file__).with_name('launch_supervisor.py')
-            process=subprocess.Popen([sys.executable,str(supervisor),str(self.root/'launch-request.json')],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True,pass_fds=(fd,))
+            process=subprocess.Popen([sys.executable,str(supervisor),str(self.root/'launch-request.json')],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,start_new_session=True,pass_fds=(fd,prefix_fd))
             self.processes=[p for p in self.processes if p.poll() is None]+[process]
         except Exception as error:
             if not isinstance(error,RuntimeError):
@@ -209,7 +230,9 @@ class Launcher:
                 atomic_write(self.record,json.dumps(failure).encode())
                 if operation=='installer':atomic_write(self.root/'installation-sessions'/(game['id']+'.json'),json.dumps(failure).encode())
             raise
-        finally:os.close(fd)
+        finally:
+            if prefix_fd is not None:os.close(prefix_fd)
+            os.close(fd)
 
     def stop(self,game_id):
         state=self.current()

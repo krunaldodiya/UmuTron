@@ -63,6 +63,9 @@ class InstallerTests(unittest.TestCase):
         self.runner.write_text('#!/usr/bin/python3\nimport os,subprocess,sys\nos.environ["PROTONPATH"]='+repr(str(self.proton))+'\np=subprocess.Popen([sys.executable,"-c","import time;time.sleep(.8)"])\np.wait()\n')
         saved=self.service.start(self.game);self.finish()
         self.assertEqual(self.service.status(saved)['proton'],str(self.proton))
+        resumed=self.service.start(saved);self.finish()
+        self.assertEqual(resumed['installation']['proton'],str(self.proton))
+        saved=resumed
         saved['executable']=str(self.exe);confirmed=self.service.confirm(saved)
         self.assertEqual(confirmed['launch']['proton'],str(self.proton))
         archive=self.root/'portable.zip';self.lib.export_zip(archive);restored=Library(self.root/'restored');restored.import_zip(archive)

@@ -171,6 +171,9 @@ class Library:
 
     def set_default_proton(self,value):
         if not isinstance(value,str) or len(value)>4096 or '\x00' in value:raise ValueError('Invalid default runner.')
+        from .runner_selection import INHERIT, parse_release
+        if value==INHERIT:raise ValueError('Choose a concrete app default or automatic policy.')
+        parse_release(value)
         self.data['settings']['default_proton']=value;self._write()
 
     def mark_synced(self, game_id, account, shortcut_id):

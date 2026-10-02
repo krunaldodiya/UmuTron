@@ -1,5 +1,6 @@
 """GTK4-compatible StatusNotifierItem and mode-switching DBusMenu, using Gio only."""
 from gi.repository import Gio, GLib
+from . import APP_NAME, ICON_NAME
 
 ITEM_XML='''<node><interface name="org.kde.StatusNotifierItem">
 <method name="Activate"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
@@ -32,8 +33,8 @@ def close_action(tray_available):return 'hide' if tray_available else 'minimize'
 
 
 class Tray:
-    def __init__(self,show,exit_app,changed,fullscreen=None,desktop=None,activity=None,settings=None,appearance=None):
-        self.fullscreen=fullscreen;self.desktop=desktop;self.activity=activity;self.settings=settings;self.appearance=appearance
+    def __init__(self,show,exit_app,changed,fullscreen=None,desktop=None,settings=None):
+        self.fullscreen=fullscreen;self.desktop=desktop;self.settings=settings
         self.show=show;self.exit_app=exit_app;self.changed=changed;self.available=False;self.connection=None;self.registrations=[];self.owner=None;self.signals=[]
         try:
             self.connection=Gio.bus_get_sync(Gio.BusType.SESSION,None)
@@ -67,15 +68,15 @@ class Tray:
     @staticmethod
     def properties(item):
         if item==0:return {'children-display':GLib.Variant('s','submenu')}
-        return {'label':GLib.Variant('s',{1:'Show Launcher',2:'Exit',3:'Switch to Fullscreen',4:'Switch to Desktop',5:'Activity',6:'Settings',7:'Appearance'}.get(item,'')),'enabled':GLib.Variant('b',True),'visible':GLib.Variant('b',True)}
+        return {'label':GLib.Variant('s',{1:'Show '+APP_NAME,2:'Exit',3:'Switch to Fullscreen',4:'Switch to Desktop',6:'Settings'}.get(item,'')),'enabled':GLib.Variant('b',True),'visible':GLib.Variant('b',True)}
 
     def property(self,connection,sender,path,interface,name):
         if interface=='com.canonical.dbusmenu':
             return {'Version':GLib.Variant('u',3),'TextDirection':GLib.Variant('s','ltr'),'Status':GLib.Variant('s','normal'),'IconThemePath':GLib.Variant('as',[])}.get(name)
-        values={'Category':('s','ApplicationStatus'),'Id':('s','game-library-launcher'),'Title':('s','Game Library Launcher'),'Status':('s','Active'),
-                'IconName':('s','applications-games'),'IconThemePath':('s',''),'AttentionIconName':('s',''),'OverlayIconName':('s',''),
+        values={'Category':('s','ApplicationStatus'),'Id':('s','game-library-launcher'),'Title':('s',APP_NAME),'Status':('s','Active'),
+                'IconName':('s',ICON_NAME),'IconThemePath':('s',''),'AttentionIconName':('s',''),'OverlayIconName':('s',''),
                 'IconPixmap':('a(iiay)',[]),'AttentionIconPixmap':('a(iiay)',[]),'OverlayIconPixmap':('a(iiay)',[]),
-                'Menu':('o','/Menu'),'ItemIsMenu':('b',False),'WindowId':('u',0),'ToolTip':('(sa(iiay)ss)',('applications-games',[],'Game Library Launcher','Show Launcher or Exit'))}
+                'Menu':('o','/Menu'),'ItemIsMenu':('b',False),'WindowId':('u',0),'ToolTip':('(sa(iiay)ss)',(ICON_NAME,[],APP_NAME,'Show '+APP_NAME+' or Exit'))}
         return GLib.Variant(*values[name]) if name in values else None
 
     def event(self,item,event):
@@ -84,9 +85,7 @@ class Tray:
             elif item==2:self.exit_app()
             elif item==3 and self.fullscreen:self.fullscreen()
             elif item==4 and self.desktop:self.desktop()
-            elif item==5 and self.activity:self.activity()
             elif item==6 and self.settings:self.settings()
-            elif item==7 and self.appearance:self.appearance()
 
     def method(self,connection,sender,path,interface,method,parameters,invocation):
         args=parameters.unpack()
@@ -95,9 +94,9 @@ class Tray:
             invocation.return_value(None);return
         if method=='GetLayout':
             item,depth,_=args
-            children=[GLib.Variant('(ia{sv}av)',(i,self.properties(i),[])) for i in (1,3,4,5,6,7,2)] if item==0 and depth!=0 else []
+            children=[GLib.Variant('(ia{sv}av)',(i,self.properties(i),[])) for i in (1,3,4,6,2)] if item==0 and depth!=0 else []
             result=GLib.Variant('(u(ia{sv}av))',(1,(item,self.properties(item),children)))
-        elif method=='GetGroupProperties':result=GLib.Variant('(a(ia{sv}))',([(i,self.properties(i)) for i in args[0] if i in (0,1,2,3,4,5,6,7)],))
+        elif method=='GetGroupProperties':result=GLib.Variant('(a(ia{sv}))',([(i,self.properties(i)) for i in args[0] if i in (0,1,2,3,4,6)],))
         elif method=='GetProperty':result=GLib.Variant('(v)',(self.properties(args[0]).get(args[1],GLib.Variant('s','')),))
         elif method=='Event':self.event(args[0],args[1]);result=None
         elif method=='EventGroup':

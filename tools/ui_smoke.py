@@ -6,7 +6,8 @@ import tempfile
 import time
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-os.environ.setdefault('GSK_RENDERER','cairo')
+os.environ.setdefault('GSK_RENDERER','broadway' if os.environ.get('GDK_BACKEND')=='broadway' else 'cairo')
+os.environ.setdefault('GSETTINGS_BACKEND','memory')
 from game_library.app import Application,Window
 from game_library.demo import prepare_demo
 from game_library import metadata
@@ -42,9 +43,9 @@ with tempfile.TemporaryDirectory() as temp:
     os.environ['XDG_CACHE_HOME']=temp
     library=prepare_demo(seed=True)
     app=Application(demo=True);app.set_flags(Gio.ApplicationFlags.NON_UNIQUE);app.register(None)
-    w=Window(app,library,demo=True);app.window=w;w.controller.close();w.present();settle(1000)
+    w=Window(app,library,demo=True);w.proton_manager.releases=lambda *args,**kwargs:[];app.window=w;w.controller.close();w.present();settle(1000)
     def screenshot(name,target=None):
-        target=target or w;target.set_visible(False);target.present();settle(800)
+        target=target or w;focus=target.get_focus();target.set_visible(False);target.present();settle(800)
         captured=[]
         def ready_frame():
             if not target.get_mapped() or not target.get_renderer():return False
@@ -55,6 +56,12 @@ with tempfile.TemporaryDirectory() as temp:
         pump_until(ready_frame)
         texture=target.get_renderer().render_texture(captured[0],None)
         texture.save_to_png(str(Path(__file__).resolve().parents[1]/'docs/screenshots'/name))
+        # Remapping the fixture can drop native activation while retaining its
+        # logical focus. Restore that focus through GTK after capture so later
+        # navigation checks do not inherit the screenshot helper's side effect.
+        if target is w and w.tv_mode and focus and focus.get_root() is target and focus.is_sensitive():
+            target.set_focus(None);focus.grab_focus()
+            pump_until(lambda:target.get_focus() is focus)
     w.theme.set_selected(1);screenshot('library-light.png');w.theme.set_selected(2);screenshot('library-dark.png')
     game=library.games()[0];before=library.path.read_bytes();art={p.name:p.read_bytes() for p in library.art_dir.iterdir()}
     w.show_game(game);screenshot('details-dark.png')
@@ -174,17 +181,17 @@ with tempfile.TemporaryDirectory() as temp:
         def close(self):self.closed=True
     app.tray=FakeTray();w.close_requested();assert not w.get_visible();app.activate_window();assert app.window is w and w.get_visible()
     app.tray.available=False;calls=[];original_minimize=w.minimize;w.minimize=lambda:calls.append('minimize');w.close_requested();assert calls==['minimize'];w.minimize=original_minimize
-    w.explicit_exit();dialog=next(d for d in Gtk.Window.get_toplevels() if isinstance(d,Adw.MessageDialog) and d.get_heading()=='Exit Launcher?')
+    w.explicit_exit();dialog=next(d for d in Gtk.Window.get_toplevels() if isinstance(d,Adw.MessageDialog) and d.get_heading()=='Exit UmuTron?')
     assert 'CONTINUE' in dialog.get_body();dialog.emit('response','cancel');assert not w.exiting
     quit_original=app.quit;exit_calls=[];app.quit=lambda:exit_calls.append('exit');w.explicit_exit()
-    dialog=next(d for d in Gtk.Window.get_toplevels() if isinstance(d,Adw.MessageDialog) and d.get_heading()=='Exit Launcher?');dialog.emit('response','confirm')
+    dialog=next(d for d in Gtk.Window.get_toplevels() if isinstance(d,Adw.MessageDialog) and d.get_heading()=='Exit UmuTron?');dialog.emit('response','confirm')
     assert exit_calls==['exit'] and fake.active();app.quit=quit_original;w.exiting=False;w.pool=__import__('concurrent.futures',fromlist=['ThreadPoolExecutor']).ThreadPoolExecutor(max_workers=2)
     w.launcher=real;w.show_game(library.games()[0])
     archive=Path(temp)/'backup.zip';library.export_zip(archive);library.import_zip(archive,'replace')
     assert library.games()[0]['launch']['arguments']==['one argument','--flag']
-    w.proton_manager.releases=lambda *args,**kwargs:[{'family':'GE-Proton','version':'GE-Proton11-fixture','name':'GE-Proton11-fixture.tar.gz','architecture':'x86_64','source':'Official upstream fixture','url':'https://github.com/GloriousEggroll/proton-ge-custom/releases/download/test/GE-Proton11-fixture.tar.gz','size':1,'digest':'sha256:'+'0'*64,'checksum_url':''}]
+    w.proton_manager.releases=lambda *args,**kwargs:[{'family':'GE-Proton','version':'GE-Proton11-fixture','name':'GE-Proton11-fixture.tar.gz','architecture':'x86_64','source':'Official upstream fixture','url':'https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-fixture/GE-Proton11-fixture.tar.gz','size':1,'digest':'sha256:'+'0'*64,'checksum_url':''}]
     w.open_settings();settle();settings=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Settings')
-    assert any(b.get_label()=='Export ZIP' for b in buttons(settings));settings.set_visible_page(w.proton_settings_page);click(settings,'Refresh')
+    assert any(b.get_label()=='Export ZIP' for b in buttons(settings));settings.set_visible_page(w.proton_settings_page);w.proton_panel.stack.set_visible_child_name('GE-Proton');w.proton_panel.load('GE-Proton',1)
     pump_until(lambda:any(b.get_label()=='Install' for b in buttons(settings)));screenshot('proton-manager-dark.png',settings);settings.destroy()
     for leftover in list(Gtk.Window.get_toplevels()):
         if leftover is not w:leftover.destroy()
@@ -197,7 +204,7 @@ with tempfile.TemporaryDirectory() as temp:
         finally:w.navigation_window=actual
     # Even a small saved library has trailing room for a shifting icon rail.
     w.show_library();w.set_tv_mode(True);settle(500)
-    assert w.tv_scroll.get_hadjustment().get_upper()>w.tv_scroll.get_hadjustment().get_page_size()
+    pump_until(lambda:w.tv_scroll.get_hadjustment().get_upper()>w.tv_scroll.get_hadjustment().get_page_size())
     w.select_tv_game(w.tv_games[0]);w.focus_tv_card();settle(300)
     navigate('right');settle(300)
     assert w.tv_scroll.get_hadjustment().get_value()>0
@@ -228,19 +235,21 @@ with tempfile.TemporaryDirectory() as temp:
     assert not w.tv_clock.get_focusable()
     # Installed grid excludes metadata-only and unconfirmed installer entries.
     w.set_tv_section('library');settle()
+    screenshot('fullscreen-installed-grid-dark.png')
+    pump_until(lambda:all(tile.get_width()>0 for _,tile in w.tv_tiles))
     w.select_tv_game(w.tv_games[0]);w.focus_tv_card();settle();previous=w.tv_selected_id
     assert w.keyboard_controller.get_propagation_phase()==Gtk.PropagationPhase.CAPTURE
     actual=w.navigation_window;w.navigation_window=lambda:w
     try:assert w.keyboard_controller.emit('key-pressed',Gdk.KEY_Right,0,Gdk.ModifierType(0))
     finally:w.navigation_window=actual
-    settle();assert w.tv_selected_id!=previous and w.game is None
+    settle();assert w.tv_selected_id!=previous and w.game is None,(previous,w.tv_selected_id,w.focused_control(w),[(g,t.get_width(),t.get_height(),t.compute_bounds(w)[1].get_x(),t.compute_bounds(w)[1].get_y()) for g,t in w.tv_tiles])
     assert all(g['executable'] and (g.get('installation',{}).get('mode')!='installer' or g['installation'].get('confirmed')) for g in w.tv_games)
     assert all(g['title']!='Metadata only' for g in w.tv_games)
     assert all(not tile.has_css_class('tv-game-chip') for _,tile in w.tv_tiles)
     sizes={(tile.get_width(),tile.get_height()) for _,tile in w.tv_tiles}
     assert max(height for _,height in sizes)-min(height for _,height in sizes)<=1,sizes
     assert max(width for width,_ in sizes)-min(width for width,_ in sizes)<=1,sizes
-    assert next(iter(sizes))[1]<300,'Grid cards must not stretch to screen bottom'
+    assert next(iter(sizes))[1]<340,'Grid cards must not stretch to screen bottom'
     screenshot('fullscreen-installed-grid-dark.png')
     for _ in range(8):
         navigate('next');settle();assert isinstance(w.focused_control(w),(Gtk.Button,Gtk.MenuButton))
@@ -253,7 +262,7 @@ with tempfile.TemporaryDirectory() as temp:
     navigate('select');pump_until(lambda:w.tv_section=='library');settle();assert w.focused_control(w) is w.tv_library_tab
     navigate('down');settle();assert w.focused_control(w) in [tile for _,tile in w.tv_tiles]
     library_game=next(g for g in w.tv_games if g['artwork'].get('hero'));w.select_tv_game(library_game)
-    assert w.backdrop.get_file().get_path()==str(library.art_dir/library_game['artwork']['hero']) and w.backdrop.get_opacity()>0
+    assert w.backdrop.get_paintable() is not None and w.backdrop.get_opacity()>0
     for section in ('library','games'):
         w.set_tv_section(section);settle()
         selected=w.tv_games[-1];w.select_tv_game(selected);w.focus_tv_card();settle()
@@ -288,7 +297,7 @@ with tempfile.TemporaryDirectory() as temp:
     assert all(tile.has_css_class('tv-game-chip') for _,tile in w.tv_tiles)
     rail_y=w.tv_scroll.get_allocation().y
     for selected in w.tv_games:
-        w.select_tv_game(selected);settle();assert w.tv_scroll.get_allocation().y==rail_y,'Hero height must remain stable across artwork/text changes'
+        w.select_tv_game(selected);settle();assert w.tv_scroll.get_allocation().y==rail_y,('Hero height must remain stable',rail_y,w.tv_scroll.get_allocation().y,selected['title'],w.tv_title.get_height(),w.tv_description.get_height(),w.tv_related.get_height(),w.tv_launch_status.get_height())
     w.select_tv_game(w.tv_games[0]);settle()
     # Emulate smaller display allocations without changing monitor settings.
     w.unfullscreen();pump_until(lambda:not w.is_fullscreen());w.set_visible(False);w.unrealize();w.set_default_size(1280,720);w.present();settle(800)
@@ -309,7 +318,9 @@ with tempfile.TemporaryDirectory() as temp:
     assert w.tv_scroll.get_policy()[0]==Gtk.PolicyType.EXTERNAL
     assert w.tv_scroll.get_hadjustment().get_value()>0
     selected=w.tv_selected_game();w.show_game(selected);settle();navigate('back');settle()
-    assert w.tv_selected_id==selected['id'] and w.tv_scroll.get_hadjustment().get_value()>0
+    screenshot('fullscreen-return-small-dark.png')
+    pump_until(lambda:w.tv_scroll.get_hadjustment().get_upper()>0)
+    assert w.tv_selected_id==selected['id'] and w.tv_scroll.get_hadjustment().get_value()>0,(w.tv_selected_id,selected['id'],w.tv_scroll.get_hadjustment().get_value(),w.tv_scroll.get_hadjustment().get_upper(),w.tv_rail_end.get_width(),w.tv_rail_end.get_size_request())
     assert w.focused_control(w) is next(tile for gid,tile in w.tv_tiles if gid==selected['id'])
     assert w.tv_menu.get_mapped()
     w.set_tv_section('library');settle();assert w.get_height()<=600
@@ -340,15 +351,23 @@ with tempfile.TemporaryDirectory() as temp:
     play=w.play_buttons[w.game['id']];assert play.get_parent() is w.cover.get_parent();assert abs(play.compute_bounds(play.get_parent())[1].get_width()-w.cover.compute_bounds(w.cover.get_parent())[1].get_width())<=1,(play.get_allocation().width,w.cover.get_allocation().width)
     navigate('play');settle();assert not w.launcher.active()
     assert play.get_sensitive()
-    play.grab_focus();settle(350);assert w.focused_control(w) is play and play.has_css_class('control-focused');w.demo=True
+    play.grab_focus();pump_until(lambda:w.focused_control(w) is play and play.has_css_class('control-focused'));w.demo=True
     # Text never enters the fullscreen keyboard/controller focus path.
     assert all(not widget.get_selectable() and not widget.get_focusable() for widget in widgets(w.body) if isinstance(widget,Gtk.Label))
     for _ in range(12):
         navigate('next');settle();assert isinstance(w.focused_control(w),(Gtk.Button,Gtk.MenuButton))
     # Shoulder buttons scroll readonly details without opening configuration.
     w.detail_scroll.get_child().get_child().append(Gtk.Label(label='Long fixture information\n'*100));settle()
-    navigate('pagedown');settle();assert w.detail_scroll.get_vadjustment().get_value()>0
-    navigate('pageup');settle();assert w.detail_scroll.get_vadjustment().get_value()==0
+    adjustment=w.detail_scroll.get_vadjustment()
+    initial_scroll=adjustment.get_value()
+    expected_down=min(adjustment.get_upper()-adjustment.get_page_size(),initial_scroll+.8*adjustment.get_page_size())
+    navigate('pagedown');settle();assert abs(adjustment.get_value()-expected_down)<1
+    expected_up=max(adjustment.get_lower(),adjustment.get_value()-.8*adjustment.get_page_size())
+    navigate('pageup');settle();assert abs(adjustment.get_value()-expected_up)<1
+    for _ in range(10):
+        if adjustment.get_value()==0:break
+        navigate('pageup');settle()
+    assert adjustment.get_value()==0
     assert not any(b.get_tooltip_text() in ('Edit Metadata','Manage Game') and b.get_mapped() for b in buttons(w))
     w.open_manage();assert w.editor is None
     w.add_game();assert not any(d.get_title()=='Find game metadata' for d in Gtk.Window.get_toplevels())

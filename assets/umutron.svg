@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>UmuTron</title>
+  <desc>An original mint orbit around a white play symbol on an indigo tile.</desc>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="#202638"/>
+  <ellipse cx="64" cy="64" rx="48" ry="32" transform="rotate(-30 64 64)"
+           fill="none" stroke="#67e8c5" stroke-width="9"/>
+  <path d="M53 44 82 62Q85 64 82 66L53 84Q49 86 49 81V47Q49 42 53 44Z"
+        fill="#f7f9ff"/>
+  <circle cx="101" cy="35" r="10" fill="#b6a5ff" stroke="#202638" stroke-width="4"/>
+</svg>
