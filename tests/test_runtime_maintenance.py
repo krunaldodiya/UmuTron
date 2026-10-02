@@ -1,5 +1,9 @@
+from contextlib import contextmanager
 import fcntl
+from functools import partial
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -38,6 +42,26 @@ class MaintenanceTests(unittest.TestCase):
 
     def plan(self):
         return install_plan(self.game, self.lib, 'vc14-x64')
+
+    @contextmanager
+    def fixture_supervisor(self, bootstrap):
+        # Exercise the real detector against an isolated process inventory in both
+        # processes. Unrelated host/CI processes cannot use this temporary prefix.
+        proc = self.root / 'fixture-proc'
+        proc.mkdir()
+        original = subprocess.Popen
+        setup = """
+import sys
+from functools import partial
+from pathlib import Path
+from game_library import prefix_guard
+prefix_guard.process_conflicts = partial(prefix_guard.process_conflicts, proc=Path(sys.argv[2]))
+"""
+        def start(argv, **kwargs):
+            return original([sys.executable, '-c', setup + bootstrap, argv[-1], str(proc)], **kwargs)
+        with patch('game_library.prefix_guard.process_conflicts', side_effect=partial(process_conflicts, proc=proc)), \
+                patch('game_library.launcher.subprocess.Popen', side_effect=start):
+            yield
 
     def test_no_created_prefix_and_alias_runner_are_blocked(self):
         self.game['launch']['proton'] = 'UMU-Latest'
@@ -131,6 +155,19 @@ class MaintenanceTests(unittest.TestCase):
         self.assertEqual(conflicts, ['987654'])
         self.assertFalse(uncertain)
 
+    def test_unreadable_same_user_process_blocks_maintenance_and_releases_lock(self):
+        proc = self.root / 'proc'
+        process = proc / '987654'
+        process.mkdir(parents=True)
+        (process / 'environ').write_bytes(b'')
+        with patch('game_library.prefix_guard.process_conflicts', side_effect=partial(process_conflicts, proc=proc)), \
+                patch.object(Path, 'open', side_effect=PermissionError('fixture denied')):
+            self.assertEqual(process_conflicts(self.prefix, proc), ([], ['987654']))
+            with self.assertRaisesRegex(RuntimeError, 'Cannot verify'):
+                acquire(self.prefix)
+        fd = acquire(self.prefix, check_processes=False)
+        os.close(fd)
+
     def test_cancel_context_cannot_be_omitted(self):
         launch = Launcher(self.lib)
         with self.assertRaisesRegex(ValueError, 'confirmation'):
@@ -155,10 +192,7 @@ class MaintenanceTests(unittest.TestCase):
             prepare(request, lambda: False, lambda _: None)
 
     def test_download_failure_releases_global_and_prefix_locks_without_execution(self):
-        import subprocess
-        import sys
         import time
-        original = subprocess.Popen
         bootstrap = '''
 import sys
 from game_library import runtime_maintenance, launch_supervisor
@@ -167,9 +201,7 @@ launch_supervisor.main(sys.argv[1])
 '''
         launch = Launcher(self.lib)
         plan = self.plan()
-        def fixture_supervisor(argv, **kwargs):
-            return original([sys.executable, '-c', bootstrap, argv[-1]], **kwargs)
-        with patch('game_library.launcher.subprocess.Popen', side_effect=fixture_supervisor):
+        with self.fixture_supervisor(bootstrap):
             launch.start(plan['game'], operation='runtime', runtime_recipe=plan['recipe'], runtime_context=plan['context'])
         deadline = time.monotonic() + 5
         while launch.active() and time.monotonic() < deadline:
@@ -178,14 +210,12 @@ launch_supervisor.main(sys.argv[1])
         self.assertEqual(launch.current()['state'], 'Error')
         self.assertIn('fixture network failure', '\n'.join(launch.current()['logs']))
         self.assertFalse(verify(self.request())[0])
-        fd = acquire(self.prefix)
+        # Only lock release is under test here; process detection has separate fixtures.
+        fd = acquire(self.prefix, check_processes=False)
         os.close(fd)
 
     def test_runtime_supervisor_success_requires_native_evidence(self):
-        import subprocess
-        import sys
         import time
-        original = subprocess.Popen
         bootstrap = '''
 import sys
 sys.path.insert(0, 'tests')
@@ -208,9 +238,7 @@ launch_supervisor.main(sys.argv[1])
                                + 'for p in source.iterdir():shutil.copyfile(p,dest/p.name)\n')
         launch = Launcher(self.lib)
         plan = self.plan()
-        def fixture_supervisor(argv, **kwargs):
-            return original([sys.executable, '-c', bootstrap, argv[-1]], **kwargs)
-        with patch('game_library.launcher.subprocess.Popen', side_effect=fixture_supervisor):
+        with self.fixture_supervisor(bootstrap):
             launch.start(plan['game'], operation='runtime', runtime_recipe=plan['recipe'], runtime_context=plan['context'])
         deadline = time.monotonic() + 5
         while launch.active() and time.monotonic() < deadline:
@@ -221,10 +249,7 @@ launch_supervisor.main(sys.argv[1])
         self.assertFalse((self.lib / 'installation-sessions').exists())
 
     def test_cancellation_keeps_both_locks_until_owned_fixture_exits(self):
-        import subprocess
-        import sys
         import time
-        original = subprocess.Popen
         bootstrap = '''
 import sys
 sys.path.insert(0, 'tests')
@@ -243,9 +268,7 @@ launch_supervisor.main(sys.argv[1])
                                + 'time.sleep(20)\n')
         launch = Launcher(self.lib)
         plan = self.plan()
-        def fixture_supervisor(argv, **kwargs):
-            return original([sys.executable, '-c', bootstrap, argv[-1]], **kwargs)
-        with patch('game_library.launcher.subprocess.Popen', side_effect=fixture_supervisor):
+        with self.fixture_supervisor(bootstrap):
             launch.start(plan['game'], operation='runtime', runtime_recipe=plan['recipe'], runtime_context=plan['context'])
         deadline = time.monotonic() + 5
         while not sentinel.exists() and time.monotonic() < deadline:
@@ -260,7 +283,8 @@ launch_supervisor.main(sys.argv[1])
         self.assertFalse(launch.active())
         self.assertEqual(launch.current()['state'], 'Stopped')
         self.assertFalse(launch.current()['runtime_verified'])
-        fd = acquire(self.prefix)
+        # Only lock release is under test here; process detection has separate fixtures.
+        fd = acquire(self.prefix, check_processes=False)
         os.close(fd)
 
 
