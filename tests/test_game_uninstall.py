@@ -159,3 +159,15 @@ class GameUninstallTests(unittest.TestCase):
         with patch('os.fsync',side_effect=sync),patch('game_library.game_uninstall.move_exclusive',side_effect=move):
             self.service.confirm(self.game,self.service.inspect(self.game,self.folder));self.service.execute(self.service.plan(self.game))
         self.assertIn(('sync',*identity),events[:events.index(('move',))])
+
+    def test_detect_game_root_and_summary_and_removal(self):
+        from umutron.game_uninstall import detect_game_root, folder_summary, remove_game_directory
+        detected = detect_game_root(self.game, self.library)
+        self.assertEqual(detected, self.folder)
+        count, size, size_str = folder_summary(detected)
+        self.assertEqual(count, 1)
+        self.assertEqual(size, len(b'inert game'))
+        with self.assertRaises(ValueError):
+            remove_game_directory(Path('/'))
+        with self.assertRaises(ValueError):
+            remove_game_directory(Path.home())

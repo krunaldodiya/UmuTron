@@ -914,27 +914,31 @@ class CatalogUI:
 
     def review_uninstall(self):
         game=deepcopy(self.game)
-        uninstaller=game.get('uninstaller','').strip()
-        if uninstaller and Path(uninstaller).is_file():
-            body=(f'Run official uninstaller through UMU?\n\n{uninstaller}\n\n'
-                  'This will launch the Windows uninstaller through UMU and Proton inside this game’s prefix.')
-            def start_umu():
-                if self.demo:self.error(ValueError('Uninstaller execution is disabled in the demo.'));return
-                if self.launcher.active():self.error(RuntimeError('Another game or installer is active. Finish it first.'));return
-                launch_data=deepcopy(game)
-                launch_data.update(executable=str(uninstaller),working_dir=str(Path(uninstaller).parent))
-                from .launcher import defaults, build_command
-                settings=defaults(launch_data,self.library.root)
-                launch_data['launch']=settings
-                build_command(launch_data,self.library.root,allow_prepare=True)
-                self.launcher.start(launch_data)
-                self.refresh_launch_state()
-                self.notify('Uninstaller started through UMU.')
-            self.confirm('Uninstall '+game['title']+'?',body,'Run uninstaller',start_umu)
+        from .game_uninstall import detect_game_root, folder_summary, remove_game_directory
+        detected_root=detect_game_root(game,self.library)
+        if not detected_root or not Path(detected_root).is_dir():
+            body=('Could not safely isolate a dedicated installation folder for this game.\n\n'
+                  'To protect against unintended data loss, automatic folder deletion is disabled. '
+                  'You can remove this game card from your library using "Remove from library".')
+            self.confirm('Uninstall '+game['title']+'?',body,'Remove from library',self.remove_detail)
             return
-        body=('No uninstaller executable has been chosen for this game.\n\n'
-              'You must first set the uninstaller executable in Setup (e.g. unins000.exe) and save before you can uninstall this game.')
-        self.confirm('Uninstall '+game['title']+'?',body,'Open Setup',self.open_manage)
+        file_count,total_size,size_str=folder_summary(detected_root)
+        body=(f'Game folder to remove:\n{detected_root}\n\n'
+              f'({size_str} · {file_count} files)\n\n'
+              'This will permanently delete this game installation folder and remove its library record. '
+              'Game saves and Wine prefixes are kept separate.')
+        def do_uninstall():
+            if self.demo:self.error(ValueError('File deletion is disabled in the visual demo.'));return
+            if self.launcher.active():self.error(RuntimeError('Finish the active game or installer first.'));return
+            if not self.game or self.game['id']!=game['id']:return
+            def run_delete():
+                remove_game_directory(detected_root)
+                self.library.delete(game['id'])
+            def complete(_):
+                self.return_from_detail()
+                self.notify(f'{game["title"]} uninstalled and files removed.')
+            self.async_job('Uninstalling game files…',run_delete,complete)
+        self.confirm('Uninstall '+game['title']+'?',body,'Delete game folder',do_uninstall,destructive=True)
 
     def build_installation_folder(self,content):
         box,button,label,margins,_=ui()

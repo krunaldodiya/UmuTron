@@ -24,6 +24,103 @@ DATA_NAMES={'save','saves','savegame','savegames','saved','userdata','user_data'
 ROOT_NAMES={'games','game','steamapps','common','bin','binaries','x64','x86','win64','win32','program files','program files (x86)','users','downloads','documents','desktop'}
 
 
+ROOT_MARKERS = {
+    'steam_appid.txt': 5,
+    'steam_emu.ini': 5,
+    'system.cfg': 4,
+    'Engine': 4,
+    'Content': 3,
+    'Binaries': 3,
+    'Data': 2,
+    '_CommonRedist': 4,
+    'Support': 3,
+    'unins000.dat': 5,
+    'unins000.exe': 5,
+    'uplay_install.manifest': 5,
+    'uplay_r1_loader.ini': 4,
+}
+GENERIC_SUBDIRS = {'bin', 'binaries', 'win64', 'win_x64', 'win32', 'win_x86', 'x64', 'x86', 'release', 'retail', 'game', 'shipping', 'build'}
+DANGEROUS_NAMES = {'games', 'game', 'steamapps', 'common', 'program files', 'program files (x86)', 'downloads', 'documents', 'desktop', 'home', 'users', 'media', 'mnt', 'run'}
+
+
+def detect_game_root(game, library=None):
+    inst_root = game.get('installation', {}).get('root')
+    if inst_root and Path(inst_root).is_dir():
+        p = Path(inst_root).resolve()
+        if p.name.lower() not in DANGEROUS_NAMES:
+            return p
+    exe_str = game.get('executable')
+    if not exe_str or not Path(exe_str).is_file():
+        return None
+    exe = Path(exe_str).resolve()
+    library_roots = set()
+    if library:
+        all_games = library.games() if hasattr(library, 'games') else library
+        parents = [Path(g['executable']).resolve().parent for g in all_games if g.get('executable') and Path(g['executable']).is_file()]
+        for p in parents:
+            for ancestor in p.parents:
+                if ancestor.name.lower() in ('games', 'steamlibrary', 'steamapps', 'common') or len([other for other in parents if ancestor in other.parents]) >= 2:
+                    library_roots.add(ancestor)
+    for lib_root in sorted(library_roots, key=lambda p: len(p.parts), reverse=True):
+        if exe.is_relative_to(lib_root):
+            rel = exe.relative_to(lib_root)
+            if len(rel.parts) >= 2:
+                candidate = lib_root / rel.parts[0]
+                if candidate.is_dir() and candidate.name.lower() not in DANGEROUS_NAMES:
+                    return candidate
+    curr = exe.parent
+    candidates = []
+    depth = 0
+    mounts = {Path(m) for m in mount_points()}
+    while curr != curr.parent and depth < 6:
+        if curr in mounts or curr.name.lower() in DANGEROUS_NAMES or curr in [Path('/'), Path.home(), Path('/usr'), Path('/var'), Path('/tmp'), Path('/mnt'), Path('/run'), Path('/media')]:
+            break
+        score = 0
+        try:
+            names = {p.name for p in curr.iterdir()}
+        except Exception:
+            names = set()
+        for marker, pts in ROOT_MARKERS.items():
+            if marker in names:
+                score += pts
+        title_words = [re.sub(r'[^a-z0-9]', '', w) for w in game.get('title', '').lower().split() if len(w) > 2]
+        if any(w in curr.name.lower() for w in title_words):
+            score += 10
+        if curr.name.lower() in GENERIC_SUBDIRS:
+            score -= 5
+        candidates.append((score, -depth, curr))
+        curr = curr.parent
+        depth += 1
+    if candidates:
+        best = max(candidates, key=lambda x: (x[0], x[1]))
+        return best[2]
+    return None
+
+
+def folder_summary(path):
+    p = Path(path)
+    total_size = 0
+    file_count = 0
+    for root, _, files in os.walk(p):
+        for f in files:
+            file_count += 1
+            try:
+                total_size += os.path.getsize(os.path.join(root, f))
+            except OSError:
+                pass
+    size_str = f"{total_size / (1024**3):.1f} GB" if total_size >= 1024**3 else f"{total_size / (1024**2):.1f} MB"
+    return file_count, total_size, size_str
+
+
+def remove_game_directory(root_path):
+    root = Path(root_path).resolve()
+    if root.name.lower() in DANGEROUS_NAMES or root in [Path('/'), Path.home(), Path('/usr'), Path('/var'), Path('/tmp'), Path('/mnt'), Path('/run'), Path('/media')]:
+        raise ValueError(f"Refusing to delete unsafe directory: {root}")
+    mounts = {Path(m) for m in mount_points()}
+    if root in mounts:
+        raise ValueError(f"Refusing to delete mount point: {root}")
+    import shutil
+    shutil.rmtree(root)
 def fingerprint(game):return sha256(json.dumps(game,sort_keys=True).encode()).hexdigest()
 
 

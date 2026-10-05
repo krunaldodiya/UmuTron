@@ -974,8 +974,6 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         self.executable_panel.append(button('Choose game executable',self.pick_executable))
         self.entry(self.executable_panel,'working_dir','Working directory','Blank uses the executable’s folder.')
         self.executable_panel.append(button('Choose working directory',lambda:self.choose_file('Working directory',lambda p:self.fields['working_dir'].set_text(str(p)),folder=True)))
-        self.entry(self.executable_panel,'uninstaller','Uninstaller executable','Optional uninstaller executable (e.g. unins000.exe) to run through UMU.')
-        self.executable_panel.append(button('Choose uninstaller executable',self.pick_uninstaller))
         self.build_installation_folder(self.executable_panel)
         self.build_game_arguments(self.executable_panel)
         self.confirm_executable_button=button('Confirm installed game executable',self.confirm_installed,'suggested-action');self.executable_panel.append(self.confirm_executable_button)
@@ -1185,17 +1183,10 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             self.fields['executable'].set_text(str(path))
             if not self.fields['working_dir'].get_text(): self.fields['working_dir'].set_text(str(path.parent))
             if 'title' in self.fields and not self.fields['title'].get_text(): self.fields['title'].set_text(path.stem)
-            if 'uninstaller' in self.fields and not self.fields['uninstaller'].get_text():
-                for name in ('unins000.exe','uninstall.exe','uninst.exe','Uninstall.exe'):
-                    cand=path.parent/name
-                    if cand.is_file():self.fields['uninstaller'].set_text(str(cand));break
+
         prefix=self.game.get('installation',{}).get('prefix')
         self.choose_file('Choose game executable',selected,start_folder=Path(prefix)/'drive_c' if prefix else None)
-    def pick_uninstaller(self):
-        def selected(path):
-            self.fields['uninstaller'].set_text(str(path))
-        prefix=self.game.get('installation',{}).get('prefix') or self.game.get('launch',{}).get('prefix')
-        self.choose_file('Choose uninstaller executable',selected,start_folder=Path(prefix)/'drive_c' if prefix else None)
+
 
 
 
