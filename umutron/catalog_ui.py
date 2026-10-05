@@ -250,23 +250,16 @@ class CatalogUI:
         return state
 
     def show_collection(self):
-        box,button,label,_,_=ui();state=self.collection_shell('library')
-        choices=genre_choices(self.library.games(),state['genre'])
-        self.collection_genre=BrowseChoice('Filter',['All genres']+[name for _,name in choices])
-        index=next((i for i,(key,_) in enumerate(choices,1) if key==state['genre']),0)
-        self.collection_genre.set_selected(index);self.collection_genre.set_tooltip_text('Library genre');self.collection_toolbar.append(self.collection_genre)
-        def genre_changed(*_):
-            selected=self.collection_genre.get_selected();genre=choices[selected-1][0] if selected and selected<=len(choices) else None
-            if genre!=state['genre']:
-                state.update(genre=genre,page=1,scroll=0,focus=None);self.render_collection()
-        self.collection_genre.connect('notify::selected',genre_changed)
+        state=self.collection_shell('library')
         self.render_collection()
 
     def browse_toolbar_focus(self,action):
         """Ordered toolbar stops, with spatial navigation retained in the grid."""
         if self.route not in self.routes:return False
         current=self.focused_control(self)
-        controls=[self.collection_search,self.collection_search_button,self.collection_genre,getattr(self,'collection_sort',None)]
+        controls=[self.collection_search,self.collection_search_button]
+        if self.route=='store':
+            controls.extend([getattr(self,'collection_genre',None),getattr(self,'collection_sort',None)])
         controls=[control for control in controls if control is not None and control.get_mapped() and control.is_sensitive()]
         tiles=[tile for _,tile in self.tv_tiles if tile.get_mapped() and tile.is_sensitive()]
         if current in controls:
@@ -603,7 +596,7 @@ class CatalogUI:
         self.detail_gear=Gtk.MenuButton(icon_name='emblem-system-symbolic');self.detail_gear.add_css_class('circular');self.detail_gear.set_tooltip_text('Game options');self.detail_gear.set_valign(Gtk.Align.CENTER);actions.append(self.detail_gear)
         popover=style_surface(Gtk.Popover());menu=box(spacing=6);margins(menu,8);popover.set_child(menu);self.detail_gear.set_popover(popover)
         def menu_action(callback):self.detail_gear.popdown();callback()
-        if saved:menu.append(button('Setup',lambda:menu_action(self.open_manage)))
+        menu.append(button('Setup',lambda:menu_action(self.setup_detail)))
         if installed:menu.append(button('Uninstall…',lambda:menu_action(self.review_uninstall)))
         menu.append(button('Game Info',lambda:menu_action(lambda:self.show_game_info(self.game))))
         game_title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
@@ -777,6 +770,30 @@ class CatalogUI:
         def failed(error):
             self.detail_adding=False;self.detail_primary.set_sensitive(True);self.detail_status.set_text(str(error))
         self.catalog_job(artwork,saved,failed,image=True)
+    def setup_detail(self):
+        if self.saved_detail():
+            if self.tv_mode and not self.set_tv_mode(False):return
+            self.open_manage()
+            return
+        if not self.detail_item or self.detail_adding:return
+        existing=members(self.library,self.detail_item)
+        if len(existing)>1:self.notify('Multiple saved copies exist. Open the desired copy in Library.');return
+        if existing:
+            self.show_shared_detail(existing[0],self.detail_item)
+            if self.tv_mode and not self.set_tv_mode(False):return
+            self.open_manage()
+            return
+        item=deepcopy(self.detail_item)
+        art={}
+        for kind,url in item.get('images',{}).items():
+            try:art[kind]=self.catalog.image(url).read_bytes()
+            except (OSError,ValueError):pass
+        game,created=add_item(self.library,item,art)
+        self.game=deepcopy(game);self.original=deepcopy(game)
+        self.show_shared_detail(game,item)
+        if created:self.notify('Added to your library. Set up your game files.')
+        if self.tv_mode and not self.set_tv_mode(False):return
+        self.open_manage()
 
     def install_detail(self):
         if not self.saved_detail():
