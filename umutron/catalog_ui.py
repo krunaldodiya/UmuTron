@@ -185,7 +185,13 @@ class CatalogUI:
         search=self.collection_search
         def search_changed(*_):
             if self.route==route and self.collection_search is search:self.collection_search_changed()
+        def search_cleared(*_):
+            if self.route==route and self.collection_search is search:
+                if not self.collection_search.get_text().strip() and state['query']:
+                    self.collection_search_changed()
         self.collection_search.connect('activate',search_changed)
+        self.collection_search.connect('search-changed',search_cleared)
+        self.collection_search.connect('stop-search',lambda *_:search.set_text(''))
         self.collection_search_button=button('Search',search_changed);search_row.append(self.collection_search_button)
         filters=box(False,12);toolbar.append(filters)
         def resize_toolbar(widget,clock):
