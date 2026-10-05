@@ -95,7 +95,7 @@ def build_command(game,root,inherited=None,allow_prepare=False):
     env.update(WINEPREFIX=str(prefix),PROTONPATH=proton,UMU_LOG='debug',PYTHONUNBUFFERED='1')
     env.update(PROTON_LOG='-all,err+all,warn+seh',PROTON_LOG_DIR=str(Path(root)/'diagnostics'/game['id']))
     if settings['dll_overrides']:env['WINEDLLOVERRIDES']=settings['dll_overrides']
-    # GAMEID/STORE are deliberately unset; catalog IDs are not gamefix IDs.
+    if game.get('metadata_app_id'):env['GAMEID']=str(game['metadata_app_id'])
     return [str(runner),str(exe),*settings['arguments']],str(cwd),env
 
 
