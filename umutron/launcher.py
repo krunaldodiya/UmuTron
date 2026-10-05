@@ -54,6 +54,20 @@ def discover(home=None):
     protons={str(p.resolve()) for root in roots if root.is_dir() for p in root.iterdir() if p.is_dir() and (p/'proton').is_file()}
     return {'runner':shutil.which('umu-run') or '', 'protons':sorted(protons,key=lambda p:('GE-Proton' not in Path(p).name,Path(p).name),reverse=False)}
 
+def detected_dll_overrides(exe_path):
+    if not exe_path:return ''
+    try:
+        folder=Path(exe_path).parent
+        if not folder.is_dir():return ''
+        overrides=[]
+        names={f.name.lower() for f in folder.iterdir() if f.is_file()}
+        if 'dbghelp.dll' in names:overrides.append('dbghelp=n,b')
+        if 'winmm.dll' in names:overrides.append('winmm=n,b')
+        if any(c in names for c in ('codex64.dll','codex.dll')):
+            overrides.extend(['lsteamclient=d','steamclient64=n,b','steamclient=n,b'])
+        return ';'.join(dict.fromkeys(overrides))
+    except Exception:return ''
+
 
 def defaults(game,root):
     settings=game.get('launch',{}); validate_settings(settings)
@@ -61,11 +75,12 @@ def defaults(game,root):
     found=discover()
     try:arguments=list(settings['arguments']) if 'arguments' in settings else shlex.split(game.get('arguments',''))
     except ValueError:raise ValueError('Legacy launch arguments have unmatched quotes. Set the Direct Play argument list explicitly.') from None
+    overrides=settings.get('dll_overrides')
+    if overrides is None or overrides=='':overrides=detected_dll_overrides(game.get('executable'))
     return {'runner':settings.get('runner') or found['runner'],
             'proton':effective_selector(game,global_selector(root)),
             'prefix':settings.get('prefix') or installed.get('prefix') or str(Path(root)/'prefixes'/game['id']),
-            'arguments':arguments,'dll_overrides':settings.get('dll_overrides','')}
-
+            'arguments':arguments,'dll_overrides':overrides}
 
 def build_command(game,root,inherited=None,allow_prepare=False):
     settings=defaults(game,root)
