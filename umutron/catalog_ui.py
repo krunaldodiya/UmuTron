@@ -128,7 +128,7 @@ class CatalogUI:
         self.store_item_futures=[];self.store_render_revision=0
         self.catalog_futures=[];self.catalog_generation=0;self.route='library';self.detail_origin='library'
         self.routes={'library':{'query':'','page':1,'genre':None,'sort':0,'scroll':0,'focus':None},
-                     'store':{'query':'','page':1,'genre':None,'sort':'latest','scroll':0,'focus':None}}
+                     'store':{'query':'','page':1,'genre':None,'sort':'popular','scroll':0,'focus':None}}
         self.catalog_genres=[];self.detail_item=None;self.detail_art={}
         self.game_install_service=UnavailableInstallService()
         from .game_uninstall import GameUninstall
@@ -393,10 +393,10 @@ class CatalogUI:
             selected=self.collection_genre.get_selected();genre=self.catalog_genres[selected-1]['id'] if selected and selected<=len(self.catalog_genres) else None
             if genre!=state['genre']:state.update(genre=genre,page=1,scroll=0,focus=None);self.load_store()
         self.collection_genre.connect('notify::selected',genre_changed)
-        STORE_SORTS=[('latest','Latest first'),('popular','Most popular'),('rating','Top rated'),('name_asc','Name (A–Z)'),('name_desc','Name (Z–A)')]
+        STORE_SORTS=[('popular','Most popular'),('latest','Latest first'),('rating','Top rated'),('name_asc','Name (A–Z)'),('name_desc','Name (Z–A)')]
         self.store_sort_keys=[k for k,_ in STORE_SORTS]
         self.collection_sort=BrowseChoice('Sort',[label for _,label in STORE_SORTS])
-        cur_sort=state.get('sort','latest')
+        cur_sort=state.get('sort','popular')
         sort_idx=self.store_sort_keys.index(cur_sort) if cur_sort in self.store_sort_keys else 0
         self.collection_sort.set_selected(sort_idx);self.collection_sort.set_tooltip_text('Store sort order');self.collection_toolbar.append(self.collection_sort)
         def sort_changed(*_):
@@ -431,7 +431,7 @@ class CatalogUI:
         navigation_revision=getattr(self,'browse_navigation_revision',0)
         _,_,_,_,clear=ui();clear(self.collection_flow);self.collection_tiles={};self.tv_tiles=[]
         query,genre,page=state['query'],state['genre'],state['page']
-        sort=state.get('sort','latest')
+        sort=state.get('sort','popular')
         cached=self.catalog.cached_browse(query,genre,page,sort)
         self.collection_status.set_text('Finding games…');self.update_collection_pager(page,loading=True)
         def loaded(data):
