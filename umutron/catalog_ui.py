@@ -1,8 +1,8 @@
 """Native Library / Store routes and one shared, state-driven detail page."""
 from copy import deepcopy
+import os
 from pathlib import Path
 import re
-
 from gi.repository import Adw, Gio, GLib, Gtk, Pango
 
 from .catalog import CatalogService, configured_catalog, add_item, item_game, members, related_members, entity_label, validate_item, needs_membership_lookup, MAX_PAGE

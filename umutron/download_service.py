@@ -1,6 +1,7 @@
 """Native download boundary and FitGirl catalog lookup."""
 import json
 import os
+from pathlib import Path
 import re
 import unicodedata
 from urllib.parse import urlencode
