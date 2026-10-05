@@ -1095,6 +1095,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             saved=self.installations.confirm(candidate);self.close_installer();dialog=self.editor;self.editor=None;self.editor_kind=None
             if dialog:dialog.destroy()
             self.show_game(saved);self.notify('Executable confirmed. Play will use this game executable, not setup.')
+            self._prompt_clean_installer(saved)
         except Exception as error:self.error(error)
 
     def progress_items(self,game):
@@ -1122,6 +1123,26 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             if data:
                 try:candidate['artwork'][kind]=self.library.add_image(data)
                 except Exception:pass
+
+    def _prompt_clean_installer(self,game):
+        import shutil
+        from .game_uninstall import folder_summary
+        installer_file=game.get('installation',{}).get('installer','')
+        if not installer_file:return
+        p=Path(installer_file)
+        if '.umutron-downloads' in p.parts:
+            idx=p.parts.index('.umutron-downloads')
+            if len(p.parts)>idx+1:
+                download_folder=Path(*p.parts[:idx+2])
+                if download_folder.is_dir():
+                    _,_,size_str=folder_summary(download_folder)
+                    def delete_installer():
+                        shutil.rmtree(download_folder,ignore_errors=True)
+                        self.notify(f'Installer files deleted ({size_str} reclaimed).')
+                    self.confirm('Installation Complete',
+                                 f"{game['title']} has been successfully installed.\n\n"
+                                 f"Would you like to delete the original FitGirl installer files ({size_str}) to reclaim disk space, or keep them?",
+                                 'Delete Installer Files',delete_installer,destructive=True)
 
     def source_text(self):
         source=self.game.get('metadata_source',{})

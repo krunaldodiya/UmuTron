@@ -10,7 +10,10 @@ from .collection import genre_choices, library_page, page_numbers
 from .browse_controls import BrowseChoice
 from .dialogs import style_surface, modal_window, dialog_body, dialog_footer
 from .catalog_work import CatalogWork
-from .download_service import UnavailableInstallService, configured_game, detail_actions, search_fitgirl_repack
+from .download_service import (
+    UnavailableInstallService, configured_game, detail_actions, search_fitgirl_repack,
+    download_manager, parse_size_bytes, format_size, estimate_space_requirements
+)
 from .fullscreen import cover as console_cover, set_art, CoverPicture, CoverLayout
 from .library import description_excerpt
 
@@ -580,7 +583,7 @@ class CatalogUI:
         credit=label(credits,'dim-label',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END);credit.add_css_class('detail-meta');info.append(credit)
         self.detail_size=label('Installation size · Unknown','detail-meta',xalign=0,wrap=True)
         info.append(self.detail_size)
-        actions=box(False,12);panel.append(actions)
+        actions=box(False,12);panel.append(actions);self.detail_actions_box=actions
         saved=self.saved_detail();installed=configured_game(game) and bool(game.get('executable') and Path(game['executable']).is_file())
         if installed:
             primary=button('Play',self.detail_action);primary.add_css_class('suggested-action')
@@ -601,6 +604,17 @@ class CatalogUI:
         if installed:menu.append(button('Uninstall…',lambda:menu_action(self.review_uninstall)))
         menu.append(button('Game Info',lambda:menu_action(lambda:self.show_game_info(self.game))))
         self.detail_repack=None;self.detail_install_pending=False
+        self.detail_download_box=box(spacing=8)
+        self.detail_download_box.set_visible(False)
+        self.detail_progress_bar=Gtk.ProgressBar()
+        self.detail_progress_bar.set_hexpand(True)
+        self.detail_progress_bar.add_css_class('suggested-action')
+        self.detail_progress_label=label('','caption',xalign=0)
+        self.detail_download_box.append(self.detail_progress_bar)
+        self.detail_download_box.append(self.detail_progress_label)
+        panel.append(self.detail_download_box)
+        if download_manager.active_jobs.get(game['id']):
+            self.track_download_progress(game['id'])
         game_title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
         if game_title and not installed:
             base_url=getattr(getattr(self.catalog,'provider',None),'base','https://umu-tron-api.vercel.app')
@@ -809,6 +823,22 @@ class CatalogUI:
         self.open_manage()
 
     def install_detail(self):
+        drives=[]
+        if hasattr(self,'storage_service') and self.storage_service:
+            try:
+                state=self.storage_service.snapshot()
+                for r in state.get('registrations',[]):
+                    if 'install' in r.get('roles',[]):drives.append(r)
+            except Exception:pass
+        if not drives:
+            body=('No install drive has been configured yet.\n\n'
+                  'An install drive is required before downloading and installing games. '
+                  'Open Settings → Storage to add an install drive.')
+            def open_storage():
+                if hasattr(self,'open_settings'):self.open_settings(section='storage')
+            self.confirm('No Install Drive Configured',body,'Open Settings → Storage',open_storage)
+            return
+
         if not self.saved_detail():
             item=deepcopy(self.detail_item) if self.detail_item else None
             if item:
@@ -828,17 +858,6 @@ class CatalogUI:
         self.detail_install_pending=True
         self.detail_status.set_text(f'Finding FitGirl repack for "{title}"…')
 
-    def prompt_no_repack(self,title):
-        body=(f'"{title}" is not available in the FitGirl repack catalogue.\n\n'
-              'You can still add this game to your library and set it up manually using your own local files or an installer.')
-        def open_setup():
-            if not self.saved_detail():
-                self.detail_action()
-            self.open_manage()
-        self.confirm('No FitGirl repack found',body,'Set up Manually',open_setup)
-        if hasattr(self,'detail_status') and self.detail_status:
-            self.detail_status.set_text(f'No FitGirl repack found for "{title}". Use Setup for manual files.')
-
     def show_install_repack_dialog(self,repack):
         title=self.game.get('title','Game')
         repack_title=repack.get('title',title)
@@ -854,20 +873,53 @@ class CatalogUI:
                 if default_id:default_drive=next((d for d in drives if d.get('id')==default_id),None)
             except Exception:pass
         if not default_drive and drives:default_drive=drives[0]
-        dialog=modal_window(self,f'Install {title}',width=620,height=480,subtitle=f'FitGirl Repack · {repack_size}')
+
+        installer_bytes=parse_size_bytes(repack_size)
+        installer_b,installed_b,total_req_b=estimate_space_requirements(installer_bytes)
+        inst_str=format_size(installer_b)
+        game_str=format_size(installed_b)
+        req_str=format_size(total_req_b)
+
+        dialog=modal_window(self,f'Install {title}',width=640,height=520,subtitle=f'FitGirl Repack · {repack_size}')
         content=dialog_body(dialog)
         _,button_fn,_,_,_=ui()
         repack_group=Adw.PreferencesGroup(title='Matched FitGirl Repack')
-        repack_row=Adw.ActionRow(title=repack_title,subtitle=f'Download size: {repack_size}')
+        repack_row=Adw.ActionRow(title=repack_title,subtitle=f'Installer download size: {repack_size}')
         repack_row.set_use_markup(False);repack_row.set_subtitle_lines(3);repack_group.add(repack_row);content.append(repack_group)
+
+        space_group=Adw.PreferencesGroup(title='Storage Requirement')
+        content.append(space_group)
+        space_row=Adw.ActionRow(title=f'Total Required Space: ~{req_str}')
+        space_row.set_subtitle(f'Installer: {inst_str} + Estimated Game: {game_str}')
+        space_row.set_use_markup(False);space_row.set_subtitle_lines(2);space_group.add(space_row)
+
         drive_group=Adw.PreferencesGroup(title='Installation Drive',description='Choose the destination drive for this game.')
         content.append(drive_group)
         selected_drive_path=[default_drive['path'] if default_drive else str(Path.home()/'Games')]
-        target_preview=Adw.ActionRow(title='Destination folder')
-        target_preview.set_use_markup(False)
-        def update_target():
+        target_preview=Adw.ActionRow(title='Destination folder');target_preview.set_use_markup(False)
+
+        def get_free_bytes(p):
+            try:
+                st=os.statvfs(p)
+                return st.f_bavail*st.f_frsize
+            except Exception:return 0
+
+        install_btn=button_fn('Download & Install',None,'suggested-action')
+
+        def update_space_and_target():
             sanitized=re.sub(r'[^\w\s-]','',title).strip() or 'Game'
             target_preview.set_subtitle(f'{selected_drive_path[0]}/{sanitized}')
+            free_b=get_free_bytes(selected_drive_path[0])
+            free_str=format_size(free_b)
+            if free_b < total_req_b:
+                space_row.set_title(f'⚠️ Insufficient Disk Space: Requires ~{req_str}')
+                space_row.set_subtitle(f'Installer ({inst_str}) + Game ({game_str}) = ~{req_str}. Selected drive only has {free_str} free.')
+                install_btn.set_sensitive(False)
+            else:
+                space_row.set_title(f'✓ Sufficient Disk Space: ~{req_str} Required')
+                space_row.set_subtitle(f'Installer: {inst_str} + Game: {game_str} ({free_str} available on selected drive)')
+                install_btn.set_sensitive(True)
+
         if drives:
             options_group=None
             for entry in drives:
@@ -881,35 +933,121 @@ class CatalogUI:
                 if is_default:check.set_active(True)
                 def on_toggle(btn,p=entry.get('path')):
                     if btn.get_active():
-                        selected_drive_path[0]=p;update_target()
+                        selected_drive_path[0]=p;update_space_and_target()
                 check.connect('toggled',on_toggle);row.add_suffix(check);row.set_activatable_widget(check);drive_group.add(row)
-        else:
-            fallback_row=Adw.ActionRow(title='Default Location',subtitle=selected_drive_path[0])
-            fallback_row.set_use_markup(False);drive_group.add(fallback_row)
-            note=Adw.ActionRow(title='Add additional drives in Settings → Storage',subtitle='You can configure dedicated game drives in Settings.')
-            drive_group.add(note)
-        drive_group.add(target_preview);update_target()
+
+        drive_group.add(target_preview)
+        update_space_and_target()
+
         footer=dialog_footer();content.append(footer)
         cancel_btn=button_fn('Cancel',dialog.close);footer.append(cancel_btn)
+
         def on_confirm():
             dialog.close()
             sanitized=re.sub(r'[^\w\s-]','',title).strip() or 'Game'
             dest_dir=f'{selected_drive_path[0]}/{sanitized}'
+            download_dir=f'{selected_drive_path[0]}/.umutron-downloads/{self.game["id"]}'
             self.game['working_dir']=dest_dir
             try:self.library.save(self.game)
             except Exception:pass
-            launched=False
-            try:launched=Gio.AppInfo.launch_default_for_uri(magnet,None)
-            except Exception:
-                import subprocess,shutil
-                if shutil.which('qbittorrent'):subprocess.Popen(['qbittorrent',magnet]);launched=True
-                elif shutil.which('xdg-open'):subprocess.Popen(['xdg-open',magnet]);launched=True
-            msg=f'Started download in torrent client → {dest_dir}' if launched else f'Magnet link ready for {title}.'
-            self.detail_status.set_text(f'Installing to {dest_dir} · {repack_title}')
-            self.notify(msg)
-            self.show_shared_detail(self.game,self.detail_item)
-        install_btn=button_fn('Download & Install',on_confirm,'suggested-action')
+            self.start_fitgirl_download(magnet,download_dir,dest_dir,repack_title,inst_str)
+
+        install_btn.connect('clicked',lambda *_:on_confirm())
         footer.append(install_btn);dialog.present()
+
+    def start_fitgirl_download(self,magnet,download_dir,dest_dir,repack_title,inst_str):
+        title=self.game.get('title','Game')
+        game_id=self.game['id']
+        try:
+            download_manager.start_download(magnet,download_dir,game_id,title)
+        except Exception as error:
+            self.error(error);return
+        self.track_download_progress(game_id,download_dir,dest_dir,inst_str)
+
+    def track_download_progress(self,game_id,download_dir=None,dest_dir=None,inst_str=None):
+        if hasattr(self,'detail_download_box'):
+            self.detail_download_box.set_visible(True)
+        if hasattr(self,'detail_primary'):
+            self.detail_primary.set_label('Pause')
+            self.detail_primary.set_tooltip_text('Pause downloading FitGirl repack')
+
+            def toggle_pause(*_):
+                job=download_manager.get_status(game_id)
+                if job and job.get('status')=='paused':
+                    download_manager.resume(game_id)
+                    self.detail_primary.set_label('Pause')
+                else:
+                    download_manager.pause(game_id)
+                    self.detail_primary.set_label('Resume')
+
+            self.detail_primary.connect('clicked',toggle_pause)
+
+        if not hasattr(self,'detail_cancel_btn') or not self.detail_cancel_btn.get_parent():
+            _,button_fn,_,_,_=ui()
+            self.detail_cancel_btn=button_fn('Cancel Download',lambda:self.cancel_fitgirl_download(game_id),'destructive-action')
+            self.detail_actions_box.append(self.detail_cancel_btn)
+
+        def poll_tick():
+            if self.route!='detail' or not self.game or self.game['id']!=game_id:
+                return False
+            job=download_manager.get_status(game_id)
+            if not job:return False
+            status=job.get('status')
+            if status=='complete':
+                self.on_fitgirl_download_complete(game_id,download_dir or job.get('dir'),dest_dir,inst_str)
+                return False
+            elif status=='paused':
+                self.detail_primary.set_label('Resume')
+                pct=job.get('percent',0.0)
+                self.detail_progress_bar.set_fraction(pct/100.0)
+                self.detail_progress_label.set_text(f"Paused · {pct:.1f}% ({format_size(job.get('completed_bytes'))} / {format_size(job.get('total_bytes'))})")
+            elif status=='active':
+                self.detail_primary.set_label('Pause')
+                pct=job.get('percent',0.0)
+                self.detail_progress_bar.set_fraction(pct/100.0)
+                speed_str=job.get('speed_text','0 B/s')
+                eta_str=f" · ETA {job['eta_text']}" if job.get('eta_text') else ""
+                self.detail_progress_label.set_text(f"{pct:.1f}% · {format_size(job.get('completed_bytes'))} / {format_size(job.get('total_bytes'))} · {speed_str}{eta_str}")
+            return True
+
+        GLib.timeout_add(1000,poll_tick)
+
+    def cancel_fitgirl_download(self,game_id):
+        def do_cancel():
+            download_manager.cancel(game_id,cleanup=True)
+            self.show_shared_detail(self.game,self.detail_item)
+            self.notify('Download cancelled and files cleaned up.')
+        self.confirm('Cancel Download?','This will stop the download and remove any partial download files.','Cancel Download',do_cancel,destructive=True)
+
+    def on_fitgirl_download_complete(self,game_id,download_dir,dest_dir,inst_str):
+        if hasattr(self,'detail_primary'):
+            self.detail_primary.set_label('Installing...')
+            self.detail_primary.set_sensitive(False)
+        if hasattr(self,'detail_progress_bar'):
+            self.detail_progress_bar.set_fraction(1.0)
+        if hasattr(self,'detail_progress_label'):
+            self.detail_progress_label.set_text('Download complete. Launching FitGirl installer through UMU…')
+        setup_exe=download_manager.find_setup_exe(download_dir)
+        if not setup_exe:
+            self.notify('Could not find setup.exe in downloaded files.')
+            return
+
+        title=self.game.get('title','Game')
+        self.game['installation']={
+            'mode':'installer',
+            'installer':str(setup_exe),
+            'confirmed':False
+        }
+        self.game['working_dir']=dest_dir
+        try:self.library.save(self.game)
+        except Exception:pass
+
+        try:
+            self.installations.start(self.game)
+            self.refresh_launch_state()
+            self.notify(f'FitGirl installer started for {title}.')
+        except Exception as error:
+            self.error(error)
 
     def return_from_detail(self):
         if self.detail_origin=='store':self.show_store(restore=True)

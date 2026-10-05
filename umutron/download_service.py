@@ -31,7 +31,193 @@ class UnavailableInstallService:
     def resume(self, job_id):
         raise InstallUnavailable('No download job exists.')
 
+def parse_size_bytes(size_str):
+    if not size_str or not isinstance(size_str, str): return 0
+    s = re.sub(r'\(.*?\)', '', size_str).strip()
+    parts = s.split('/')
+    last_unit_match = re.search(r'(gb|mb|tb|kb)', s, re.I)
+    default_unit = last_unit_match.group(1).upper() if last_unit_match else 'GB'
+    max_bytes = 0
+    for part in parts:
+        m = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*(gb|mb|tb|kb)?', part, re.I)
+        if m:
+            val = float(m.group(1))
+            unit = (m.group(2) or default_unit).upper()
+            mult = {'TB': 1024**4, 'GB': 1024**3, 'MB': 1024**2, 'KB': 1024}.get(unit, 1024**3)
+            max_bytes = max(max_bytes, int(val * mult))
+    return max_bytes
 
+
+def format_size(bytes_val):
+    if bytes_val is None or bytes_val <= 0: return '0 B'
+    val = float(bytes_val)
+    for u in ('B', 'KB', 'MB', 'GB', 'TB'):
+        if val < 1024 or u == 'TB':
+            return f'{val:.1f} {u}' if u != 'B' else f'{int(val)} B'
+        val /= 1024
+
+
+def estimate_space_requirements(installer_bytes):
+    installed_bytes = int(installer_bytes * 3.33)
+    total_required = installer_bytes + installed_bytes
+    return installer_bytes, installed_bytes, total_required
+
+
+def ensure_downloader_binary():
+    import shutil
+    system_bin = shutil.which('aria2c')
+    if system_bin and os.access(system_bin, os.X_OK):
+        return system_bin
+    tools_dir = Path(os.environ.get('XDG_DATA_HOME', Path.home()/'.local/share')) / 'umutron' / 'tools'
+    local_bin = tools_dir / 'aria2c'
+    if local_bin.is_file() and os.access(local_bin, os.X_OK):
+        return str(local_bin)
+    import zipfile
+    tools_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = tools_dir / 'aria2.zip'
+    url = 'https://github.com/abcfy2/aria2-static-build/releases/download/1.37.0/aria2-x86_64-linux-musl_static.zip'
+    req = Request(url, headers={'User-Agent': 'UmuTron'})
+    with build_opener(ProxyHandler({})).open(req, timeout=30) as resp:
+        zip_path.write_bytes(resp.read())
+    with zipfile.ZipFile(zip_path) as z:
+        z.extract('aria2c', path=tools_dir)
+    zip_path.unlink(missing_ok=True)
+    local_bin.chmod(0o755)
+    return str(local_bin)
+
+
+class TorrentDownloadManager:
+    def __init__(self):
+        self.port = 6812
+        self.secret = 'umutron-rpc-secret'
+        self.active_jobs = {}
+        self._daemon_started = False
+
+    def _ensure_daemon(self):
+        if self._daemon_started: return True
+        bin_path = ensure_downloader_binary()
+        import subprocess, time
+        cmd = [
+            bin_path,
+            '--enable-rpc',
+            f'--rpc-listen-port={self.port}',
+            '--rpc-listen-all=false',
+            '--daemon=true',
+            f'--rpc-secret={self.secret}',
+            '--follow-torrent=mem',
+            '--seed-time=0',
+            '--max-connection-per-server=8',
+            '--split=8',
+            '--summary-interval=0'
+        ]
+        try:
+            subprocess.run(cmd, check=True)
+            self._daemon_started = True
+            time.sleep(0.4)
+            return True
+        except Exception:
+            return False
+
+    def _rpc(self, method, params=None):
+        self._ensure_daemon()
+        payload = json.dumps({
+            'jsonrpc': '2.0',
+            'id': 'umutron',
+            'method': method,
+            'params': [f'token:{self.secret}'] + (params or [])
+        }).encode()
+        req = Request(f'http://127.0.0.1:{self.port}/jsonrpc', data=payload, headers={'Content-Type': 'application/json'})
+        with build_opener(ProxyHandler({})).open(req, timeout=10) as resp:
+            return json.loads(resp.read().decode('utf-8'))
+
+    def start_download(self, magnet_uri, download_dir, game_id, title=''):
+        import time
+        Path(download_dir).mkdir(parents=True, exist_ok=True)
+        res = self._rpc('aria2.addUri', [[magnet_uri], {'dir': str(download_dir)}])
+        gid = res.get('result')
+        if not gid:
+            raise RuntimeError('Failed to start torrent download')
+        job = {
+            'gid': gid,
+            'game_id': game_id,
+            'title': title,
+            'dir': str(download_dir),
+            'magnet': magnet_uri,
+            'status': 'active',
+            'started_at': time.time(),
+        }
+        self.active_jobs[game_id] = job
+        return job
+
+    def get_status(self, game_id):
+        job = self.active_jobs.get(game_id)
+        if not job:
+            return None
+        try:
+            data = self._rpc('aria2.tellStatus', [job['gid']]).get('result', {})
+        except Exception:
+            return {**job, 'percent': 0.0, 'speed_text': '0 B/s', 'eta_text': ''}
+        status = data.get('status', 'active')
+        completed = int(data.get('completedLength', 0))
+        total = int(data.get('totalLength', 0))
+        speed = int(data.get('downloadSpeed', 0))
+        pct = (completed / total * 100.0) if total > 0 else 0.0
+        eta = ((total - completed) // speed) if speed > 0 and total > completed else 0
+        eta_str = f"{eta // 60}m {eta % 60}s" if eta >= 60 else f"{eta}s" if eta > 0 else ""
+        job.update({
+            'status': status,
+            'completed_bytes': completed,
+            'total_bytes': total,
+            'percent': pct,
+            'speed_bps': speed,
+            'speed_text': f"{format_size(speed)}/s",
+            'eta_text': eta_str,
+            'files': [f.get('path') for f in data.get('files', []) if f.get('path')]
+        })
+        return job
+
+    def pause(self, game_id):
+        job = self.active_jobs.get(game_id)
+        if job and job.get('gid'):
+            try: self._rpc('aria2.pause', [job['gid']])
+            except Exception: pass
+            job['status'] = 'paused'
+            return True
+        return False
+
+    def resume(self, game_id):
+        job = self.active_jobs.get(game_id)
+        if job and job.get('gid'):
+            try: self._rpc('aria2.unpause', [job['gid']])
+            except Exception: pass
+            job['status'] = 'active'
+            return True
+        return False
+
+    def cancel(self, game_id, cleanup=True):
+        job = self.active_jobs.pop(game_id, None)
+        if job and job.get('gid'):
+            try: self._rpc('aria2.remove', [job['gid']])
+            except Exception: pass
+            if cleanup:
+                import shutil
+                folder = Path(job['dir'])
+                if folder.is_dir() and '.umutron-downloads' in folder.parts:
+                    shutil.rmtree(folder, ignore_errors=True)
+            return True
+        return False
+
+    def find_setup_exe(self, download_dir):
+        p = Path(download_dir)
+        if not p.is_dir(): return None
+        for cand in p.rglob('setup.exe'):
+            if cand.is_file(): return cand
+        for cand in p.rglob('*.exe'):
+            if cand.is_file(): return cand
+        return None
+
+
+download_manager = TorrentDownloadManager()
 def normalize_title(title):
     if not title or not isinstance(title, str):
         return ''
