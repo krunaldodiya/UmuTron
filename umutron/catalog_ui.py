@@ -583,11 +583,8 @@ class CatalogUI:
         self.detail_gear=Gtk.MenuButton(icon_name='emblem-system-symbolic');self.detail_gear.add_css_class('circular');self.detail_gear.set_tooltip_text('Game options');self.detail_gear.set_valign(Gtk.Align.CENTER);actions.append(self.detail_gear)
         popover=style_surface(Gtk.Popover());menu=box(spacing=6);margins(menu,8);popover.set_child(menu);self.detail_gear.set_popover(popover)
         def menu_action(callback):self.detail_gear.popdown();callback()
-        recovery=saved and self.game_uninstall.has_recovery(game)
-        policy=detail_actions(game,saved,self.tv_mode,bool(game.get('executable') and Path(game['executable']).is_file()),recovery)
         if saved:menu.append(button('Setup',lambda:menu_action(self.open_manage)))
-        if installed or policy['uninstall'] or policy['resume_uninstall']:
-            menu.append(button('Resume uninstall…' if recovery else 'Uninstall…',lambda:menu_action(self.review_uninstall)))
+        if installed:menu.append(button('Uninstall…',lambda:menu_action(self.review_uninstall)))
         menu.append(button('Game Info',lambda:menu_action(lambda:self.show_game_info(self.game))))
         game_title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
         if game_title and not installed:
@@ -904,30 +901,8 @@ class CatalogUI:
                 self.notify('Uninstaller started through UMU.')
             self.confirm('Uninstall '+game['title']+'?',body,'Run uninstaller',start_umu)
             return
-
-        has_verified=False
-        try:has_verified=self.game_uninstall._paths(game['id'])[0].is_file() or self.game_uninstall.has_recovery(game)
-        except Exception:pass
-
-        if has_verified:
-            def loaded(plan):
-                if not self.game or self.game['id']!=game['id']:return
-                files=[v for v in plan['receipt']['entries'].values() if v['kind']=='file']
-                body=(f"Game folder: {plan['original']}\n\n{len(files)} verified game files, {sum(v['size'] for v in files)/1048576:.1f} MiB. "
-                      'This removes the game files and then its library entry. Saves outside this folder, prefixes and Proton are kept. '
-                      'Do not continue if this folder contains saves or personal data. An interrupted uninstall keeps its library entry for recovery.')
-                def start():
-                    if self.demo:self.error(ValueError('File deletion is disabled in the visual demo.'));return
-                    if not self.game or self.game['id']!=game['id']:return
-                    def complete(_):self.return_from_detail();self.notify('Game files uninstalled and library entry removed. Prefix and Proton kept.')
-                    self.async_job('Uninstalling verified game files…',lambda:self.game_uninstall.execute(plan),complete)
-                self.confirm('Uninstall '+game['title']+'?',body,'Uninstall game',start,True)
-            self.async_job('Checking installation ownership…',lambda:self.game_uninstall.plan(game),loaded)
-            return
-
         body=('No uninstaller executable has been chosen for this game.\n\n'
-              'You can select an uninstaller executable in Setup (e.g. unins000.exe) to run through UMU, '
-              'or verify the game installation folder to remove its files.')
+              'You must first set the uninstaller executable in Setup (e.g. unins000.exe) and save before you can uninstall this game.')
         self.confirm('Uninstall '+game['title']+'?',body,'Open Setup',self.open_manage)
 
     def build_installation_folder(self,content):
