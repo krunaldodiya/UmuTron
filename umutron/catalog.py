@@ -139,11 +139,12 @@ class IGDBCatalog:
         rows=self.query('genres','fields name; sort name asc; limit 100;')
         return [{'id':positive(g['id']),'name':text(g['name'],200)} for g in rows[:100]]
 
-    def browse(self,query='',genre=None,page=1):
+    def browse(self,query='',genre=None,page=1,sort=None):
         query=text(query,200).strip();positive(page)
         if page>MAX_PAGE:raise ValueError('Narrow your search to see more games.')
         if genre is not None:positive(genre)
-        clause='search '+json.dumps(query)+';' if query else 'sort name asc;'
+        sort_clauses={'latest':'sort first_release_date desc;','popular':'sort total_rating_count desc;','rating':'sort total_rating desc;','name_asc':'sort name asc;','name_desc':'sort name desc;'}
+        clause=('search '+json.dumps(query)+';') if query else sort_clauses.get(sort,'sort first_release_date desc;' if sort else 'sort name asc;')
         if genre is not None:clause+=f' where genres = {genre};'
         rows=self.query('games',f'{clause} fields {FIELDS}; limit {PAGE_SIZE+1}; offset {(page-1)*PAGE_SIZE};')
         if not isinstance(rows,list) or len(rows)>PAGE_SIZE+1:raise ValueError('Unexpected catalog page size.')
@@ -214,8 +215,10 @@ class RemoteCatalog:
         self.base,self.development=catalog_endpoint(base_url,allow_loopback_http)
         self.transport=transport if transport is not None else loopback_request if self.development else api_request
     def genres(self):return self.transport(self.base+'/v1/genres')
-    def browse(self,query='',genre=None,page=1):
-        return self.transport(self.base+'/v1/games?'+urlencode({'q':query,'genre':genre or '', 'page':page}))
+    def browse(self,query='',genre=None,page=1,sort=None):
+        params={'q':query,'genre':genre or '', 'page':page}
+        if sort:params['sort']=sort
+        return self.transport(self.base+'/v1/games?'+urlencode(params))
     def detail(self,game_id):return self.transport(self.base+'/v1/games/'+str(positive(game_id)))
 
 
@@ -340,7 +343,7 @@ class CatalogService:
     def genres(self):return self._load('genres',self.provider.genres,self._genres)[0]
 
     @staticmethod
-    def _page(query,genre,page):
+    def _page(query,genre,page,sort=None):
         query=text(query,200).strip();positive(page)
         if page>MAX_PAGE:raise ValueError('Narrow your search to see more games.')
         if genre is not None:positive(genre)
@@ -359,17 +362,20 @@ class CatalogService:
                     raise ValueError('Invalid catalog totals.')
                 value.update(total_items=count,total_pages=pages)
             return value
-        return json.dumps(['page',query,genre,page]),query,validate
+        return json.dumps(['page',query,genre,page,sort or '']),query,validate
 
-    def cached_browse(self,query='',genre=None,page=1):
-        key,_,validate=self._page(query,genre,page);saved=self._snapshot(key,validate)
+    def cached_browse(self,query='',genre=None,page=1,sort=None):
+        key,_,validate=self._page(query,genre,page,sort);saved=self._snapshot(key,validate)
         if saved is None:return None
         value,stamp=saved
         return {**value,'cached':True,'refreshing':True,'fetched_at':stamp}
 
-    def browse(self,query='',genre=None,page=1):
-        key,query,validate=self._page(query,genre,page)
-        value,cached,stamp=self._load(key,lambda:self.provider.browse(query,genre,page),validate)
+    def browse(self,query='',genre=None,page=1,sort=None):
+        key,query,validate=self._page(query,genre,page,sort)
+        def fetch():
+            try:return self.provider.browse(query,genre,page,sort=sort)
+            except TypeError:return self.provider.browse(query,genre,page)
+        value,cached,stamp=self._load(key,fetch,validate)
         return {**value,'cached':cached,'fetched_at':stamp}
 
     def detail(self,game_id):

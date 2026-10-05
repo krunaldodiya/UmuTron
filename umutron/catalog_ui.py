@@ -128,7 +128,7 @@ class CatalogUI:
         self.store_item_futures=[];self.store_render_revision=0
         self.catalog_futures=[];self.catalog_generation=0;self.route='library';self.detail_origin='library'
         self.routes={'library':{'query':'','page':1,'genre':None,'sort':0,'scroll':0,'focus':None},
-                     'store':{'query':'','page':1,'genre':None,'scroll':0,'focus':None}}
+                     'store':{'query':'','page':1,'genre':None,'sort':'latest','scroll':0,'focus':None}}
         self.catalog_genres=[];self.detail_item=None;self.detail_art={}
         self.game_install_service=UnavailableInstallService()
         from .game_uninstall import GameUninstall
@@ -266,8 +266,8 @@ class CatalogUI:
         """Ordered toolbar stops, with spatial navigation retained in the grid."""
         if self.route not in self.routes:return False
         current=self.focused_control(self)
-        controls=[self.collection_search,self.collection_search_button,self.collection_genre]
-        controls=[control for control in controls if control.get_mapped() and control.is_sensitive()]
+        controls=[self.collection_search,self.collection_search_button,self.collection_genre,getattr(self,'collection_sort',None)]
+        controls=[control for control in controls if control is not None and control.get_mapped() and control.is_sensitive()]
         tiles=[tile for _,tile in self.tv_tiles if tile.get_mapped() and tile.is_sensitive()]
         if current in controls:
             forward=action in ('down','right','next');backward=action in ('up','left','previous')
@@ -395,11 +395,24 @@ class CatalogUI:
         self.collection_genre=BrowseChoice('Filter',['All genres']+[g['name'] for g in self.catalog_genres])
         index=next((i for i,g in enumerate(self.catalog_genres,1) if g['id']==state['genre']),0)
         self.collection_genre.set_selected(index);self.collection_genre.set_tooltip_text('Game genre');self.collection_toolbar.append(self.collection_genre)
-        def changed(*_):
+        def genre_changed(*_):
             if getattr(self,'catalog_model_updating',False):return
             selected=self.collection_genre.get_selected();genre=self.catalog_genres[selected-1]['id'] if selected and selected<=len(self.catalog_genres) else None
             if genre!=state['genre']:state.update(genre=genre,page=1,scroll=0,focus=None);self.load_store()
-        self.collection_genre.connect('notify::selected',changed)
+        self.collection_genre.connect('notify::selected',genre_changed)
+        STORE_SORTS=[('latest','Latest first'),('popular','Most popular'),('rating','Top rated'),('name_asc','Name (A–Z)'),('name_desc','Name (Z–A)')]
+        self.store_sort_keys=[k for k,_ in STORE_SORTS]
+        self.collection_sort=BrowseChoice('Sort',[label for _,label in STORE_SORTS])
+        cur_sort=state.get('sort','latest')
+        sort_idx=self.store_sort_keys.index(cur_sort) if cur_sort in self.store_sort_keys else 0
+        self.collection_sort.set_selected(sort_idx);self.collection_sort.set_tooltip_text('Store sort order');self.collection_toolbar.append(self.collection_sort)
+        def sort_changed(*_):
+            idx=self.collection_sort.get_selected()
+            if 0<=idx<len(self.store_sort_keys):
+                chosen=self.store_sort_keys[idx]
+                if chosen!=state.get('sort'):
+                    state.update(sort=chosen,page=1,scroll=0,focus=None);self.load_store()
+        self.collection_sort.connect('notify::selected',sort_changed)
         # Load the saved taxonomy only while constructing the route. Updating
         # Gtk.DropDown's model inside its own selection notification is unsafe.
         genres=self.catalog.cached_genres()
@@ -425,7 +438,8 @@ class CatalogUI:
         navigation_revision=getattr(self,'browse_navigation_revision',0)
         _,_,_,_,clear=ui();clear(self.collection_flow);self.collection_tiles={};self.tv_tiles=[]
         query,genre,page=state['query'],state['genre'],state['page']
-        cached=self.catalog.cached_browse(query,genre,page)
+        sort=state.get('sort','latest')
+        cached=self.catalog.cached_browse(query,genre,page,sort)
         self.collection_status.set_text('Finding games…');self.update_collection_pager(page,loading=True)
         def loaded(data):
             if data.get('total_pages',state['page'])<state['page']:
@@ -439,7 +453,7 @@ class CatalogUI:
             self.collection_flow.append(button('Try again',self.load_store));self.update_collection_pager(page)
         # Reserve metadata work before optional card enrichment. Genres and
         # images can complete later; neither is a prerequisite for usable cards.
-        self.catalog_job(lambda:self.catalog.browse(query,genre,page),loaded,failed)
+        self.catalog_job(lambda:self.catalog.browse(query,genre,page,sort),loaded,failed)
         self.catalog_job(self.catalog.genres,self.store_genres_loaded,lambda _:None,background=True)
         if cached is not None:self.render_store(cached,navigation_revision)
 
