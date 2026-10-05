@@ -1,6 +1,7 @@
 """Native Library / Store routes and one shared, state-driven detail page."""
 from copy import deepcopy
 from pathlib import Path
+import re
 
 from gi.repository import Adw, Gio, GLib, Gtk, Pango
 
@@ -599,15 +600,33 @@ class CatalogUI:
         menu.append(button('Setup',lambda:menu_action(self.setup_detail)))
         if installed:menu.append(button('Uninstall…',lambda:menu_action(self.review_uninstall)))
         menu.append(button('Game Info',lambda:menu_action(lambda:self.show_game_info(self.game))))
+        self.detail_repack=None;self.detail_install_pending=False
         game_title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
         if game_title and not installed:
             base_url=getattr(getattr(self.catalog,'provider',None),'base','https://umu-tron-api.vercel.app')
-            def check_fg_size():return search_fitgirl_repack(base_url,game_title)
-            def fg_size_loaded(repacks):
-                if repacks and hasattr(self,'detail_size') and self.detail_size:
-                    sz=(repacks[0].get('file_size') or '').strip()
-                    if sz:self.detail_size.set_text(f'FitGirl Repack · {sz}')
-            self.catalog_job(check_fg_size,fg_size_loaded,lambda _:None,background=True)
+            def check_fg_repack():return search_fitgirl_repack(base_url,game_title)
+            def fg_repack_loaded(repacks):
+                if repacks:
+                    self.detail_repack=repacks[0]
+                    sz=(self.detail_repack.get('file_size') or '').strip()
+                    if hasattr(self,'detail_size') and self.detail_size:
+                        self.detail_size.set_text(f'FitGirl Repack · {sz}' if sz else 'FitGirl Repack · Available')
+                    if getattr(self,'detail_install_pending',False):
+                        self.detail_install_pending=False
+                        self.install_detail()
+                else:
+                    self.detail_repack=False
+                    if hasattr(self,'detail_size') and self.detail_size:
+                        self.detail_size.set_text('Installation size · Unknown')
+                    if getattr(self,'detail_install_pending',False):
+                        self.detail_install_pending=False
+                        self.prompt_no_repack(game_title)
+            def fg_repack_failed(error):
+                self.detail_repack=False
+                if getattr(self,'detail_install_pending',False):
+                    self.detail_install_pending=False
+                    self.notify(f'Could not reach FitGirl API: {error}')
+            self.catalog_job(check_fg_repack,fg_repack_loaded,fg_repack_failed,background=True)
         self.detail_related=None
         related=related_members(self.library,item) if item and not saved else []
         if related:
@@ -800,27 +819,25 @@ class CatalogUI:
                 game,created=add_item(self.library,item,art)
                 self.game=deepcopy(game);self.original=deepcopy(game)
         title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
-        self.detail_status.set_text(f'Searching FitGirl for "{title}"…')
-        base_url=getattr(getattr(self.catalog,'provider',None),'base','https://umu-tron-api.vercel.app')
-        def search():
-            return search_fitgirl_repack(base_url,title)
-        def on_search_done(repacks):
-            if not repacks:
-                body=(f'"{title}" is not available in the FitGirl repack catalogue.\n\n'
-                      'You can still add this game to your library and set it up manually using your own local files or an installer.')
-                def open_setup():
-                    if not self.saved_detail():
-                        self.detail_action()
-                    self.open_manage()
-                self.confirm('No FitGirl repack found',body,'Set up Manually',open_setup)
-                self.detail_status.set_text(f'No FitGirl repack found for "{title}". Use Setup for manual files.')
-                return
-            best=repacks[0]
-            self.show_install_repack_dialog(best)
-        def on_search_failed(error):
-            self.detail_status.set_text(f'FitGirl search error: {error}')
-            self.notify(f'Could not reach FitGirl API: {error}')
-        self.catalog_job(search,on_search_done,on_search_failed)
+        if self.detail_repack and isinstance(self.detail_repack,dict):
+            self.show_install_repack_dialog(self.detail_repack)
+            return
+        if self.detail_repack is False:
+            self.prompt_no_repack(title)
+            return
+        self.detail_install_pending=True
+        self.detail_status.set_text(f'Finding FitGirl repack for "{title}"…')
+
+    def prompt_no_repack(self,title):
+        body=(f'"{title}" is not available in the FitGirl repack catalogue.\n\n'
+              'You can still add this game to your library and set it up manually using your own local files or an installer.')
+        def open_setup():
+            if not self.saved_detail():
+                self.detail_action()
+            self.open_manage()
+        self.confirm('No FitGirl repack found',body,'Set up Manually',open_setup)
+        if hasattr(self,'detail_status') and self.detail_status:
+            self.detail_status.set_text(f'No FitGirl repack found for "{title}". Use Setup for manual files.')
 
     def show_install_repack_dialog(self,repack):
         title=self.game.get('title','Game')
@@ -872,7 +889,7 @@ class CatalogUI:
             note=Adw.ActionRow(title='Add additional drives in Settings → Storage',subtitle='You can configure dedicated game drives in Settings.')
             drive_group.add(note)
         drive_group.add(target_preview);update_target()
-        footer=dialog_footer(dialog)
+        footer=dialog_footer();content.append(footer)
         cancel_btn=button_fn('Cancel',dialog.close);footer.append(cancel_btn)
         def on_confirm():
             dialog.close()
