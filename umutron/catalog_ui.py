@@ -899,11 +899,17 @@ class CatalogUI:
         target_preview=Adw.ActionRow(title='Destination folder');target_preview.set_use_markup(False)
 
         def get_free_bytes(p):
+            curr=Path(p)
+            while not curr.exists() and curr!=curr.parent:
+                curr=curr.parent
             try:
-                st=os.statvfs(p)
+                st=os.statvfs(curr)
                 return st.f_bavail*st.f_frsize
-            except Exception:return 0
-
+            except Exception:
+                for d in drives:
+                    if d.get('path')==p and d.get('free'):
+                        return d['free']
+                return 0
         install_btn=button_fn('Download & Install',None,'suggested-action')
 
         def update_space_and_target():
