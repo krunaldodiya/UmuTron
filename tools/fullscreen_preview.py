@@ -13,6 +13,7 @@ from pathlib import Path
 import sys
 import tempfile
 import time
+from uuid import uuid4
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -33,18 +34,22 @@ def settle(ms=400):
         time.sleep(.01)
 
 
-def capture(window, path):
+def capture(window, path, *, remap=True):
     # Remap this isolated fixture to request a fresh frame even when the browser
     # throttles background frame acknowledgements. This is not a desktop capture.
-    window.set_visible(False)
-    window.present()
-    settle(800)
+    if remap:
+        window.set_visible(False)
+        window.present()
+        settle(800)
     # Broadway may acknowledge remapping before delivering another frame tick.
     # Apply the native responsive layout against the allocated viewport before
     # exporting its widget tree, rather than capturing the transient zero size.
-    window.console_size = None
-    window.resize_console(window, None)
-    settle(300)
+    if remap:
+        window.console_size = None
+        window.resize_console(window, None)
+        settle(300)
+    # Navigation fixtures already await allocated frames. Preserve that window
+    # and its focus/geometry when capturing between input actions.
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
         paintable = Gtk.WidgetPaintable.new(window)
@@ -75,6 +80,7 @@ def main():
                 for key in ('title', 'description', 'release_date', 'genres', 'developers', 'publishers'):
                     game[key] = original.get(key, '')
                 for kind, name in original.get('artwork', {}).items():
+                    if not isinstance(name,str) or Path(name).name!=name:continue
                     art = args.source_library.parent / 'artwork' / name
                     if art.is_file():
                         game['artwork'][kind] = library.add_image(art.read_bytes())
@@ -92,11 +98,13 @@ def main():
         app.window = window
         for child in window.layout:
             if isinstance(child, Adw.Banner):
-                child.set_title('ISOLATED NATIVE PREVIEW · temporary library · Play is disabled')
+                child.set_title('NATIVE TEST RENDER · seeded test history · Play disabled')
         window.present()
         window.set_tv_mode(True)
         window.unfullscreen()
         settle()
+        from game_library.play_history import record
+        for index,game in enumerate(library.games()):record(library.root,game['id'],str(uuid4()),100+index)
         selected = next((g for g in library.games() if g['title'] == 'God of War'), library.games()[0])
         for width, height in ((1920, 1080), (1280, 720), (1024, 600)):
             window.set_visible(False)
@@ -104,15 +112,15 @@ def main():
             window.set_default_size(width, height)
             window.present()
             window.tv_section = 'games'
-            window.tv_selected_id = selected['id']
-            window.show_library()
+            window.home_selected_id = selected['id']
+            window.show_home()
             settle(700)
             window.tv_page.get_vadjustment().set_value(0)
             capture(window, args.output / f'home-{width}.png')
             print('home', width, window.get_width(), window.get_height(), 'rail', window.tv_scroll.get_hadjustment().get_upper(), window.tv_scroll.get_hadjustment().get_page_size(), 'tile', window.tv_tiles[0][1].get_width(), window.tv_tiles[0][1].get_height(), flush=True)
             window.show_game(selected)
             capture(window, args.output / f'detail-{width}.png')
-            window.set_tv_section('library')
+            window.show_library()
             capture(window, args.output / f'library-{width}.png')
         missing = deepcopy(selected)
         missing['artwork'] = {}
@@ -121,6 +129,7 @@ def main():
         capture(window, args.output / 'detail-missing-art.png')
         window.set_tv_mode(False)
         capture(window, args.output / 'desktop-detail.png')
+        window.exiting=True;window.catalog_cancel();window.catalog_pool.shutdown(wait=True,cancel_futures=True)
         window.controller.close()
         window.destroy()
         window.pool.shutdown(wait=True)

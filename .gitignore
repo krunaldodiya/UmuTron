@@ -9,3 +9,5 @@ build/
 providers.json
 library.json
 steam-backups/
+downloaded_files/
+npm-cache/

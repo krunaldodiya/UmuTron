@@ -22,12 +22,15 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse(self.launcher.active())
     def test_installer_requires_confirmation_and_preserves_runtime_on_reopen(self):
         saved=self.service.start(self.game);self.finish()
+        self.assertNotIn('setup_completed_at',saved)
         with self.assertRaisesRegex(ValueError,'Confirm'):self.launcher.start(saved)
         reopened=Library(self.lib.root);service=Installations(reopened,Launcher(reopened.root));saved=reopened.games()[0]
         self.assertEqual(service.status(saved)['phase'],'Select installed executable')
         saved['executable']=str(self.setup)
         with self.assertRaisesRegex(ValueError,'not its setup'):service.confirm(saved)
         saved['executable']=str(self.exe);confirmed=service.confirm(saved)
+        self.assertGreater(confirmed['setup_completed_at'],0)
+        self.assertEqual(service.confirm(confirmed)['setup_completed_at'],confirmed['setup_completed_at'])
         self.lib.set_default_proton('GE-Latest')
         settings=defaults(confirmed,self.lib.root)
         self.assertEqual(settings['prefix'],saved['installation']['prefix']);self.assertEqual(settings['proton'],str(self.proton))

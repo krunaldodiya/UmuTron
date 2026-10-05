@@ -9,12 +9,24 @@ from game_library.library import atomic_write
 from game_library import APP_ID, APP_NAME, ICON_NAME
 
 source=Path(__file__).resolve().parents[1]
-target=Path.home()/'.local/opt/game-library-launcher'
-for item in (source/'game_library').glob('*.py'):
+target=Path.home()/'.local/opt/umutron'
+legacy_target=Path.home()/'.local/opt/game-library-launcher'
+source_pkg=source/'umutron' if (source/'umutron').is_dir() else source/'game_library'
+for item in source_pkg.glob('*.py'):
+    atomic_write(target/'umutron'/item.name,item.read_bytes())
     atomic_write(target/'game_library'/item.name,item.read_bytes())
 atomic_write(target/'run.py',(source/'run.py').read_bytes())
+if not legacy_target.exists():
+    try: legacy_target.symlink_to('umutron', target_is_directory=True)
+    except OSError: pass
+if legacy_target.is_dir() and not legacy_target.is_symlink():
+    for item in source_pkg.glob('*.py'):
+        atomic_write(legacy_target/'game_library'/item.name,item.read_bytes())
+    atomic_write(legacy_target/'run.py',(source/'run.py').read_bytes())
 icon=Path.home()/'.local/share/icons/hicolor/scalable/apps/game-library-launcher.svg'
 atomic_write(icon,(source/'assets/umutron.svg').read_bytes())
+umutron_icon=Path.home()/'.local/share/icons/hicolor/scalable/apps/umutron.svg'
+atomic_write(umutron_icon,(source/'assets/umutron.svg').read_bytes())
 # Desktop Exec escaping follows the desktop-entry specification (not shell quoting).
 def quoted(path):
     text=str(path).replace('\\','\\\\').replace('"','\\"').replace('`','\\`').replace('$','\\$').replace('%','%%')

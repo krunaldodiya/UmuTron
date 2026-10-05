@@ -100,6 +100,7 @@ class LaunchTests(unittest.TestCase):
         self.assertTrue((Path(defaults(self.game,self.lib.root)['prefix'])/'.metadata-manager-prefix').exists())
         self.assertIn('download runtime','\n'.join(state['logs']))
         self.assertFalse((self.root/'no').exists())
+        self.assertFalse((self.lib.root/'play-history').exists(),'Log markers alone must not create recent-play history')
 
     def test_nonzero_and_spawn_failure_are_visible(self):
         self.runner.write_text('#!/usr/bin/python3\nimport sys\nsys.exit(7)\n')
@@ -159,3 +160,20 @@ class LaunchTests(unittest.TestCase):
             deadline=time.monotonic()+5
             while launcher.active() and time.monotonic()<deadline:time.sleep(.02)
         self.assertEqual(launcher.snapshot(self.game['id'])['state'],'Stopped')
+
+    def test_recent_play_written_by_supervisor_only_after_continuous_selected_path_evidence(self):
+        from game_library.play_history import recent
+        self.lib.save(self.game)
+        self.runner.write_text('#!/usr/bin/python3\nimport subprocess\np=subprocess.Popen(['+repr(self.game['executable'])+',"30"],executable="/bin/sleep")\np.wait()\n')
+        launcher=Launcher(self.lib.root);launcher.start(self.game)
+        try:
+            deadline=time.monotonic()+6
+            while not recent(self.lib) and time.monotonic()<deadline:time.sleep(.05)
+            self.assertEqual([g['id'] for g in recent(self.lib)],[self.game['id']])
+            history=json.loads((self.lib.root/'play-history'/(self.game['id']+'.json')).read_text())
+            self.assertEqual(history['session_id'],launcher.snapshot(self.game['id'])['session_id'])
+        finally:
+            if launcher.active():launcher.stop(self.game['id'])
+            deadline=time.monotonic()+5
+            while launcher.active() and time.monotonic()<deadline:time.sleep(.02)
+        self.assertFalse(launcher.active())

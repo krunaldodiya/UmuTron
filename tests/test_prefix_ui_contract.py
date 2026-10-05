@@ -1,58 +1,52 @@
-"""Exercise the real stage transition method with inert widgets; no native desktop use."""
-import ast
-import unittest
+"""Setup presentation after removal of the per-game Prefix/stage tabs."""
 from pathlib import Path
-from types import SimpleNamespace
+import tempfile
+import unittest
+from game_library.setup_state import setup_state
 
 
-class Widget:
-    def __init__(self, active=False):
-        self.active = active
-    def get_active(self):
-        return self.active
-    def set_sensitive(self, value):
-        self.sensitive = value
-    def set_visible(self, value):
-        self.visible = value
-    def add_css_class(self, _):
-        pass
-    def remove_css_class(self, _):
-        pass
-    def set_text(self, value):
-        self.text = value
+class SetupStateTests(unittest.TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.root=Path(self.temp.name);self.exe=self.root/'game.exe';self.exe.write_text('inert')
 
+    def test_metadata_only_can_install_without_claiming_ready(self):
+        state=setup_state({'executable':''})
+        self.assertFalse(state['ready']);self.assertFalse(state['reinstall'])
 
-class Stack:
-    def __init__(self, visible):
-        self.visible = visible
-    def get_visible_child_name(self):
-        return self.visible
-    def set_visible_child_name(self, value):
-        self.visible = value
+    def test_existing_preinstalled_executable_uses_reinstall(self):
+        state=setup_state({'executable':str(self.exe)})
+        self.assertTrue(state['ready']);self.assertTrue(state['reinstall'])
+        self.assertFalse(state['needs_confirmation'])
 
+    def test_missing_configured_executable_does_not_become_first_install(self):
+        self.exe.unlink();state=setup_state({'executable':str(self.exe)})
+        self.assertFalse(state['ready']);self.assertTrue(state['reinstall'])
+        self.assertIn('reconnect',state['description'])
 
-class PrefixStageTests(unittest.TestCase):
-    def test_prefix_survives_poll_while_both_original_stages_still_work(self):
-        source = Path(__file__).resolve().parents[1] / 'game_library/app.py'
-        tree = ast.parse(source.read_text())
-        window = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'Window')
-        method = next(n for n in window.body if isinstance(n, ast.FunctionDef) and n.name == 'update_install_stage')
-        scope = {}
-        exec(compile(ast.Module(body=[method], type_ignores=[]), str(source), 'exec'), scope)
-        w = SimpleNamespace(already_installed=Widget(True), game={}, launcher=SimpleNamespace(active=lambda: False),
-                            install_retry_requested=False, install_tab=Widget(), game_tab=Widget(),
-                            stage_stack=Stack('prefix'), executable_stage=Widget(),
-                            confirm_executable_button=Widget(), retry_stage_button=Widget())
-        update = lambda: scope['update_install_stage'](w)
-        update()
-        self.assertEqual(w.stage_stack.visible, 'prefix')
-        self.assertTrue(w.game_tab.sensitive)
-        self.assertFalse(w.install_tab.sensitive)
-        w.stage_stack.visible = 'game'
-        w.already_installed.active = False
-        update()
-        self.assertEqual(w.stage_stack.visible, 'install')
-        w.game = {'installation': {'session_id': 'fixture'}}
-        update()
-        self.assertEqual(w.stage_stack.visible, 'game')
-        self.assertTrue(w.confirm_executable_button.visible)
+    def test_installer_attempt_requires_confirmation(self):
+        game={'executable':str(self.exe),'installation':{'mode':'installer','session_id':'saved'}}
+        state=setup_state(game);self.assertFalse(state['ready']);self.assertTrue(state['needs_confirmation'])
+        game['installation']['confirmed']=True
+        self.assertTrue(setup_state(game)['ready'])
+        game['installation'].pop('session_id')
+        self.assertFalse(setup_state(game)['ready'])
+
+    def test_setup_binary_and_missing_workdir_are_not_ready(self):
+        game={'executable':str(self.exe),'installation':{'mode':'installer','session_id':'saved','confirmed':True,'installer':str(self.exe)}}
+        self.assertFalse(setup_state(game)['ready'])
+        game['installation']['installer']=str(self.root/'setup.exe');game['working_dir']=str(self.root/'missing')
+        self.assertFalse(setup_state(game)['ready'])
+        game['working_dir']=str(self.root)
+        self.assertTrue(setup_state(game)['ready'])
+
+    def test_partial_attempt_remains_secondary_and_readonly(self):
+        game={'executable':'','installation':{'mode':'installer','session_id':'saved','prefix':str(self.root)}}
+        before=repr(game);state=setup_state(game)
+        self.assertTrue(state['reinstall']);self.assertTrue(state['needs_confirmation'])
+        self.assertFalse(state['ready']);self.assertEqual(repr(game),before)
+
+    def test_legacy_unstarted_installer_can_explicitly_accept_existing_files(self):
+        state=setup_state({'executable':str(self.exe),'installation':{'mode':'installer','installer':str(self.root/'setup.exe')}})
+        self.assertFalse(state['ready']);self.assertTrue(state['needs_confirmation'])
+        self.assertTrue(state['reinstall'])

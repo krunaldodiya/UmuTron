@@ -10,8 +10,10 @@ os.environ.setdefault('GSK_RENDERER','broadway' if os.environ.get('GDK_BACKEND')
 os.environ.setdefault('GSETTINGS_BACKEND','memory')
 from game_library.app import Application,Window
 from game_library.demo import prepare_demo
-from game_library import metadata
-from gi.repository import Adw,Gdk,Gio,GLib,Gtk
+from catalog_fixtures import FixtureCatalog
+from game_library.play_history import record
+from uuid import uuid4
+from gi.repository import Adw,Gio,GLib,Gtk
 
 
 def pump_until(condition,timeout=5):
@@ -43,7 +45,11 @@ with tempfile.TemporaryDirectory() as temp:
     os.environ['XDG_CACHE_HOME']=temp
     library=prepare_demo(seed=True)
     app=Application(demo=True);app.set_flags(Gio.ApplicationFlags.NON_UNIQUE);app.register(None)
-    w=Window(app,library,demo=True);w.proton_manager.releases=lambda *args,**kwargs:[];app.window=w;w.controller.close();w.present();settle(1000)
+    with patch('game_library.app.Controller') as controller:
+        controller.return_value.name = ''
+        controller.return_value.error = ''
+        w=Window(app,library,demo=True,catalog_provider=FixtureCatalog())
+    w.proton_manager.releases=lambda *args,**kwargs:[];app.window=w;w.controller.close();w.present();settle(1000)
     def screenshot(name,target=None):
         target=target or w;focus=target.get_focus();target.set_visible(False);target.present();settle(800)
         captured=[]
@@ -66,14 +72,9 @@ with tempfile.TemporaryDirectory() as temp:
     game=library.games()[0];before=library.path.read_bytes();art={p.name:p.read_bytes() for p in library.art_dir.iterdir()}
     w.show_game(game);screenshot('details-dark.png')
     assert not any(isinstance(i,(Gtk.Entry,Gtk.DropDown)) for i in widgets(w.body)), 'Detail must be readonly'
-    assert next(b for b in buttons(w) if b.get_tooltip_text()=='Edit Metadata')
-    assert next(b for b in buttons(w) if b.get_tooltip_text()=='Manage Game')
-    assert any(b.get_label()=='Play' for b in buttons(w))
-    assert not w.tv_mode and w.editor is None,(w.tv_mode,w.editor_kind)
-    w.open_metadata();w.fields['title'].set_text('Cancel this title');w.cancel_editor()
-    assert library.path.read_bytes()==before
-    assert {p.name:p.read_bytes() for p in library.art_dir.iterdir()}==art
-    w.open_metadata();w.fields['title'].set_text('Nebula reviewed');w.save_editor();assert library.games()[0]['title']=='Nebula reviewed'
+    assert w.detail_gear.get_visible()
+    assert not any(b.get_tooltip_text()=='Edit Metadata' for b in buttons(w))
+    assert library.path.read_bytes()==before and {p.name:p.read_bytes() for p in library.art_dir.iterdir()}==art
     w.open_manage();assert not w.advanced.get_expanded();w.advanced.set_expanded(True);settle()
     assert w.launch_args.is_ancestor(w.executable_panel) and not w.launch_args.is_ancestor(w.advanced)
 
@@ -86,68 +87,49 @@ with tempfile.TemporaryDirectory() as temp:
     assert library.games()[0]['launch']['dll_overrides']=='winmm=n,b'
     w.open_manage();w.launch_fields['dll_overrides'].set_text('dinput8=n');w.cancel_editor();assert library.games()[0]['launch']['dll_overrides']=='winmm=n,b'
     w.open_manage();w.reset_launch_defaults();assert w.launch_fields['dll_overrides'].get_text()=='';assert w.collect()['launch']['arguments']==['one argument','--flag'];w.cancel_editor();assert library.games()[0]['launch']['proton']=='GE-Latest'
-    # Metadata switching defaults to public catalogue, entirely fixture-backed.
-    original_search=metadata.search;original_fetch=metadata.fetch_game
-    metadata.search=lambda query:[{'id':620,'name':'Catalogue fixture'}]
-    metadata.fetch_game=lambda game_id:({'title':'Catalogue fixture','description':'Public fixture description','metadata_app_id':620},{},[])
-    w.open_metadata();w.find_metadata();settle()
-    dialog=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Find game metadata')
-    assert w.metadata_provider.get_selected()==0
-    w.metadata_provider.set_selected(1)
-    entry=next(i for i in widgets(dialog) if isinstance(i,Gtk.Entry));entry.set_text('Fixture');click(dialog,'Search');pump_until(lambda:not w.busy);settle()
-    error=next(d for d in Gtk.Window.get_toplevels() if isinstance(d,Adw.MessageDialog) and d.get_heading()=='Could not complete this action')
-    assert 'Providers' in error.get_body();error.emit('response','ok');w.metadata_provider.set_selected(0);click(dialog,'Search')
-    pump_until(lambda:any(b.get_label()=='Select' for b in buttons(dialog)));click(dialog,'Select');pump_until(lambda:not w.busy)
-    assert w.fields['title'].get_text()=='Catalogue fixture';w.cancel_editor();assert library.games()[0]['title']=='Nebula reviewed'
-    # Metadata-first Add Game saves artwork and opens details without configuration.
+    # Store preview is separate from explicit addition; back never saves a draft.
     image=(library.art_dir/game['artwork']['portrait']).read_bytes()
-    metadata.fetch_game=lambda game_id:({'title':'Metadata only','description':'Fetched once','metadata_app_id':620},{'portrait':image,'hero':image,'logo':image},[])
-    before_add=len(library.games());w.add_game();settle()
-    add=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Find game metadata')
-    assert w.editor is None and w.metadata_provider.get_selected()==0
-    assert not any(b.get_label() in ('Already installed','Install from installer') for b in buttons(add))
-    screenshot('add-game-dark.png',add)
-    click(add,'Search');pump_until(lambda:any(b.get_label()=='Select' for b in buttons(add)))
-    click(add,'Select');pump_until(lambda:len(library.games())==before_add+1)
-    saved=w.game;assert saved['title']=='Metadata only' and saved['description']=='Fetched once'
-    assert saved['executable']=='' and saved['launch']=={} and saved['installation']=={}
-    assert set(saved['artwork'])=={'portrait','hero','logo'} and w.editor is None
-    assert not any(isinstance(i,Gtk.Entry) for i in widgets(w.body))
-    assert w.play_buttons[saved['id']].get_label()=='Setup'
-    w.demo=False;click(w,'Setup');assert w.editor.get_title()=='Manage Game';w.cancel_editor();w.demo=True
-    # Manual fallback remains optional, and cancellation creates no entry.
-    count=len(library.games());w.add_game();settle()
-    add=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Find game metadata')
-    click(add,'Enter details manually');assert w.editor.get_title()=='Edit Metadata';w.cancel_editor();assert len(library.games())==count
-    metadata.search=original_search;metadata.fetch_game=original_fetch
+    w.catalog.image_transport=lambda *_:image
+    before_add=len(library.games());w.add_game();pump_until(lambda:len(w.collection_tiles)==24)
+    w.open_catalog_item(w.catalog.provider.detail(1));pump_until(lambda:w.detail_primary.get_sensitive())
+    assert len(library.games())==before_add and not w.saved_detail()
+    w.return_from_detail();assert len(library.games())==before_add
+    w.open_catalog_item(w.catalog.provider.detail(1));pump_until(lambda:w.detail_primary.get_sensitive())
+    w.detail_action();pump_until(lambda:w.saved_detail());saved=w.game
+    assert len(library.games())==before_add+1 and saved['executable']=='' and saved['installation']=={}
+    assert w.detail_primary.get_label()=='Install'
+    w.demo=False;w.refresh_launch_state();assert w.detail_primary.get_sensitive()
+    w.detail_action();assert w.editor.get_title()=='Manage Game';w.cancel_editor();w.demo=True
     # Launch choices occur afterwards in Manage Game, without executing anything.
-    for mode,index in (('installed',0),('installer',1)):
+    for mode in ('installed','installer'):
         draft=library.new_game();draft.update(title='New '+mode,description='Metadata saved before launch setup');library.save(draft);w.show_game(draft);w.open_manage();settle()
-        w.already_installed.set_active(mode=='installed')
         assert w.editor.get_title()=='Manage Game' and not w.advanced.get_expanded()
-        assert w.stage_stack.get_visible_child_name()==('game' if mode=='installed' else 'install')
-        assert w.game_tab.get_sensitive()==(mode=='installed')
-        assert w.install_tab.get_sensitive()==(mode=='installer')
-        w.fields['executable'].set_text(game['executable']);w.installer_entry.set_text(str(Path(temp)/'setup.exe'))
-        if mode=='installer':
-            screenshot('installer-dark.png',w.editor);assert not w.install_button.get_sensitive()
+        assert not hasattr(w,'stage_stack') and not hasattr(w,'prefix_panel')
+        assert w.install_action.get_label()=='Install game…'
+        if mode=='installed':
+            w.fields['executable'].set_text(game['executable'])
+            assert w.install_action.get_label()=='Reinstall…'
+        else:
+            w.open_installer();w.installer_entry.set_text(str(Path(temp)/'setup.exe'))
+            screenshot('installer-dark.png',w.installer_dialog);assert not w.install_button.get_sensitive()
+            w.close_installer()
         w.save_editor();assert not w.launcher.active()
-        assert next(g for g in library.games() if g['title']=='New '+mode)['installation']['mode']==mode
+        config=next(g for g in library.games() if g['title']=='New '+mode)['installation']
+        assert config==({} if mode=='installed' else {'installer':str(Path(temp)/'setup.exe')}), 'Save preserves installer selection without changing installation mode or executing'
     # Run only our inert fixture installer through the real UI confirmation.
     fixture_dir=Path(temp)/'installer-fixture';fixture_dir.mkdir();setup=fixture_dir/'setup.exe';setup.write_text('inert')
     runner=fixture_dir/'runner';runner.write_text('#!/usr/bin/python3\nimport os\nfrom pathlib import Path\np=Path(os.environ["WINEPREFIX"])/"drive_c/Game"\np.mkdir(parents=True,exist_ok=True)\n(p/"game.exe").write_text("inert installed game")\nprint("fixture install complete",flush=True)\n');runner.chmod(0o700)
     proton=fixture_dir/'Proton';proton.mkdir();(proton/'proton').write_text('inert')
-    w.open_manage();w.installer_entry.set_text(str(setup));w.fields['executable'].set_text('');w.fields['working_dir'].set_text('')
+    w.open_manage();w.fields['executable'].set_text('');w.fields['working_dir'].set_text('');w.open_installer();w.installer_entry.set_text(str(setup))
     w.launch_fields['runner'].set_text(str(runner));w.launch_fields['proton'].set_text(str(proton));w.demo=False
     w.run_installer();confirmation=next(d for d in Gtk.Window.get_toplevels() if isinstance(d,Adw.MessageDialog) and d.get_heading()=='Run this installer?');confirmation.emit('response','confirm')
     pump_until(lambda:not w.launcher.active() and w.installations.status(w.game)['phase']=='Select installed executable')
     prefix=Path(w.game['installation']['prefix']);assert (prefix/'drive_c/Game/game.exe').exists()
-    w.cancel_editor();w.open_manage();assert w.install_status.get_text()=='Select installed executable'
-    assert w.stage_stack.get_visible_child_name()=='game' and w.confirm_executable_button.get_visible()
-    assert w.game_tab.get_sensitive() and not w.install_tab.get_sensitive()
-    w.return_to_installation();assert w.stage_stack.get_visible_child_name()=='install'
-    assert w.install_tab.get_sensitive() and not w.game_tab.get_sensitive()
-    w.cancel_editor();w.open_manage();assert w.stage_stack.get_visible_child_name()=='game'
+    w.cancel_editor();w.open_manage();assert w.confirm_executable_button.get_visible()
+    assert not hasattr(w,'stage_stack') and w.install_action.get_label()=='Reinstall…'
+    w.open_installer();assert w.install_status.get_text()=='Select installed executable'
+    assert w.installer_entry.get_text()==str(setup)
+    w.close_installer();w.cancel_editor();w.open_manage();assert w.confirm_executable_button.get_visible()
     settle();screenshot('installer-select-executable-dark.png',w.editor)
     w.fields['executable'].set_text(str(prefix/'drive_c/Game/game.exe'));w.confirm_installed()
     saved=next(g for g in library.games() if g['title']=='New installer');assert saved['installation']['confirmed'];assert saved['launch']['prefix']==str(prefix)
@@ -173,7 +155,7 @@ with tempfile.TemporaryDirectory() as temp:
     assert not hasattr(w,'launch_status')
     screenshot('runtime-download-dark.png')
     fake.record={'game_id':game['id'],'title':game['title'],'state':'Running','operation':'installer','supervisor_pid':123}
-    w.show_library();w.refresh_launch_state();assert not w.runtime_progress.get_visible();assert w.play_buttons[game['id']].get_label()=='Stop installer'
+    w.show_game(game);w.refresh_launch_state();assert not w.runtime_progress.get_visible();assert w.play_buttons[game['id']].get_label()=='Stop installer'
     assert all(not b.get_sensitive() for gid,b in w.play_buttons.items() if gid!=game['id'])
     # close hides, activation shows same window, unavailable tray minimizes safely.
     class FakeTray:
@@ -202,208 +184,21 @@ with tempfile.TemporaryDirectory() as temp:
         actual=w.navigation_window;w.navigation_window=lambda:w
         try:w.controller_action(action)
         finally:w.navigation_window=actual
-    # Even a small saved library has trailing room for a shifting icon rail.
-    w.show_library();w.set_tv_mode(True);settle(500)
-    pump_until(lambda:w.tv_scroll.get_hadjustment().get_upper()>w.tv_scroll.get_hadjustment().get_page_size())
-    w.select_tv_game(w.tv_games[0]);w.focus_tv_card();settle(300)
-    navigate('right');settle(300)
-    assert w.tv_scroll.get_hadjustment().get_value()>0
-    w.set_tv_mode(False);settle()
-    # Console-style fullscreen mode and controller navigation.
-    # Many metadata-only fixtures force horizontal overflow; no real library used.
-    for number in range(10):
-        entry=library.new_game();entry['title']='TV fixture '+str(number);library.save(entry)
-    w.show_library();snapshot=library.path.read_bytes();w.set_tv_mode(True);settle()
-    assert w.tv_mode and w.has_css_class('tv-mode')
-    assert not w.get_decorated() and not w.header.get_visible() and w.tv_controls.get_visible()
-    w.set_tv_mode(False);settle();saved_default=library.data['settings'].get('default_display_mode','desktop')
-    class FullscreenCommand:
-        def get_options_dict(self):
-            options=GLib.VariantDict.new(None);options.insert_value('fullscreen',GLib.Variant('b',True));return options
-    assert app.command_line(app,FullscreenCommand())==0
-    settle();assert w.tv_mode and library.data['settings'].get('default_display_mode','desktop')==saved_default
-    assert library.path.read_bytes()==snapshot
-    selected=dict(w.tv_selected_game());long_selected=dict(selected);long_selected['description']='Long home description. '*100;w.select_tv_game(long_selected)
-    assert len(w.tv_description.get_text())<=300 and w.tv_description.get_text().endswith('...')
-    assert not any(b.get_label()=='Game Info' for b in buttons(w.body));w.select_tv_game(selected)
+    # Home uses fixture play-history evidence; Library remains the full collection.
+    for index,entry in enumerate(library.games()[:3]):record(library.root,entry['id'],str(uuid4()),100+index)
+    w.show_home();w.set_tv_mode(True);settle(500)
+    assert w.route=='home' and len(w.tv_games)==3 and w.backdrop.get_paintable() is not None
     screenshot('fullscreen-library-dark.png')
-    assert all(not control.get_visible() for control in (w.theme,w.settings_button,w.log_button,w.exit_button,w.mode_button))
-    assert not hasattr(w,'tv_home') and w.tv_clock.get_text()
-    for control in (w.tv_games_tab,w.tv_library_tab,w.tv_search,w.tv_menu):
-        control.grab_focus();settle(350);assert w.focused_control(w) is control and control.has_css_class('control-focused') and w.tv_section=='games'
-    screenshot('fullscreen-header-focus-dark.png')
-    assert not w.tv_clock.get_focusable()
-    # Installed grid excludes metadata-only and unconfirmed installer entries.
-    w.set_tv_section('library');settle()
+    selected=w.tv_games[0];w.show_game(selected);settle();assert w.detail_origin=='home'
+    screenshot('fullscreen-details-dark.png');w.return_from_detail();settle();assert w.route=='home'
+    w.show_library();settle();assert len(w.collection_tiles)==len(library.games())
     screenshot('fullscreen-installed-grid-dark.png')
-    pump_until(lambda:all(tile.get_width()>0 for _,tile in w.tv_tiles))
-    w.select_tv_game(w.tv_games[0]);w.focus_tv_card();settle();previous=w.tv_selected_id
-    assert w.keyboard_controller.get_propagation_phase()==Gtk.PropagationPhase.CAPTURE
-    actual=w.navigation_window;w.navigation_window=lambda:w
-    try:assert w.keyboard_controller.emit('key-pressed',Gdk.KEY_Right,0,Gdk.ModifierType(0))
-    finally:w.navigation_window=actual
-    settle();assert w.tv_selected_id!=previous and w.game is None,(previous,w.tv_selected_id,w.focused_control(w),[(g,t.get_width(),t.get_height(),t.compute_bounds(w)[1].get_x(),t.compute_bounds(w)[1].get_y()) for g,t in w.tv_tiles])
-    assert all(g['executable'] and (g.get('installation',{}).get('mode')!='installer' or g['installation'].get('confirmed')) for g in w.tv_games)
-    assert all(g['title']!='Metadata only' for g in w.tv_games)
-    assert all(not tile.has_css_class('tv-game-chip') for _,tile in w.tv_tiles)
-    sizes={(tile.get_width(),tile.get_height()) for _,tile in w.tv_tiles}
-    assert max(height for _,height in sizes)-min(height for _,height in sizes)<=1,sizes
-    assert max(width for width,_ in sizes)-min(width for width,_ in sizes)<=1,sizes
-    assert next(iter(sizes))[1]<340,'Grid cards must not stretch to screen bottom'
-    screenshot('fullscreen-installed-grid-dark.png')
-    for _ in range(8):
-        navigate('next');settle();assert isinstance(w.focused_control(w),(Gtk.Button,Gtk.MenuButton))
-    navigate('back');settle();assert w.tv_section=='games'
-    for _ in range(5):navigate('back');settle();assert w.tv_mode
-    w.tv_games_tab.grab_focus();navigate('right');settle();assert w.focused_control(w) is w.tv_library_tab
-    navigate('right');settle();assert w.focused_control(w) is w.tv_search
-    navigate('right');settle();assert w.focused_control(w) is w.tv_menu
-    navigate('left');navigate('left');settle();assert w.focused_control(w) is w.tv_library_tab
-    navigate('select');pump_until(lambda:w.tv_section=='library');settle();assert w.focused_control(w) is w.tv_library_tab
-    navigate('down');settle();assert w.focused_control(w) in [tile for _,tile in w.tv_tiles]
-    library_game=next(g for g in w.tv_games if g['artwork'].get('hero'));w.select_tv_game(library_game)
-    assert w.backdrop.get_paintable() is not None and w.backdrop.get_opacity()>0
-    for section in ('library','games'):
-        w.set_tv_section(section);settle()
-        selected=w.tv_games[-1];w.select_tv_game(selected);w.focus_tv_card();settle()
-        w.show_game(selected);settle()
-        previews=[];original_select=w.select_tv_game
-        def record_preview(game):
-            previews.append(game['id']);original_select(game)
-        w.select_tv_game=record_preview
-        navigate('back')
-        assert w.focused_control(w) is next(tile for gid,tile in w.tv_tiles if gid==selected['id'])
-        settle();w.select_tv_game=original_select
-        assert previews and all(gid==selected['id'] for gid in previews),previews
-        assert w.tv_selected_id==selected['id']
-        assert w.focused_control(w) is next(tile for gid,tile in w.tv_tiles if gid==selected['id'])
-    assert w.keyboard_controller.get_propagation_phase()==Gtk.PropagationPhase.CAPTURE
-    w.focus_tv_card();previous=w.tv_selected_id
-    actual=w.navigation_window;w.navigation_window=lambda:w
-    try:
-        assert w.on_key(w.keyboard_controller,Gdk.KEY_Right,0,Gdk.ModifierType(0))
-    finally:w.navigation_window=actual
-    settle();assert w.tv_selected_id!=previous
-    w.search_library();settle()
-    search_dialog=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Search games')
-    search_entry=next(i for i in widgets(search_dialog) if isinstance(i,Gtk.SearchEntry))
-    search_entry.set_text('Nebula');settle()
-    matches=[b for b in buttons(search_dialog) if b.get_label() and b.get_label()!='Close']
-    assert len(matches)==1 and 'Nebula' in matches[0].get_label()
-    screenshot('fullscreen-search-dark.png',search_dialog)
-    assert not w.launcher.active();matches[0].emit('clicked');settle();assert 'Nebula' in w.game['title'] and not w.launcher.active()
-    w.go_back();settle()
-    w.set_tv_section('games');settle()
-    assert all(tile.has_css_class('tv-game-chip') for _,tile in w.tv_tiles)
-    rail_y=w.tv_scroll.get_allocation().y
-    for selected in w.tv_games:
-        w.select_tv_game(selected);settle();assert w.tv_scroll.get_allocation().y==rail_y,('Hero height must remain stable',rail_y,w.tv_scroll.get_allocation().y,selected['title'],w.tv_title.get_height(),w.tv_description.get_height(),w.tv_related.get_height(),w.tv_launch_status.get_height())
-    w.select_tv_game(w.tv_games[0]);settle()
-    # Emulate smaller display allocations without changing monitor settings.
-    w.unfullscreen();pump_until(lambda:not w.is_fullscreen());w.set_visible(False);w.unrealize();w.set_default_size(1280,720);w.present();settle(800)
-    assert w.get_width()<=1280 and w.get_height()<=720,(w.get_width(),w.get_height())
-    screenshot('fullscreen-library-720p-dark.png')
-    w.select_tv_game(w.tv_games[-1]);w.focus_tv_card();settle()
-    assert w.tv_selected_id==w.tv_games[-1]['id']
-    w.set_visible(False);w.unrealize();w.set_default_size(1024,600);w.present();settle(800)
-    assert w.get_width()<=1024 and w.get_height()<=600,(w.get_width(),w.get_height())
-    settings=Gtk.Settings.get_default();animations=settings.get_property('gtk-enable-animations');settings.set_property('gtk-enable-animations',True)
-    w.select_tv_game(w.tv_games[0]);w.scroll_tv_card_into_view(w.tv_tiles[0][1],False);settle(280)
-    start=w.tv_scroll.get_hadjustment().get_value()
-    w.select_tv_game(w.tv_games[-1]);w.focus_tv_card();settle(80)
-    middle=w.tv_scroll.get_hadjustment().get_value();settle(300);end=w.tv_scroll.get_hadjustment().get_value()
-    assert start<middle<end,(start,middle,end,[(gid,t.compute_bounds(w.tv_rail)[1].get_x(),t.get_width()) for gid,t in w.tv_tiles],w.tv_scroll.get_hadjustment().get_upper(),w.tv_scroll.get_hadjustment().get_page_size(),w.tv_selected_id)
-    settings.set_property('gtk-enable-animations',False);w.select_tv_game(w.tv_games[0]);assert w.rail_animation is None
-    settings.set_property('gtk-enable-animations',animations);w.select_tv_game(w.tv_games[-1]);w.focus_tv_card();settle(300)
-    assert w.tv_scroll.get_policy()[0]==Gtk.PolicyType.EXTERNAL
-    assert w.tv_scroll.get_hadjustment().get_value()>0
-    selected=w.tv_selected_game();w.show_game(selected);settle();navigate('back');settle()
-    screenshot('fullscreen-return-small-dark.png')
-    pump_until(lambda:w.tv_scroll.get_hadjustment().get_upper()>0)
-    assert w.tv_selected_id==selected['id'] and w.tv_scroll.get_hadjustment().get_value()>0,(w.tv_selected_id,selected['id'],w.tv_scroll.get_hadjustment().get_value(),w.tv_scroll.get_hadjustment().get_upper(),w.tv_rail_end.get_width(),w.tv_rail_end.get_size_request())
-    assert w.focused_control(w) is next(tile for gid,tile in w.tv_tiles if gid==selected['id'])
-    assert w.tv_menu.get_mapped()
-    w.set_tv_section('library');settle();assert w.get_height()<=600
-    assert len({tile.get_height() for _,tile in w.tv_tiles})==1
-    screenshot('fullscreen-installed-grid-small-dark.png')
-    w.set_tv_section('games');settle()
-    w.show_game(w.tv_games[0]);settle();assert w.get_height()<=600 and w.tv_menu.get_mapped()
-    assert w.play_buttons[w.game['id']].get_mapped()
-    w.show_library();settle()
-    w.fullscreen();settle()
-    # Mode changes preserve the active record and disable other game launches.
-    real=w.launcher;w.launcher=fake;w.demo=False
-    fake.record={'game_id':w.tv_selected_id,'title':'Fixture active','state':'Running','operation':'play','supervisor_pid':123}
-    w.refresh_launch_state();w.focus_tv_card();settle();assert w.tv_play.get_label()=='Stop' and w.tv_play.get_sensitive()
-    navigate('right');settle();assert not w.tv_play.get_sensitive()
-    assert fake.active();w.launcher=real;w.demo=True;w.refresh_launch_state()
-    w.focus_tv_card();settle()
-    initial=w.tv_selected_id
-    navigate('right');settle();assert w.tv_selected_id!=initial
-    navigate('select');pump_until(lambda:w.game is not None);settle();assert not w.launcher.active()
-    screenshot('fullscreen-details-dark.png')
-    assert not w.settings_button.get_visible() and not w.log_button.get_visible() and not w.exit_button.get_visible()
-    w.demo=False
-    long_game=dict(next(candidate for candidate in library.games() if candidate.get('executable') and (candidate.get('installation',{}).get('mode')!='installer' or candidate['installation'].get('confirmed'))));long_game['description']='Long description sentence. '*100
-    w.show_game(long_game);settle();assert not any(isinstance(widget,Gtk.Label) and widget.get_text()==long_game['description'] for widget in widgets(w.body))
-    w.show_game_info(long_game);settle();info=next(window for window in Gtk.Window.get_toplevels() if window.get_title()=='Game Info' and window.get_visible())
-    assert any(isinstance(widget,Gtk.Label) and widget.get_text()==long_game['description'] for widget in widgets(info));info.close();settle();screenshot('fullscreen-details-dark.png')
-    play=w.play_buttons[w.game['id']];assert play.get_parent() is w.cover.get_parent();assert abs(play.compute_bounds(play.get_parent())[1].get_width()-w.cover.compute_bounds(w.cover.get_parent())[1].get_width())<=1,(play.get_allocation().width,w.cover.get_allocation().width)
-    navigate('play');settle();assert not w.launcher.active()
-    assert play.get_sensitive()
-    play.grab_focus();pump_until(lambda:w.focused_control(w) is play and play.has_css_class('control-focused'));w.demo=True
-    # Text never enters the fullscreen keyboard/controller focus path.
-    assert all(not widget.get_selectable() and not widget.get_focusable() for widget in widgets(w.body) if isinstance(widget,Gtk.Label))
-    for _ in range(12):
-        navigate('next');settle();assert isinstance(w.focused_control(w),(Gtk.Button,Gtk.MenuButton))
-    # Shoulder buttons scroll readonly details without opening configuration.
-    w.detail_scroll.get_child().get_child().append(Gtk.Label(label='Long fixture information\n'*100));settle()
-    adjustment=w.detail_scroll.get_vadjustment()
-    initial_scroll=adjustment.get_value()
-    expected_down=min(adjustment.get_upper()-adjustment.get_page_size(),initial_scroll+.8*adjustment.get_page_size())
-    navigate('pagedown');settle();assert abs(adjustment.get_value()-expected_down)<1
-    expected_up=max(adjustment.get_lower(),adjustment.get_value()-.8*adjustment.get_page_size())
-    navigate('pageup');settle();assert abs(adjustment.get_value()-expected_up)<1
-    for _ in range(10):
-        if adjustment.get_value()==0:break
-        navigate('pageup');settle()
-    assert adjustment.get_value()==0
-    assert not any(b.get_tooltip_text() in ('Edit Metadata','Manage Game') and b.get_mapped() for b in buttons(w))
-    w.open_manage();assert w.editor is None
-    w.add_game();assert not any(d.get_title()=='Find game metadata' for d in Gtk.Window.get_toplevels())
-    navigate('back');settle();assert w.game is None
-    w.open_tv_options();settle();options=w.tv_options_dialog
-    assert {b.get_label() for b in buttons(options) if b.get_label()}=={'Exit fullscreen','Exit'}
-    screenshot('fullscreen-options-dark.png',options)
-    w.open_tv_options();assert w.tv_options_dialog is options
-    actual=w.navigation_window;w.navigation_window=lambda:options
-    try:w.controller_action('back')
-    finally:w.navigation_window=actual
-    settle();assert not options.get_visible() and w.tv_mode
-    w.open_tv_options();settle();options=w.tv_options_dialog
-    click(options,'Exit fullscreen');pump_until(lambda:not w.tv_mode);settle();assert not w.tv_mode and w.header.get_visible()
-    assert library.path.read_bytes()==snapshot
-    # Default mode affects next launch, not the current window or game data.
-    w.open_settings();settle();settings=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Settings')
-    assert any(b.get_label()=='Clear all diagnostic logs' for b in buttons(settings))
-    log=library.root/'diagnostics'/game['id']/'steam-default.log';log.parent.mkdir(parents=True,exist_ok=True);log.write_text('fixture')
-    click(settings,'Clear all diagnostic logs');settle()
-    prompt=next(d for d in Gtk.Window.get_toplevels() if isinstance(d,Adw.MessageDialog) and d.get_heading()=='Clear all diagnostic logs?')
-    prompt.emit('response','cancel');settle();assert log.exists()
-    click(settings,'Clear all diagnostic logs');settle()
-    prompt=next(d for d in Gtk.Window.get_toplevels() if isinstance(d,Adw.MessageDialog) and d.get_heading()=='Clear all diagnostic logs?')
-    prompt.emit('response','confirm');settle();assert not log.exists()
-    w.default_mode_choice.set_selected(1);assert not w.tv_mode
-    assert library.data['settings']['default_display_mode']=='fullscreen';settings.destroy()
-    other=Window(app,library,demo=True);other.present();settle();assert other.tv_mode
-    other.controller.close();other.destroy();other.pool.shutdown(wait=True)
-    library.set_default_display_mode('desktop');w.present();settle()
-    w.controller.close()
-    w.show_library();w.filter.set_text('Nebula');w.render_cards();assert len(list(w.flow))==1
-    settle();selected=next(g for g in library.games() if 'Nebula' in g['title'])
-    w.show_game(selected);settle();w.go_back();settle()
-    assert w.filter.get_text()=='Nebula'
-    assert w.focused_control(w) is w.desktop_tiles[selected['id']]
-    for window in list(Gtk.Window.get_toplevels()):window.destroy()
-    w.pool.shutdown(wait=True)
-    print('PASS: readonly details, modal Save/Cancel, metadata-first Add Game and later launch choices, collapsed advanced settings, metadata switching/default public search, tray hide/reopen/fallback/Exit cancel, operation controls, ZIP, Proton Manager, fullscreen Games/installed Library grid, control-only navigation, controller scroll and default mode')
+    chosen=next(iter(w.collection_tiles));w.collection_tiles[chosen].grab_focus();settle();navigate('right');settle()
+    assert w.routes['library']['focus']!=chosen
+    for _ in range(4):navigate('back');assert w.tv_mode and w.route=='library'
+    w.tv_home_tab.grab_focus();navigate('right');settle();assert w.focused_control(w) is w.tv_library_tab
+    navigate('right');settle();assert w.focused_control(w) is w.tv_games_tab
+    w.show_game(library.games()[0]);settle()
+    assert not any(isinstance(i,(Gtk.Entry,Gtk.DropDown)) for i in widgets(w.body))
+    w.catalog_cancel();w.catalog_pool.shutdown(wait=True,cancel_futures=True);w.pool.shutdown(wait=True);w.exiting=True;w.destroy()
+print('PASS: native Store/shared detail, Setup cancellation/save/installer continuity, runtime and one-game guards, backup, Proton, tray/Exit and navigation fixtures')

@@ -2,9 +2,9 @@
 
 [Source repository](https://github.com/krunaldodiya/UmuTron)
 
-A native Linux library for preinstalled games and Windows installers, metadata/artwork, and explicit Play through **UMU + Proton**. No Steam client, account or synchronization is required. Public Steam catalogue search works without credentials.
+A native Linux library for preinstalled games and Windows installers, metadata/artwork, and explicit Play through **UMU + Proton**. No Steam client, account or synchronization is required. The IGDB Store uses a separately configured HTTPS metadata service; the saved Library works offline.
 
-![Game details](docs/screenshots/details-dark.png)
+![Shared game details — native GTK test render](docs/screenshots/catalog-detail-fullscreen.png)
 
 ## GNOME dock identity — 0.4.15
 
@@ -16,31 +16,64 @@ This follows [GNOME's application-ID contract](https://developer.gnome.org/docum
 
 ## UmuTron branding — 0.4.14
 
-The app now appears as **UmuTron** in its window, Settings information, application menu and tray, with an original orbital/play SVG icon. Existing `game-library-launcher` install/data/config paths, compatibility desktop and icon identifiers, Python package name and Gio application ID remain stable. The rename requires no library or prefix migration. Prefix runtime maintenance and Proton labels from 0.4.13 are retained. Earlier screenshots below predate this branding update.
+The app now appears as **UmuTron** in its window, Settings information, application menu and tray, with an original orbital/play SVG icon. Existing `game-library-launcher` install/data/config paths, compatibility desktop and icon identifiers, Python package name and Gio application ID remain stable. The rename requires no library or prefix migration. Saved prefix/runner configuration and Proton labels are retained; the per-game Prefix tab was removed in 0.4.23. Earlier screenshots below predate this branding update.
 
 ## Features
 
-- Metadata-first **Add Game**: search by title/ID, select, then automatically save metadata/artwork and open details. No executable or runtime settings required.
+- Separate **Home**, **Library** and **Store**: observed recent plays, the complete saved collection, and IGDB discovery with genre filtering and pagination. Preview a Store title, then explicitly **Add to library**; executable/runtime setup is optional.
 - Persistent installation status/logs; cancel/retry keeps installed files. Select and confirm the game executable after setup. Setup exit alone never means the game is ready.
 - Reuse the installer prefix, registry/runtimes and resolved Proton version for Play. Play never reruns setup.
-- Read-only game details with hero/cover/logo; **pencil → Edit Metadata**, **controller → Manage Game**. Normal Play/Stop remains on cards/details.
+- One read-only detail page from all routes, with artwork and contextual **Add / Setup / Play / Stop**. Unsaved Store Add saves metadata only. Saved unconfigured games have primary Setup in desktop; fullscreen offers Open desktop Setup, which explicitly switches mode and opens the same game’s existing form. No editing or installer execution happens in fullscreen. The gear retains desktop Setup for configured games, metadata-only Remove for saved entries, and guarded Uninstall for installed games. Existing metadata and artwork are preserved; manual metadata/artwork authoring is removed from the normal flow.
 - Optional overrides in collapsed **Advanced launch settings**, including Reset to defaults and custom paths. Normal Proton selection is visible in Setup.
 - Close to tray; **Show UmuTron** and explicit **Exit**. Without a supported tray host, close minimizes instead of making the app inaccessible. Reopening activates the existing instance.
 - One app-owned game or installer at a time. Stop targets only that launch's verified owned processes. Active operations continue under their supervisor if you explicitly Exit; reopening reconnects.
 - Two-tab Proton Manager: a protected **UMU-Proton** baseline and optional **GE-Proton** releases. Both catalogs update in the background and load older releases while scrolling; verified downloads support cancellation, retry and guarded uninstall of managed runners.
-- Local ZIP import/export, compact cards, filtering, light/dark/system themes and provider artwork.
+- Local ZIP import/export, responsive cover grids, title search/sort, light/dark/system themes, offline catalog snapshots and preserved custom artwork.
 
 ## Desktop and fullscreen
 
-Desktop handles adding/installing games, metadata/artwork editing, launch setup, settings, Prefix maintenance and Proton Manager. Fullscreen is a native GTK console view: UmuTron branding, Games and Library tabs, local Search, Options and a clock. Games pairs cinematic artwork and a legible hero with a consistent portrait-cover collection rail. Library uses the same cover language in an installed-only grid. Details show game artwork, title, concise metadata and a prominent Play/Stop below the cover; Game Info opens the full description. Setup and advanced launch settings remain in desktop dialogs.
+Home keeps a cinematic hero and recent-play rail, ordered by locally observed Play activity. Newly added games appear in Library, not Home. Library searches and filters all saved records locally by title and genre, then sorts and renders 48-item pages; it works offline and restores focus/scroll after Back. Store offers title search, official IGDB genres, 24-item pages and In library badges. Both use Search/Enter, genre controls, First/Previous, nearby numbered pages, and Next/Last with independent browsing state. Store shows only the current page and available directional controls when its exact total is unknown; the 1,000-page request limit is never presented as the true last page. All three open the same read-only detail page. Setup and advanced launch settings remain separate desktop dialogs.
 
-Arrow keys / the existing controller mappings move focus. Card activation opens details; only explicit Play/Stop activation can start or stop an operation. Back restores the selected card. Motion follows GTK's reduced-motion preference. Cards and text adapt to 1080p, 720p and smaller windows; very short windows omit the home excerpt and keep full information on details. Metadata-only games stay visible with a desktop-setup explanation. No play history or Continue/Recent data is invented.
+The existing keyboard/controller mappings navigate native widgets. Card activation opens details; only explicit Play/Stop activation starts or stops an operation. Library and Store support PageUp/PageDown or LB/RB page jumps; detail pages use those controls to scroll. Home history reflects two seconds of consistent selected-executable process evidence, not proof of rendered gameplay. Old libraries are not assigned invented history.
 
-Use **F11** or the tray's **Switch to Fullscreen / Switch to Desktop** actions. Fullscreen Options offers **Exit fullscreen** and **Exit**. Settings → General → **Default launch mode** selects the next-start mode and is included in library ZIP backups. Switching modes preserves the current selection and active operation; save/cancel an open editing dialog first.
+Desktop arrow keys move between Home/Library/Store header controls and game cards. Search fields and native selectors retain their own keys; Tab keeps normal GTK navigation.
 
-Controller: D-pad/left stick navigates, A selects, B goes back, X invokes Play/Stop confirmation, Start returns to desktop, and LB/RB scroll details. Keyboard arrows, Enter, Escape and Page Up/Down are also supported. Optional native SDL2 (`libsdl2-2.0-0` on Ubuntu) reads mapped controllers only while the launcher has focus; it does not inject keys, grab the controller or consume game input in the background. Keyboard/mouse remain available without SDL2 or a controller.
+Use **F11** or the tray's single mode action: **Switch to fullscreen** from desktop, or **Switch to desktop** from fullscreen. The tray follows GTK's reported window state, including external mode changes, rather than the saved next-launch preference. Fullscreen Options offers **Exit fullscreen** and **Exit**. Settings → General → **Default launch mode** selects the next-start mode and is included in library ZIP backups. Switching modes preserves the current selection and active operation; save/cancel an open editing dialog first.
 
-![Fullscreen library](docs/screenshots/fullscreen-library-dark.png)
+Controller: D-pad/left stick navigates, A selects, B goes back, X focuses Play/Stop, Start opens fullscreen options, and LB/RB changes collection pages or scrolls details. Keyboard arrows, Enter, Escape and Page Up/Down are also supported. Optional native SDL2 (`libsdl2-2.0-0` on Ubuntu) reads mapped controllers only while the launcher has focus; it does not inject keys, grab the controller or consume game input in the background. Keyboard/mouse remain available without SDL2 or a controller.
+
+![Filtered Library with numbered pages — native GTK test render](docs/screenshots/library-pagination-1920.png)
+
+![Store with numbered pages — native GTK test render](docs/screenshots/store-pagination-1920.png)
+
+These are isolated GTK test renders with fictional games and seeded play history, not live desktop screenshots. [Candidate validation and limitations](docs/CATALOG-VALIDATION.md).
+
+## Catalog service and safe removal
+
+UmuTron 0.4.24 provides separate Home, Library and live Store routes with a shared game detail page. Home reflects observed recent play; Library stays local and works offline; Store searches the configured metadata backend. Explicit Add saves metadata first. Setup configures existing game files or a local installer; automatic game downloads remain unavailable. Storage experiments and download-source prototypes are not included.
+
+Configure `APP_BASE_URL` with the approved HTTPS UmuTron-API origin only (scheme, host and optional port), without an API path, query, credentials or fragment. For desktop-menu launches, save this nonsecret setting in `~/.config/game-library-launcher/catalog.json` (or `$XDG_CONFIG_HOME/game-library-launcher/catalog.json`):
+
+```json
+{"APP_BASE_URL": "https://your-catalog-service.example"}
+```
+
+Restart UmuTron normally after changing it. An environment `APP_BASE_URL` overrides that file. The file is separate from credentials, library metadata and portable backups. The desktop never needs a Twitch client secret or token and no remote host is hardcoded. Without a backend, saved games and Setup remain available; Store explains that it is not connected. Production backend deployment and credentials are managed separately.
+
+For local integration, export these into the environment that starts the **native desktop app**:
+
+```sh
+export APP_BASE_URL=http://localhost:3000
+export UMUTRON_ALLOW_LOOPBACK_HTTP=1
+```
+
+The client appends `/v1/genres`, `/v1/games`, or `/v1/games/<id>` itself. Do not append `/api/v1/catalog` or another route to `APP_BASE_URL`. UmuTron does not load the backend's `.env.local`; `IGDB_API_BASE_URL` is the backend's separate upstream setting.
+
+Production requires the verified HTTPS backend origin and no HTTP opt-in. The default client rejects all HTTP. With the exact development switch `1`, only literal loopback hosts or `localhost` are accepted; `localhost` is pinned to `127.0.0.1`, environment proxies are bypassed, and redirects are refused. LAN addresses and nonloopback HTTP remain rejected. Requests contain only public catalog queries, with no library records, local file paths, cookies or credentials.
+
+`UMUTRON_CATALOG_URL` remains a legacy environment alias **only when `APP_BASE_URL` is unset in both the environment and the config file**, subject to the same origin-only validation. An explicitly empty/invalid primary or malformed config disables the connection; it does not silently fall back to the old setting or a remote default.
+
+Remove from library keeps game files, saves, prefixes and runners. Uninstall is a distinct action: first verify the dedicated installation folder in Setup, then confirm its exact path and file inventory. Ambiguous/shared folders, known save data, links, nested mounts and unclassified files are rejected. Interrupted uninstall retains local recovery information. Saves, prefixes and Proton are separate; no game or installer runs during verification. See [the ownership and recovery contract](docs/DESIGN.md#guarded-game-removal-and-recovery).
 
 ## Install
 
@@ -66,9 +99,9 @@ Existing `UMU-Latest`/`GE-Latest` policies remain UMU-managed automatic selectio
 
 Choose Add Game, search the public Steam catalogue (or select IGDB), and select a result. Metadata and available artwork are saved automatically; the read-only detail page opens. Manual entry is an optional fallback. Metadata-only entries are valid and show **Set up to play**.
 
-Later, controller → Manage Game uses an already-installed switch and installation/setup stage tabs. Select executable/working directory when ready. UMU is discovered on PATH. The visible Proton version selector inherits the app default or selects a specific installed/downloadable build. Configuration never runs anything by itself.
+Later, controller → Manage Game opens one Setup screen without stage or Prefix tabs. Select an existing executable and working directory directly. UMU is discovered on PATH. The visible Proton version selector inherits the app default or selects a specific installed/downloadable build. Configuration never runs anything by itself.
 
-For Install from installer, select a trusted setup executable and Run installer. The review is explicit; you handle its agreements and destination. Watch status/logs in Manage Game. On success, failure or cancellation, files stay intact. Reopen Manage Game later to retry or select/confirm the installed game executable and working directory. The picker opens the owned prefix's drive_c when available. Play uses the confirmed game file and pinned prefix/runtime. An unresolved automatic runner requires a concrete installed version and a retry rather than silently switching an installed game's runtime.
+Both installation actions stay under **More**: **Install game…** for a new entry and **Reinstall…** for an existing configuration, including preinstalled games. A missing configured executable stays a reinstall, with a reminder to check its drive/location. Either action opens a separate installer modal without execution. Select a trusted setup executable, review it and explicitly confirm the start; Reinstall has a distinct warning and defaults to Cancel. Choose the destination and handle agreements inside the Windows installer. Watch status/logs in the modal; closing it leaves an active installation running. On success, failure or cancellation, files stay intact. Reopen Manage Game later to retry or select/confirm the installed game executable and working directory. The picker opens the owned prefix's drive_c when available. Play uses the confirmed game file and pinned prefix/runtime. An unresolved automatic runner requires a concrete installed version and a retry rather than silently switching an installed game's runtime.
 
 Never run games/installers with root/admin privileges. Compatibility, anti-cheat and hardware vary; an installer may create external files or require user interactions beyond this app's controls.
 
@@ -105,7 +138,7 @@ Already installed shows executable and working-directory selection only. Install
 
 ## Stage tabs
 
-Manage Game uses two stage tabs, Install and Game setup, with only one enabled at a time. The I already have installed the game switch skips/disables Install and activates Game setup. Otherwise Install is active until the attempt ends, then Game setup becomes active for executable confirmation. Return to installation / retry switches back safely without deleting files or losing prefix/runner context. The switch is disabled while an operation is active.
+The former stage tabs and Already installed switch were replaced in 0.4.23 by a single Setup screen. More → Install game… / Reinstall… opens the installer modal in the same location for both states. After an attempt, confirm the installed game executable on Setup. Active operations disable changes and new starts; reopening the modal restores status/logs without stopping the operation or resetting its prefix/runner context.
 
 ## Public catalogue artwork repair — 0.3.5
 Steam asset manifests supply modern hash-qualified cover and hero URLs, with legacy fallback. Cricket 26 cover/hero were downloaded live and added to its existing entry without replacing saved artwork or changing launch configuration. Its separate logo was unavailable through these public endpoints. Fixture tests cover hash paths, rejected paths and API failure fallback; native smoke uses isolated data.
@@ -125,6 +158,9 @@ Settings → General → Diagnostic logs → Clear all diagnostic logs asks for 
 
 
 ### Prefix information and runtime maintenance (0.4.13)
-Setup / Manage Game now includes **Prefix** alongside Install and Game setup. It displays read-only prefix storage, creation state, runner version and conservative native/builtin/game-local runtime evidence. Game-specific requirements remain explicitly unknown. Manual VC++ v14 core installation requires a separate confirmation and interactive Microsoft license acceptance; .NET, legacy DirectX and runner components have no manual install/replacement actions. See [the behavior contract](docs/DESIGN.md#prefix-inventory-and-install-only-maintenance) and [validation and limitations](docs/PREFIX-VALIDATION.md).
+Historical 0.4.13 behavior, superseded by 0.4.23: Setup / Manage Game included **Prefix** alongside Install and Game setup. The per-game Prefix tab is now removed; the separate global prefix-management work is not part of this UI release. It displays read-only prefix storage, creation state, runner version and conservative native/builtin/game-local runtime evidence. Game-specific requirements remain explicitly unknown. Manual VC++ v14 core installation requires a separate confirmation and interactive Microsoft license acceptance; .NET, legacy DirectX and runner components have no manual install/replacement actions. See [the behavior contract](docs/DESIGN.md#prefix-inventory-and-install-only-maintenance) and [validation and limitations](docs/PREFIX-VALIDATION.md).
 
 Proton Manager distinguishes automatic latest selectors from installed versions without changing existing selections.
+
+
+The 0.4.29 candidate makes Library/Store search reachable with navigation and keeps the focused card visible when moving either direction. Escape leaves a search field; keyboard caret arrows and Tab retain their native behavior. Home contains its hero, Recently played and Recently ready to play only. Games without a recorded setup date remain in Library without invented dates.

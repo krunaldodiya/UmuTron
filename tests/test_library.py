@@ -141,6 +141,14 @@ class LibraryTests(unittest.TestCase):
         restored=Library(self.root/'restored-defaults');restored.import_zip(archive)
         self.assertEqual(restored.data['settings']['default_proton'],'UMU-Latest')
 
+    def test_uninstaller_field_is_preserved_and_defaults_empty(self):
+        game = self.lib.new_game()
+        self.assertEqual(game.get('uninstaller'), '')
+        game.update(title='Test Game', uninstaller='/games/unins000.exe')
+        self.lib.save(game)
+        reloaded = Library(self.root/'data').games()[0]
+        self.assertEqual(reloaded['uninstaller'], '/games/unins000.exe')
+
 
 class DescriptionExcerptTests(unittest.TestCase):
     def test_bounded_display_preserves_short_and_long_sources(self):
