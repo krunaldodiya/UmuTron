@@ -935,19 +935,24 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         if self.editor_kind=='manage':self.close_installer(keep=False)
         dialog=self.editor;saved=deepcopy(self.original);self.editor=None;self.editor_kind=None;dialog.destroy()
         if any(g['id']==saved['id'] for g in self.library.games()):self.show_game(saved)
+        elif getattr(self,'detail_item',None):
+            from .catalog import item_game
+            self.show_shared_detail(item_game(self.detail_item,preview=True),self.detail_item)
         else:self.show_library()
 
     def save_editor(self):
         try:
             candidate=self.collect()
             if self.editor_kind=='manage' and self.launcher.active():raise ValueError('Finish the active operation before changing game files.')
+            if not any(g['id']==candidate['id'] for g in self.library.games()) and getattr(self,'detail_item',None):
+                self._save_detail_item_artwork(candidate)
             if self.editor_kind=='manage':candidate=self.installations.prepare_setup_save(candidate)
             if self.editor_kind=='manage':self.close_installer()
             if self.editor_kind=='manage':candidate=self.library.save_setup(candidate)
             else:self.library.save(candidate)
             dialog=self.editor;self.editor=None;self.editor_kind=None
             if dialog:dialog.destroy()
-            self.show_game(candidate);self.notify('Saved locally.')
+            self.show_game(candidate);self.notify('Saved to your library.')
         except Exception as error:self.error(error)
 
 
@@ -1085,8 +1090,8 @@ class Window(CatalogUI, Adw.ApplicationWindow):
     def confirm_installed(self):
         try:
             candidate=self.collect();config=candidate.get('installation',{})
-            # Explicit replacement for the old Already installed switch on a
-            # legacy installer draft that never created an installation session.
+            if not any(g['id']==candidate['id'] for g in self.library.games()) and getattr(self,'detail_item',None):
+                self._save_detail_item_artwork(candidate)
             if config.get('mode')=='installer' and not config.get('session_id'):
                 candidate['installation']={**config,'mode':'installed'}
             saved=self.installations.confirm(candidate);self.close_installer();dialog=self.editor;self.editor=None;self.editor_kind=None
@@ -1100,6 +1105,25 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         try: build_command(game,self.library.root); ready=game.get('installation',{}).get('mode')!='installer' or game['installation'].get('confirmed',False)
         except ValueError: ready=False
         return zip((metadata,executable,ready),('Game metadata added','Game executable connected','Direct Play configured'))
+
+    def _save_detail_item_artwork(self,candidate):
+        item=getattr(self,'detail_item',None)
+        if not item or not isinstance(item,dict):return
+        images=item.get('images',{})
+        art=getattr(self,'detail_art',{})
+        for kind in ('portrait','hero'):
+            data=None
+            cached_path=art.get(kind)
+            if cached_path and Path(cached_path).is_file():
+                try:data=Path(cached_path).read_bytes()
+                except Exception:pass
+            url=images.get(kind)
+            if not data and url and hasattr(self,'catalog'):
+                try:data=self.catalog.image(url).read_bytes()
+                except Exception:pass
+            if data:
+                try:candidate['artwork'][kind]=self.library.add_image(data)
+                except Exception:pass
 
     def source_text(self):
         source=self.game.get('metadata_source',{})

@@ -784,14 +784,8 @@ class CatalogUI:
             self.open_manage()
             return
         item=deepcopy(self.detail_item)
-        art={}
-        for kind,url in item.get('images',{}).items():
-            try:art[kind]=self.catalog.image(url).read_bytes()
-            except (OSError,ValueError):pass
-        game,created=add_item(self.library,item,art)
-        self.game=deepcopy(game);self.original=deepcopy(game)
-        self.show_shared_detail(game,item)
-        if created:self.notify('Added to your library. Set up your game files.')
+        draft=item_game(item,preview=False)
+        self.game=deepcopy(draft);self.original=deepcopy(draft)
         if self.tv_mode and not self.set_tv_mode(False):return
         self.open_manage()
 
