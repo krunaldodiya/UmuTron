@@ -842,12 +842,8 @@ class CatalogUI:
         if not self.saved_detail():
             item=deepcopy(self.detail_item) if self.detail_item else None
             if item:
-                art={}
-                for kind,url in item.get('images',{}).items():
-                    try:art[kind]=self.catalog.image(url).read_bytes()
-                    except (OSError,ValueError):pass
-                game,created=add_item(self.library,item,art)
-                self.game=deepcopy(game);self.original=deepcopy(game)
+                draft=item_game(item,preview=False)
+                self.game=deepcopy(draft);self.original=deepcopy(draft)
         title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
         if self.detail_repack and isinstance(self.detail_repack,dict):
             self.show_install_repack_dialog(self.detail_repack)
@@ -954,8 +950,6 @@ class CatalogUI:
             dest_dir=f'{selected_drive_path[0]}/{sanitized}'
             download_dir=f'{selected_drive_path[0]}/.umutron-downloads/{self.game["id"]}'
             self.game['working_dir']=dest_dir
-            try:self.library.save(self.game)
-            except Exception:pass
             self.start_fitgirl_download(magnet,download_dir,dest_dir,repack_title,inst_str)
 
         install_btn.connect('clicked',lambda *_:on_confirm())
@@ -1021,7 +1015,12 @@ class CatalogUI:
     def cancel_fitgirl_download(self,game_id):
         def do_cancel():
             download_manager.cancel(game_id,cleanup=True)
-            self.show_shared_detail(self.game,self.detail_item)
+            if any(g['id']==game_id for g in self.library.games()):
+                self.show_shared_detail(self.game,self.detail_item)
+            elif getattr(self,'detail_item',None):
+                self.show_shared_detail(item_game(self.detail_item,preview=True),self.detail_item)
+            else:
+                self.show_collection()
             self.notify('Download cancelled and files cleaned up.')
         self.confirm('Cancel Download?','This will stop the download and remove any partial download files.','Cancel Download',do_cancel,destructive=True)
 
@@ -1045,8 +1044,8 @@ class CatalogUI:
             'confirmed':False
         }
         self.game['working_dir']=dest_dir
-        try:self.library.save(self.game)
-        except Exception:pass
+        if not any(g['id']==self.game['id'] for g in self.library.games()) and getattr(self,'detail_item',None):
+            self._save_detail_item_artwork(self.game)
 
         try:
             self.installations.start(self.game)
