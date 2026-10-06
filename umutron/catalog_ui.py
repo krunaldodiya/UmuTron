@@ -1,5 +1,6 @@
 """Native Library / Store routes and one shared, state-driven detail page."""
 from copy import deepcopy
+import time
 import os
 from pathlib import Path
 import re
@@ -1117,10 +1118,9 @@ class CatalogUI:
 
         strategy=release.get('install_strategy','installer')
         def on_confirm():
-            dialog.close()
             sanitized=re.sub(r'[^\w\s-]','',title).strip() or 'Game'
             dest_dir=f'{selected_drive_path[0]}/{sanitized}'
-            download_dir=dest_dir if strategy=='portable' else f'{selected_drive_path[0]}/.umutron-downloads/{self.game["id"]}'
+            download_dir=f'{selected_drive_path[0]}/{sanitized} - Installer'
             self.game['working_dir']=dest_dir
             self.start_release_download(magnet,download_dir,dest_dir,release_title,inst_str,prov_name,strategy)
 
@@ -1255,11 +1255,18 @@ class CatalogUI:
                     self.game['working_dir'] = dest_dir
                     if not any(g['id'] == self.game['id'] for g in self.library.games()) and getattr(self, 'detail_item', None):
                         self._save_detail_item_artwork(self.game)
+                    expected_bytes = 0
+                    try:
+                        dpath = Path(download_dir)
+                        if dpath.is_dir():
+                            db = sum(f.stat().st_size for f in dpath.rglob('*') if f.is_file())
+                            _, expected_bytes, _ = estimate_space_requirements(db)
+                    except Exception: pass
                     try:
                         self.installations.start(self.game)
                         self.refresh_launch_state()
                         self.notify(f'Silent background installer started for {title}.')
-                        self.monitor_silent_installation(game_id, dest_dir, title, inner_payload.crack_dir)
+                        self.monitor_silent_installation(game_id, dest_dir, title, inner_payload.crack_dir, expected_bytes=expected_bytes)
                         return
                     except Exception as error:
                         self.error(error); return
@@ -1312,21 +1319,73 @@ class CatalogUI:
         self.game['working_dir'] = dest_dir
         if not any(g['id'] == self.game['id'] for g in self.library.games()) and getattr(self, 'detail_item', None):
             self._save_detail_item_artwork(self.game)
-
+        expected_bytes = 0
+        try:
+            dpath = Path(download_dir)
+            if dpath.is_dir():
+                db = sum(f.stat().st_size for f in dpath.rglob('*') if f.is_file())
+                _, expected_bytes, _ = estimate_space_requirements(db)
+        except Exception: pass
         try:
             self.installations.start(self.game)
             self.refresh_launch_state()
             self.notify(f'Silent background installer started for {title}.')
-            self.monitor_silent_installation(game_id, dest_dir, title, payload.crack_dir)
+            self.monitor_silent_installation(game_id, dest_dir, title, payload.crack_dir, expected_bytes=expected_bytes)
         except Exception as error:
             self.error(error)
 
-    def monitor_silent_installation(self, game_id, dest_dir, title, crack_dir=None):
+    def monitor_silent_installation(self, game_id, dest_dir, title, crack_dir=None, expected_bytes=0):
+        start_time = time.time()
+        prev_bytes = [0]
+        prev_time = [start_time]
+
+        def get_dir_size_and_count(path):
+            total_size = 0
+            count = 0
+            try:
+                for root, _, files in os.walk(path):
+                    for f in files:
+                        count += 1
+                        try:
+                            total_size += os.path.getsize(os.path.join(root, f))
+                        except OSError:
+                            pass
+            except OSError:
+                pass
+            return total_size, count
+
         def check_status():
+            now = time.time()
             game = next((g for g in self.library.games() if g['id'] == game_id), self.game)
             status = self.installations.status(game)
             state = status.get('state')
+
+            # Measure live installation directory growth
+            current_bytes, file_count = get_dir_size_and_count(dest_dir)
+            dt = max(now - prev_time[0], 0.1)
+            bytes_delta = max(current_bytes - prev_bytes[0], 0)
+            speed = int(bytes_delta / dt)
+            prev_bytes[0] = current_bytes
+            prev_time[0] = now
+
+            # Live progress bar and label updates
+            if hasattr(self, 'detail_progress_bar') and hasattr(self, 'detail_progress_label'):
+                speed_str = f"{format_size(speed)}/s" if speed > 0 else "unpacking..."
+                if expected_bytes > 0:
+                    pct = min(current_bytes / expected_bytes, 0.99)
+                    self.detail_progress_bar.set_fraction(pct)
+                    pct_str = f"{int(pct * 100)}%"
+                    label_text = f"Installing {title}… {pct_str} • {format_size(current_bytes)} / {format_size(expected_bytes)} ({speed_str}) • {file_count} files"
+                else:
+                    self.detail_progress_bar.pulse()
+                    label_text = f"Installing {title}… {format_size(current_bytes)} ({speed_str}) • {file_count} files"
+                self.detail_progress_label.set_text(label_text)
+
             if state == 'Finished' and status.get('code') == 0:
+                if hasattr(self, 'detail_progress_bar'):
+                    self.detail_progress_bar.set_fraction(1.0)
+                if hasattr(self, 'detail_progress_label'):
+                    self.detail_progress_label.set_text(f"Finalizing {title} installation…")
                 if crack_dir and Path(crack_dir).is_dir():
                     import shutil
                     shutil.copytree(crack_dir, dest_dir, dirs_exist_ok=True)
