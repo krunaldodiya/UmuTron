@@ -1224,11 +1224,12 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         if self.tv_mode and section!='storage':self.notify('Switch to desktop mode to manage settings.');return
         if self.settings_dialog and self.settings_dialog.get_visible():
             if section=='storage':self.settings_dialog.set_visible_page(self.storage_settings_page)
+            elif section=='sources':self.settings_dialog.set_visible_page(getattr(self,'sources_settings_page',self.storage_settings_page))
             self.settings_dialog.present();return self.settings_dialog
         dialog=Adw.PreferencesWindow(title='Settings',transient_for=self,modal=True,default_width=min(660,max(520,self.get_width()-48)),default_height=min(740,max(440,self.get_height()-48)))
         style_surface(dialog,self);self.settings_dialog=dialog
         def clear_settings(owner):
-            if self.settings_dialog is owner:self.settings_dialog=None;self.storage_settings_page=None
+            if self.settings_dialog is owner:self.settings_dialog=None;self.storage_settings_page=None;self.sources_settings_page=None
             for name in ('proton_panel','proton_settings_page','default_mode_choice'):
                 control=getattr(self,name,None)
                 if control is not None and control.get_root() is owner:
@@ -1237,9 +1238,13 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             return False
         dialog.connect('close-request',clear_settings);dialog.connect('unrealize',clear_settings)
         self.storage_settings_page=StoragePage(self.storage_service,dialog);dialog.add(self.storage_settings_page)
+        from .settings_sources import SourcesPage
+        self.sources_settings_page=SourcesPage(self.library,dialog);dialog.add(self.sources_settings_page)
         if section=='storage' and self.tv_mode:
             dialog.set_title('Storage');dialog.present();return
-        page=Adw.PreferencesPage(title='General',icon_name='preferences-system-symbolic'); dialog.add(page)
+        if section=='sources' and self.tv_mode:
+            dialog.set_title('Sources');dialog.present();return
+        page=Adw.PreferencesPage(title='General',icon_name='preferences-system-symbolic');dialog.add(page)
         modes=Adw.PreferencesGroup(title='Display mode',description='Default mode applies on the next app start. Enter fullscreen from the mode button; leave through fullscreen options or the tray.');page.add(modes)
         mode_row=Adw.ActionRow(title='Default launch mode');self.default_mode_choice=Gtk.DropDown.new_from_strings(['Desktop','Fullscreen / TV']);self.default_mode_choice.set_selected(1 if self.library.data['settings'].get('default_display_mode')=='fullscreen' else 0);mode_row.add_suffix(self.default_mode_choice);modes.add(mode_row)
         self.default_mode_choice.connect('notify::selected',lambda choice,_:self.library.set_default_display_mode('fullscreen' if choice.get_selected()==1 else 'desktop'))
@@ -1272,7 +1277,8 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         self.build_proton_manager_tab(dialog)
         catalog_info=Adw.PreferencesGroup(title='Store',description='Game data by IGDB. Catalog service configuration is separate from game setup; your saved library works offline.');page.add(catalog_info)
         catalog_info.add(Gtk.LinkButton.new_with_label('https://www.igdb.com','IGDB'))
-        dialog.set_visible_page(self.storage_settings_page if section=='storage' else page)
+        target_page=self.storage_settings_page if section=='storage' else self.sources_settings_page if section=='sources' else page
+        dialog.set_visible_page(target_page)
         dialog.present()
 
     def build_proton_manager_tab(self,dialog):

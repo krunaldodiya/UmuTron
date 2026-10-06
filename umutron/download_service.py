@@ -390,10 +390,12 @@ class BaseSourceProvider:
                 if items:
                     candidates = self.filter_candidates(items)
                     results = []
+                    strategy_fn = getattr(self, 'get_install_strategy', lambda it: self.install_strategy)
                     for item in candidates:
                         uris = item.get('uris', [])
                         magnet = next((u for u in uris if u.startswith('magnet:')), None)
                         if magnet:
+                            strategy = strategy_fn(item)
                             rel = DownloadRelease(
                                 provider_id=self.id,
                                 provider_name=self.name,
@@ -401,7 +403,7 @@ class BaseSourceProvider:
                                 file_size=item.get('file_size') or 'Unknown size',
                                 magnet=magnet,
                                 uris=uris,
-                                install_strategy=self.install_strategy,
+                                install_strategy=strategy,
                                 upload_date=item.get('upload_date'),
                                 raw=item
                             )
@@ -434,13 +436,21 @@ class DODIProvider(BaseSourceProvider):
 class ByXatabProvider(BaseSourceProvider):
     id = 'byxatab'
     name = 'ByXatab'
-    priority = 30
-    install_strategy = 'installer'
+    priority = 15
+    install_strategy = 'portable'
 
     def filter_candidates(self, items):
-        full = [it for it in items if 'патч' not in it.get('title', '').lower() and 'patch' not in it.get('title', '').lower()]
-        return full if full else items
+        candidates = [it for it in items if 'patch from' not in it.get('title', '').lower() and 'патч' not in it.get('title', '').lower()]
+        loose = [it for it in candidates if 'папка игры' in it.get('title', '').lower() or 'папка' in it.get('title', '').lower()]
+        return loose if loose else candidates
 
+    def get_install_strategy(self, item):
+        t = item.get('title', '').lower()
+        if 'папка' in t or 'portable' in t:
+            return 'portable'
+        if 'repack' in t or 'репак' in t:
+            return 'installer'
+        return 'portable'
 
 class AnkerGamesProvider(BaseSourceProvider):
     id = 'ankergames'
@@ -452,7 +462,8 @@ class AnkerGamesProvider(BaseSourceProvider):
 class SourceProviderRegistry:
     def __init__(self):
         self._providers = {}
-        for p in (FitGirlProvider(), DODIProvider(), ByXatabProvider(), AnkerGamesProvider()):
+        self._disabled = set()
+        for p in (FitGirlProvider(), ByXatabProvider(), DODIProvider(), AnkerGamesProvider()):
             self.register(p)
 
     def register(self, provider):
@@ -461,16 +472,27 @@ class SourceProviderRegistry:
     def get(self, provider_id):
         return self._providers.get(provider_id)
 
-    def providers(self):
-        return sorted(self._providers.values(), key=lambda p: p.priority)
+    def set_enabled(self, provider_id, enabled):
+        if enabled:
+            self._disabled.discard(provider_id)
+        else:
+            self._disabled.add(provider_id)
+
+    def is_enabled(self, provider_id):
+        return provider_id not in self._disabled
+
+    def providers(self, only_enabled=False):
+        all_p = sorted(self._providers.values(), key=lambda p: p.priority)
+        if only_enabled:
+            return [p for p in all_p if self.is_enabled(p.id)]
+        return all_p
 
     def search_all(self, base_url, title, api_key=None, transport=None):
-        for provider in self.providers():
+        for provider in self.providers(only_enabled=True):
             results = provider.search(base_url, title, api_key=api_key, transport=transport)
             if results:
                 return results
         return []
-
 source_registry = SourceProviderRegistry()
 
 

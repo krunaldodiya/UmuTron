@@ -975,33 +975,32 @@ class CatalogUI:
         footer=dialog_footer();content.append(footer)
         cancel_btn=button_fn('Cancel',dialog.close);footer.append(cancel_btn)
 
+        strategy=release.get('install_strategy','installer')
         def on_confirm():
             dialog.close()
             sanitized=re.sub(r'[^\w\s-]','',title).strip() or 'Game'
             dest_dir=f'{selected_drive_path[0]}/{sanitized}'
-            download_dir=f'{selected_drive_path[0]}/.umutron-downloads/{self.game["id"]}'
+            download_dir=dest_dir if strategy=='portable' else f'{selected_drive_path[0]}/.umutron-downloads/{self.game["id"]}'
             self.game['working_dir']=dest_dir
-            self.start_release_download(magnet,download_dir,dest_dir,release_title,inst_str,prov_name)
+            self.start_release_download(magnet,download_dir,dest_dir,release_title,inst_str,prov_name,strategy)
 
         install_btn.connect('clicked',lambda *_:on_confirm())
         footer.append(install_btn);dialog.present()
 
-    def start_release_download(self,magnet,download_dir,dest_dir,release_title,inst_str,prov_name='Download'):
+    def start_release_download(self,magnet,download_dir,dest_dir,release_title,inst_str,prov_name='Download',strategy='installer'):
         title=self.game.get('title','Game')
         game_id=self.game['id']
         try:
             download_manager.start_download(magnet,download_dir,game_id,title)
         except Exception as error:
             self.error(error);return
-        self.track_download_progress(game_id,download_dir,dest_dir,inst_str,prov_name)
-
-    def track_download_progress(self,game_id,download_dir=None,dest_dir=None,inst_str=None,prov_name='Download'):
+        self.track_download_progress(game_id,download_dir,dest_dir,inst_str,prov_name,strategy)
+    def track_download_progress(self,game_id,download_dir=None,dest_dir=None,inst_str=None,prov_name='Download',strategy='installer'):
         if hasattr(self,'detail_download_box'):
             self.detail_download_box.set_visible(True)
         if hasattr(self,'detail_primary'):
             self.detail_primary.set_label('Pause')
             self.detail_primary.set_tooltip_text(f'Pause downloading {prov_name} release')
-
             def toggle_pause(*_):
                 job=download_manager.get_status(game_id)
                 if job and job.get('status')=='paused':
@@ -1010,7 +1009,6 @@ class CatalogUI:
                 else:
                     download_manager.pause(game_id)
                     self.detail_primary.set_label('Resume')
-
             self.detail_primary.connect('clicked',toggle_pause)
 
         if not hasattr(self,'detail_cancel_btn') or not self.detail_cancel_btn.get_parent():
@@ -1025,7 +1023,7 @@ class CatalogUI:
             if not job:return False
             status=job.get('status')
             if status=='complete':
-                self.on_release_download_complete(game_id,download_dir or job.get('dir'),dest_dir,inst_str,prov_name)
+                self.on_release_download_complete(game_id,download_dir or job.get('dir'),dest_dir,inst_str,prov_name,strategy)
                 return False
             elif status=='paused':
                 self.detail_primary.set_label('Resume')
@@ -1055,7 +1053,12 @@ class CatalogUI:
             self.notify('Download cancelled and files cleaned up.')
         self.confirm('Cancel Download?','This will stop the download and remove any partial download files.','Cancel Download',do_cancel,destructive=True)
 
-    def on_release_download_complete(self,game_id,download_dir,dest_dir,inst_str,prov_name='Download'):
+    def on_release_download_complete(self,game_id,download_dir,dest_dir,inst_str,prov_name='Download',strategy='installer'):
+        title=self.game.get('title','Game')
+        if strategy=='portable':
+            self.on_portable_release_complete(game_id,download_dir,dest_dir,prov_name)
+            return
+
         if hasattr(self,'detail_primary'):
             self.detail_primary.set_label('Installing...')
             self.detail_primary.set_sensitive(False)
@@ -1068,7 +1071,6 @@ class CatalogUI:
             self.notify('Could not find setup.exe in downloaded files.')
             return
 
-        title=self.game.get('title','Game')
         self.game['installation']={
             'mode':'installer',
             'installer':str(setup_exe),
@@ -1084,6 +1086,43 @@ class CatalogUI:
             self.notify(f'{prov_name} installer started for {title}.')
         except Exception as error:
             self.error(error)
+
+    def on_portable_release_complete(self,game_id,download_dir,dest_dir,prov_name):
+        title=self.game.get('title','Game')
+        target_folder=Path(download_dir)
+        found_exe=None
+        if target_folder.is_dir():
+            exes=[p for p in target_folder.rglob('*.exe') if p.is_file() and p.name.lower() not in ('unins000.exe','uninstall.exe','dxsetup.exe','vcredist.exe','crashreporter.exe')]
+            if exes:
+                title_clean=''.join(c for c in title.lower() if c.isalnum())
+                best=next((p for p in exes if ''.join(c for c in p.stem.lower() if c.isalnum()) in title_clean or title_clean in ''.join(c for c in p.stem.lower() if c.isalnum())),None)
+                found_exe=best or exes[0]
+
+        if not found_exe:
+            self.notify(f'Downloaded {title}, but executable could not be auto-detected. Choose executable in Setup.')
+            if hasattr(self,'detail_primary'):
+                self.detail_primary.set_label('Setup')
+                self.detail_primary.set_sensitive(True)
+            return
+
+        self.game['executable']=str(found_exe)
+        self.game['working_dir']=str(found_exe.parent)
+        self.game['installation']={'mode':'installed','confirmed':True}
+        if not any(g['id']==self.game['id'] for g in self.library.games()) and getattr(self,'detail_item',None):
+            self._save_detail_item_artwork(self.game)
+
+        try:
+            self.library.save(self.game)
+        except Exception as error:
+            self.error(error);return
+
+        if hasattr(self,'detail_download_box'):
+            self.detail_download_box.set_visible(False)
+        if hasattr(self,'detail_cancel_btn') and self.detail_cancel_btn.get_parent():
+            self.detail_cancel_btn.get_parent().remove(self.detail_cancel_btn)
+
+        self.show_shared_detail(self.game,self.detail_item)
+        self.notify(f'{title} is downloaded and ready to play!')
 
     def return_from_detail(self):
         if self.detail_origin=='store':self.show_store(restore=True)
