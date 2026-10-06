@@ -46,7 +46,7 @@ class DownloadSourceCache:
         if not title:
             return None
         if provider_ids is None:
-            provider_ids = tuple(provider.id for provider in source_registry.providers(only_enabled=True))
+            provider_ids = tuple(provider.id for provider in source_registry.providers())
         else:
             provider_ids = tuple(provider_ids)
         value = self.data.get(self._key(title, provider_ids))
@@ -72,7 +72,7 @@ class DownloadSourceCache:
         if not title:
             return
         if provider_ids is None:
-            provider_ids = tuple(provider.id for provider in source_registry.providers(only_enabled=True))
+            provider_ids = tuple(provider.id for provider in source_registry.providers())
         else:
             provider_ids = tuple(provider_ids)
         key = self._key(title, provider_ids)
@@ -96,14 +96,15 @@ source_cache = DownloadSourceCache()
 fitgirl_cache = source_cache
 
 
-def search_game_releases(base_url, title, api_key=None, transport=None, provider_id=None):
-    providers = source_registry.providers(only_enabled=True)
+def search_game_releases(base_url, title, api_key=None, transport=None, provider_id=None,
+                         force_refresh=False):
+    providers = source_registry.providers()
     if provider_id is not None:
         providers = [provider for provider in providers if provider.id == provider_id]
     provider_ids = tuple(provider.id for provider in providers)
     if not provider_ids:
         return []
-    cached = source_cache.get(title, provider_ids)
+    cached = None if force_refresh else source_cache.get(title, provider_ids)
     if cached is not None:
         return [] if cached is False else cached
 
@@ -115,14 +116,15 @@ def search_game_releases(base_url, title, api_key=None, transport=None, provider
     return releases
 
 
-def search_game_release(base_url, title, api_key=None, transport=None, provider_id=None):
+def search_game_release(base_url, title, api_key=None, transport=None, provider_id=None,
+                        force_refresh=False):
     releases = search_game_releases(base_url, title, api_key=api_key, transport=transport,
-                                    provider_id=provider_id)
+                                    provider_id=provider_id, force_refresh=force_refresh)
     return releases[0] if releases else None
 
 
 def search_fitgirl_repack(base_url, title, api_key=None, transport=None):
     provider = source_registry.get('fitgirl')
-    if provider is None or not source_registry.is_enabled(provider.id):
+    if provider is None:
         return []
     return provider.search(base_url, title, api_key=api_key, transport=transport)

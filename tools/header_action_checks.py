@@ -34,9 +34,10 @@ def bounds(widget,window):
 
 
 def aligned(window):
-    info=next(c for c in descendants(window.body) if isinstance(c,Gtk.Button) and c.get_label()=='Game Info')
-    controls=[window.detail_primary,info]
-    if window.detail_gear.get_visible():controls.insert(1,window.detail_gear)
+    controls=[];child=window.detail_actions_box.get_first_child()
+    while child:
+        if child.get_visible():controls.append(child)
+        child=child.get_next_sibling()
     boxes=[bounds(c,window) for c in controls]
     centers=[r[1]+r[3]/2 for r in boxes]
     assert max(centers)-min(centers)<=1,(window.detail_primary.get_label(),boxes)
@@ -89,10 +90,12 @@ with tempfile.TemporaryDirectory(prefix='umutron-header-action-') as temp:
                     if adjustment.get_upper()>adjustment.get_page_size():
                         adjustment.set_value(adjustment.get_upper()-adjustment.get_page_size());settle(100);capture(w,path)
                     assert (w.get_width(),w.get_height())==(width,height)
-                    expected=('Open desktop Setup' if tv else 'Setup') if state=='Setup' else ('Add to library' if state=='Add' else state)
+                    expected=state if state in ('Play','Stop') else 'Install'
                     assert w.detail_primary.get_label()==expected,(expected,w.detail_primary.get_label())
-                    assert w.detail_size.get_label()=='Installation size · Unknown'
-                    assert w.detail_size.get_visible() and w.detail_primary.get_label()!='Install'
+                    if state in ('Play','Stop'):
+                        assert not w.detail_size.get_visible() and not w.detail_source_row.get_visible()
+                    else:
+                        assert w.detail_size.get_visible() and w.detail_primary.get_label()=='Install'
                     boxes=aligned(w)
                     viewport=bounds(w.detail_scroll,w)
                     assert all(r[1]>=viewport[1] and r[1]+r[3]<=viewport[1]+viewport[3] for r in boxes),(boxes,viewport)

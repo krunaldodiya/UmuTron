@@ -3,15 +3,15 @@ from copy import deepcopy
 import os
 from pathlib import Path
 import re
-from gi.repository import Adw, Gio, GLib, Gtk, Pango
+from gi.repository import Adw, GLib, Gtk, Pango
 
 from .catalog import CatalogService, configured_catalog, add_item, item_game, members, related_members, entity_label, validate_item, needs_membership_lookup, MAX_PAGE
-from .collection import genre_choices, library_page, page_numbers
+from .collection import library_page, page_numbers
 from .browse_controls import BrowseChoice
 from .dialogs import style_surface, modal_window, dialog_body, dialog_footer
 from .catalog_work import CatalogWork
 from .download_service import (
-    UnavailableInstallService, configured_game, detail_actions, search_game_releases,
+    UnavailableInstallService, configured_game, search_game_releases,
     download_manager, parse_size_bytes, format_size, estimate_space_requirements,
     source_cache, source_registry, DownloadRelease
 )
@@ -258,7 +258,7 @@ class CatalogUI:
         return state
 
     def show_collection(self):
-        state=self.collection_shell('library')
+        self.collection_shell('library')
         self.render_collection()
 
     def browse_toolbar_focus(self,action):
@@ -585,11 +585,19 @@ class CatalogUI:
         info.append(label(excerpt,'detail-copy',xalign=0,wrap=True,lines=3,ellipsize=Pango.EllipsizeMode.END))
         credits=' · '.join(dict.fromkeys(filter(None,(game.get('developers'),game.get('publishers')))))
         credit=label(credits,'dim-label',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END);credit.add_css_class('detail-meta');info.append(credit)
+        saved=self.saved_detail();installed=configured_game(game) and bool(game.get('executable') and Path(game['executable']).is_file())
         self.detail_size=button('Checking download availability…',self.show_source_selection_dialog)
         self.detail_size.set_halign(Gtk.Align.START);self.detail_size.set_sensitive(False)
-        info.append(self.detail_size)
+        self.detail_refresh=Gtk.Button(icon_name='view-refresh-symbolic')
+        self.detail_refresh.add_css_class('circular')
+        self.detail_refresh.set_tooltip_text('Refresh source results')
+        self.detail_refresh.update_property([Gtk.AccessibleProperty.LABEL],['Refresh source results'])
+        self.detail_refresh.connect('clicked',lambda *_:self.refresh_detail_sources())
+        self.detail_source_row=box(False,8);self.detail_source_row.append(self.detail_size);self.detail_source_row.append(self.detail_refresh)
+        self.detail_source_row.set_visible(not installed)
+        self.detail_size.set_visible(not installed);self.detail_refresh.set_visible(not installed)
+        info.append(self.detail_source_row)
         actions=box(False,12);panel.append(actions);self.detail_actions_box=actions
-        saved=self.saved_detail();installed=configured_game(game) and bool(game.get('executable') and Path(game['executable']).is_file())
         if installed:
             primary=button('Play',self.detail_action);primary.add_css_class('suggested-action')
             self.play_buttons={game['id']:primary}
@@ -621,31 +629,15 @@ class CatalogUI:
         if download_manager.active_jobs.get(game['id']):
             self.track_download_progress(game['id'])
         game_title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
-        cached_releases=source_cache.get(game_title) if game_title else None
-        self.detail_releases=[];self.detail_release=False;self.detail_install_pending=False
+        cached_releases=source_cache.get(game_title) if game_title and not installed else None
+        self.detail_releases=[];self.detail_all_releases=[];self.detail_release=False;self.detail_install_pending=False
         if isinstance(cached_releases,list):
             self.set_detail_releases(cached_releases)
         elif cached_releases is False:
             self.set_detail_releases([])
-        else:
-            self.detail_size.set_label('Checking download availability…')
-            self.detail_size.set_sensitive(False)
-            if game_title and not installed:
-                base_url=getattr(getattr(self.catalog,'provider',None),'base','https://umu-tron-api.vercel.app')
-                def check_releases():return search_game_releases(base_url,game_title)
-                def releases_loaded(releases):
-                    self.set_detail_releases(releases)
-                    if getattr(self,'detail_install_pending',False):
-                        self.detail_install_pending=False
-                        if releases:self.install_detail()
-                        else:self.prompt_no_release(game_title)
-                def releases_failed(error):
-                    self.set_detail_releases([])
-                    if getattr(self,'detail_install_pending',False):
-                        self.detail_install_pending=False
-                        self.notify(f'Could not reach download source API: {error}')
-                self.catalog_job(check_releases,releases_loaded,releases_failed,source=True)
-            if installed or not game_title:self.set_detail_releases([])
+        elif not installed:
+            if game_title:self.load_detail_sources()
+            else:self.set_detail_releases([])
         self.detail_related=None
         related=related_members(self.library,item) if item and not saved else []
         if related:
@@ -827,14 +819,58 @@ class CatalogUI:
         if self.tv_mode and not self.set_tv_mode(False):return
         self.open_manage()
 
+    def load_detail_sources(self, force_refresh=False):
+        if self.route!='detail' or not self.game or not self.detail_source_row.get_visible():return
+        title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
+        if not title:return
+        game_id=self.game['id'];generation=self.catalog_generation
+        self.detail_refresh.set_sensitive(False)
+        if force_refresh and not self.detail_releases:
+            self.detail_size.set_label('Refreshing download sources…')
+            self.detail_size.set_sensitive(False)
+        base_url=getattr(getattr(self.catalog,'provider',None),'base','https://umu-tron-api.vercel.app')
+        def current_detail():
+            return (self.route=='detail' and self.game and self.game['id']==game_id
+                    and self.catalog_generation==generation)
+        def releases_loaded(releases):
+            if not current_detail():return
+            self.set_detail_releases(releases)
+            self.detail_refresh.set_sensitive(True)
+            if getattr(self,'detail_install_pending',False):
+                self.detail_install_pending=False
+                if self.detail_releases:self.install_detail()
+                else:self.prompt_no_release(title)
+        def releases_failed(error):
+            if not current_detail():return
+            self.detail_refresh.set_sensitive(True)
+            if not self.detail_all_releases:
+                self.detail_releases=[];self.detail_release=False
+                self.detail_size.set_label('Source lookup failed')
+                self.detail_size.set_tooltip_text('Use Refresh source results to retry')
+                self.detail_size.set_sensitive(False)
+            if force_refresh:self.notify(f'Could not refresh source results: {error}')
+            if getattr(self,'detail_install_pending',False):
+                self.detail_install_pending=False
+                self.notify(f'Could not reach download source API: {error}')
+        self.catalog_job(lambda:search_game_releases(base_url,title,force_refresh=force_refresh),
+                         releases_loaded,releases_failed,source=True)
+
+    def refresh_detail_sources(self):
+        if self.detail_refresh.get_sensitive():
+            self.load_detail_sources(force_refresh=True)
+
     def set_detail_releases(self,releases):
-        self.detail_releases=list(releases or [])
-        self.detail_release=self.detail_releases[0] if self.detail_releases else False
+        self.detail_all_releases=list(releases or [])
+        enabled={provider.id for provider in source_registry.providers(only_enabled=True)}
+        self.detail_releases=[release for release in self.detail_all_releases
+                              if release.provider_id in enabled]
+        if self.detail_release not in self.detail_releases:
+            self.detail_release=self.detail_releases[0] if self.detail_releases else False
         if not self.detail_releases:
-            self.detail_size.set_label('Installation size · Unknown')
+            self.detail_size.set_label('No matching releases from enabled sources')
             self.detail_size.set_sensitive(False)
             return
-        self.set_detail_release(self.detail_releases[0])
+        self.set_detail_release(self.detail_release)
 
     def set_detail_release(self,release):
         self.detail_release=release
@@ -846,38 +882,52 @@ class CatalogUI:
         self.detail_size.set_sensitive(True)
 
     def show_source_selection_dialog(self):
-        releases=getattr(self,'detail_releases',[])
+        self.set_detail_releases(self.detail_all_releases)
+        releases=self.detail_releases
         if not releases:return
         game_id=self.game['id']
         generation=self.catalog_generation
         dialog=modal_window(self,'Select Download Source',width=680,height=560,
                             subtitle='Choose a release source and edition.')
         content=dialog_body(dialog)
-        group=Adw.PreferencesGroup(title='Available releases',
-                                   description='Source-reported download sizes; installed size may differ.')
-        content.append(group)
+        description=Gtk.Label(label='Source-reported download sizes; installed size may differ.',xalign=0,wrap=True)
+        description.add_css_class('dim-label');content.append(description)
+        sources={}
+        for release in releases:
+            sources.setdefault(release.provider_id,[]).append(release)
+        notebook=Gtk.Notebook()
+        notebook.set_scrollable(True);notebook.set_hexpand(True);notebook.set_vexpand(True)
+        notebook.update_property([Gtk.AccessibleProperty.LABEL],['Download sources'])
         selected=[self.detail_release if self.detail_release in releases else releases[0]]
         radio_group=None
-        for release in releases:
-            provider=release.get('provider_name') or 'Download'
-            size=(release.get('file_size') or 'Unknown size').strip()
-            strategy=release.get('install_strategy','installer')
-            method='Pre-installed files' if strategy=='portable' else 'Installer'
-            release_title=release.get('title') or self.game.get('title','Game')
-            row=Adw.ActionRow(title=f'{provider} · {release_title}',
-                              subtitle=f'Download size: {size} · {method}')
-            row.set_use_markup(False);row.set_subtitle_lines(2)
-            check=Gtk.CheckButton(valign=Gtk.Align.CENTER)
-            if radio_group is None:radio_group=check
-            else:check.set_group(radio_group)
-            check.set_active(release is selected[0])
-            check.connect('toggled',lambda control,r=release: selected.__setitem__(0,r) if control.get_active() else None)
-            row.add_suffix(check);row.set_activatable_widget(check);group.add(row)
+        for provider_id,source_releases in sources.items():
+            provider=source_releases[0].get('provider_name') or provider_id
+            group=Adw.PreferencesGroup()
+            for release in source_releases:
+                size=(release.get('file_size') or 'Unknown size').strip()
+                strategy=release.get('install_strategy','installer')
+                method='Pre-installed files' if strategy=='portable' else 'Installer'
+                release_title=release.get('title') or self.game.get('title','Game')
+                row=Adw.ActionRow(title=release_title,subtitle=f'Download size: {size} · {method}')
+                row.set_use_markup(False);row.set_subtitle_lines(2)
+                check=Gtk.CheckButton(valign=Gtk.Align.CENTER)
+                if radio_group is None:radio_group=check
+                else:check.set_group(radio_group)
+                check.set_active(release is selected[0])
+                check.connect('toggled',lambda control,r=release: selected.__setitem__(0,r) if control.get_active() else None)
+                row.add_suffix(check);row.set_activatable_widget(check);group.add(row)
+            page=Gtk.ScrolledWindow(vexpand=True,hscrollbar_policy=Gtk.PolicyType.NEVER)
+            page.set_child(group)
+            tab=Gtk.Label(label=provider)
+            tab.set_tooltip_text(f'{len(source_releases)} matching releases from {provider}')
+            notebook.append_page(page,tab)
+        content.append(notebook)
         footer=dialog_footer();content.append(footer)
         _,button_fn,_,_,_=ui()
         footer.append(button_fn('Cancel',dialog.close))
         def use_source():
-            if self.route=='detail' and self.game and self.game['id']==game_id and self.catalog_generation==generation:
+            if (self.route=='detail' and self.game and self.game['id']==game_id
+                    and self.catalog_generation==generation and source_registry.is_enabled(selected[0].provider_id)):
                 self.set_detail_release(selected[0])
             dialog.close()
         use=button_fn('Use Source',use_source,'suggested-action');footer.append(use)

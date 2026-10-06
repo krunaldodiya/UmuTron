@@ -13,7 +13,7 @@ class SourcesPage(Adw.PreferencesPage):
     def build_ui(self):
         group = Adw.PreferencesGroup(
             title='Download Providers',
-            description='Enable or disable download sources used for discovering, downloading, and installing games.'
+            description='Enable or disable sources shown in the detail-page picker. Discovery still checks every source.'
         )
         self.add(group)
 

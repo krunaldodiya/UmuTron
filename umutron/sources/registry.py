@@ -1,4 +1,4 @@
-"""Provider registration and enabled-source search orchestration."""
+"""Provider registration and all-source discovery orchestration."""
 from .providers import default_providers
 
 
@@ -34,7 +34,7 @@ class SourceProviderRegistry:
     def search_all(self, base_url, title, api_key=None, transport=None):
         releases = []
         seen = set()
-        for provider in self.providers(only_enabled=True):
+        for provider in self.providers():
             try:
                 for release in provider.search(base_url, title, api_key=api_key, transport=transport):
                     identity = (release.provider_id, release.title, release.magnet)

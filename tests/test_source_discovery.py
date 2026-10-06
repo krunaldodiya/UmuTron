@@ -27,7 +27,7 @@ def release(provider_id, name):
 
 
 class SourceDiscoveryTests(unittest.TestCase):
-    def test_registry_aggregates_releases_from_enabled_providers_in_priority_order(self):
+    def test_registry_searches_all_providers_regardless_of_enabled_state(self):
         first = FakeProvider('first', 10, [release('first', 'Edition A')])
         second = FakeProvider('second', 20, [release('second', 'Edition B')])
         third = FakeProvider('third', 30, [release('third', 'Edition C')])
@@ -38,8 +38,8 @@ class SourceDiscoveryTests(unittest.TestCase):
 
         registry.set_enabled('second', False)
         found = registry.search_all('https://api.example', 'Game')
-        self.assertEqual([item.provider_id for item in found], ['first', 'third'])
-        self.assertEqual(second.calls, 1)
+        self.assertEqual([item.provider_id for item in found], ['first', 'second', 'third'])
+        self.assertEqual([first.calls, second.calls, third.calls], [2, 2, 2])
 
     def test_persisted_disabled_source_set_replaces_registry_state(self):
         first = FakeProvider('first', 10, [])
@@ -64,7 +64,7 @@ class SourceDiscoveryTests(unittest.TestCase):
         self.assertEqual(provider.get_install_strategy(candidates[1]), 'portable')
         self.assertEqual(provider.get_install_strategy(candidates[0]), 'installer')
 
-    def test_search_cache_is_scoped_to_enabled_provider_set(self):
+    def test_search_cache_covers_all_sources_independent_of_enabled_state(self):
         first = FakeProvider('first', 10, [release('first', 'First release')])
         second = FakeProvider('second', 20, [release('second', 'Second release')])
         registry = SourceProviderRegistry((first, second))
@@ -77,10 +77,27 @@ class SourceDiscoveryTests(unittest.TestCase):
                 self.assertEqual([first.calls, second.calls], [1, 1])
 
                 registry.set_enabled('second', False)
-                enabled_results = search_game_releases('https://api.example', 'Game')
-                self.assertEqual([item.provider_id for item in enabled_results], ['first'])
+                repeated_results = search_game_releases('https://api.example', 'Game')
+                self.assertEqual([item.provider_id for item in repeated_results], ['first', 'second'])
+                self.assertEqual([first.calls, second.calls], [1, 1])
+
+    def test_force_refresh_bypasses_cache_and_replaces_full_source_results(self):
+        first = FakeProvider('first', 10, [release('first', 'Old release')])
+        second = FakeProvider('second', 20, [])
+        registry = SourceProviderRegistry((first, second))
+        with tempfile.TemporaryDirectory() as temp:
+            cache = DownloadSourceCache(Path(temp) / 'releases.json')
+            with patch('umutron.sources.cache.source_registry', registry), \
+                    patch('umutron.sources.cache.source_cache', cache):
+                self.assertEqual(search_game_releases('https://api.example', 'Game')[0].title,
+                                 'Old release')
+                first.releases = [release('first', 'Refreshed release')]
+                self.assertEqual(search_game_releases(
+                    'https://api.example', 'Game', force_refresh=True)[0].title,
+                    'Refreshed release')
                 self.assertEqual(first.calls, 2)
-                self.assertEqual(second.calls, 1)
+                self.assertEqual(search_game_releases('https://api.example', 'Game')[0].title,
+                                 'Refreshed release')
 
     def test_legacy_single_release_cache_round_trips(self):
         with tempfile.TemporaryDirectory() as temp:
