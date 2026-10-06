@@ -980,10 +980,118 @@ class CatalogUI:
         if self.tv_mode:self.restrict_tv_focus(content)
         notebook.grab_focus()
 
+    def find_existing_downloaded_installer(self, title):
+        game_id = self.game.get('id') if self.game else None
+        drives = []
+        if hasattr(self, 'storage_service') and self.storage_service:
+            try:
+                state = self.storage_service.snapshot()
+                for r in state.get('registrations', []):
+                    if 'install' in r.get('roles', []):
+                        drives.append(r.get('path'))
+            except Exception:
+                pass
+
+        # 1. Check persistent library mapping
+        installers_map = getattr(self.library, 'data', {}).get('downloaded_installers', {})
+        if game_id and game_id in installers_map:
+            entry = installers_map[game_id]
+            d_dir = Path(entry.get('download_dir', ''))
+            if d_dir.is_dir():
+                payload = download_manager.inspect_payload(d_dir)
+                if payload.kind in (PayloadKind.INSTALLER_LOOSE, PayloadKind.PORTABLE_LOOSE, PayloadKind.ARCHIVE):
+                    return entry
+            else:
+                installers_map.pop(game_id, None)
+
+        # 2. Check candidate directories across all install drives
+        sanitized = re.sub(r'[^\w\s-]', '', title).strip() or 'Game'
+        clean_title = re.sub(r'[^a-z0-9]', '', title.lower())
+
+        for drive in drives:
+            drive_path = Path(drive)
+            dest_dir = str(drive_path / sanitized)
+
+            # Known candidate folder locations
+            candidates = [
+                drive_path / '.umutron-downloads' / sanitized,
+                drive_path / '.umutron-downloads' / (game_id or 'none'),
+                drive_path / f'{sanitized} - Installer',
+            ]
+            for cand in candidates:
+                if cand.is_dir():
+                    payload = download_manager.inspect_payload(cand)
+                    if payload.kind in (PayloadKind.INSTALLER_LOOSE, PayloadKind.PORTABLE_LOOSE, PayloadKind.ARCHIVE):
+                        entry = {
+                            'title': title,
+                            'download_dir': str(cand),
+                            'dest_dir': dest_dir,
+                            'strategy': 'installer',
+                            'prov_name': 'Download',
+                        }
+                        if game_id:
+                            self.library.data.setdefault('downloaded_installers', {})[game_id] = entry
+                            try: self.library._write()
+                            except Exception: pass
+                        return entry
+
+            # Scan any subdirectory in .umutron-downloads/ matching the title
+            parent_downloads = drive_path / '.umutron-downloads'
+            if parent_downloads.is_dir():
+                for sub in parent_downloads.iterdir():
+                    if not sub.is_dir():
+                        continue
+                    sub_clean = re.sub(r'[^a-z0-9]', '', sub.name.lower())
+                    match = clean_title and (clean_title in sub_clean or sub_clean in clean_title)
+                    if not match:
+                        for nested in sub.iterdir():
+                            if nested.is_dir():
+                                nested_clean = re.sub(r'[^a-z0-9]', '', nested.name.lower())
+                                if clean_title and (clean_title in nested_clean or nested_clean in clean_title):
+                                    match = True
+                                    break
+                    if match:
+                        payload = download_manager.inspect_payload(sub)
+                        if payload.kind in (PayloadKind.INSTALLER_LOOSE, PayloadKind.PORTABLE_LOOSE, PayloadKind.ARCHIVE):
+                            entry = {
+                                'title': title,
+                                'download_dir': str(sub),
+                                'dest_dir': dest_dir,
+                                'strategy': 'installer',
+                                'prov_name': 'Download',
+                            }
+                            if game_id:
+                                self.library.data.setdefault('downloaded_installers', {})[game_id] = entry
+                                try: self.library._write()
+                                except Exception: pass
+                            return entry
+
+        return None
+
     def install_detail(self):
         if getattr(self,'detail_availability_checking',False):return
         if getattr(self,'detail_no_installer_found',False):
             self.setup_detail()
+            return
+
+        title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
+        # Bypass picker completely if a downloaded installer already exists on disk
+        existing = self.find_existing_downloaded_installer(title)
+        if existing:
+            if not self.saved_detail():
+                item = deepcopy(self.detail_item) if self.detail_item else None
+                if item:
+                    draft = item_game(item, preview=False)
+                    self.game = deepcopy(draft); self.original = deepcopy(draft)
+            self.notify(f'Using downloaded installer for {title}. Starting installation…')
+            self.on_release_download_complete(
+                self.game['id'],
+                existing['download_dir'],
+                existing['dest_dir'],
+                existing.get('inst_str', ''),
+                existing.get('prov_name', 'Download'),
+                existing.get('strategy', 'installer'),
+            )
             return
         drives=[]
         if hasattr(self,'storage_service') and self.storage_service:
@@ -1167,6 +1275,16 @@ class CatalogUI:
         except Exception as error:
             self.error(error);return
         self.track_download_progress(game_id,download_dir,dest_dir,inst_str,prov_name,strategy)
+        self.library.data.setdefault('downloaded_installers', {})[game_id] = {
+            'title': title,
+            'download_dir': str(download_dir),
+            'dest_dir': str(dest_dir),
+            'strategy': strategy,
+            'prov_name': prov_name,
+            'inst_str': inst_str,
+        }
+        try: self.library._write()
+        except Exception: pass
     def track_download_progress(self,game_id,download_dir=None,dest_dir=None,inst_str=None,prov_name='Download',strategy='installer'):
         if hasattr(self,'detail_download_box'):
             self.detail_download_box.set_visible(True)
@@ -1225,12 +1343,23 @@ class CatalogUI:
             self.notify('Download cancelled and files cleaned up.')
         self.confirm('Cancel Download?','This will stop the download and remove any partial download files.','Cancel Download',do_cancel,destructive=True)
 
-    def on_release_download_complete(self,game_id,download_dir,dest_dir,inst_str,prov_name='Download',strategy='installer'):
-        title=self.game.get('title','Game')
+    def on_release_download_complete(self, game_id, download_dir, dest_dir, inst_str, prov_name='Download', strategy='installer'):
+        title = self.game.get('title', 'Game')
+        if hasattr(self, 'detail_download_box'):
+            self.detail_download_box.set_visible(True)
+        if hasattr(self, 'detail_primary'):
+            self.detail_primary.set_label('Installing...')
+            self.detail_primary.set_sensitive(False)
+        if hasattr(self, 'detail_progress_bar'):
+            self.detail_progress_bar.set_fraction(0.0)
+        if hasattr(self, 'detail_progress_label'):
+            self.detail_progress_label.set_text(f'Preparing {prov_name} installation…')
+
         payload = download_manager.inspect_payload(download_dir)
         if strategy == 'portable' or payload.kind == PayloadKind.PORTABLE_LOOSE:
             self.on_portable_release_complete(game_id, download_dir, dest_dir, prov_name)
             return
+
         # Single container archive / disc image (Combinations 3 & 4)
         if payload.kind == PayloadKind.ARCHIVE and payload.container:
             container = payload.container
@@ -1303,25 +1432,17 @@ class CatalogUI:
                     except Exception as error:
                         self.error(error); return
 
-        if hasattr(self,'detail_primary'):
-            self.detail_primary.set_label('Installing...')
-            self.detail_primary.set_sensitive(False)
-        if hasattr(self,'detail_progress_bar'):
-            self.detail_progress_bar.set_fraction(1.0)
-        if hasattr(self,'detail_progress_label'):
-            self.detail_progress_label.set_text(f'Download complete. Running {prov_name} background installer…')
-
         setup_exe = payload.installer_exe or download_manager.find_setup_exe(download_dir)
         if not setup_exe:
             self.detail_no_installer_found = True
             self.notify(f'Downloaded {title}, but no setup.exe was found. Use Add an installed game to choose files or an installer manually.')
-            if hasattr(self,'detail_primary'):
+            if hasattr(self, 'detail_primary'):
                 self.detail_primary.set_label('Add an installed game')
                 self.detail_primary.set_tooltip_text('Choose the downloaded files or a local installer manually')
                 self.refresh_launch_state()
             return
 
-        # Tier 1: Try native innoextract if available
+        # Tier 1: Try native innoextract if available and no companion archives exist
         if payload.installer_type == InstallerType.INNO and download_manager.run_innoextract(setup_exe, dest_dir, title):
             found_exe = download_manager.detect_main_executable(dest_dir, title)
             if found_exe:
@@ -1367,6 +1488,21 @@ class CatalogUI:
             self.error(error)
 
     def monitor_silent_installation(self, game_id, dest_dir, title, crack_dir=None, expected_bytes=0):
+        if hasattr(self, 'detail_download_box'):
+            self.detail_download_box.set_visible(True)
+        if hasattr(self, 'detail_progress_bar'):
+            self.detail_progress_bar.set_fraction(0.0)
+        if hasattr(self, 'detail_progress_label'):
+            self.detail_progress_label.set_text(f'Starting background installer for {title}…')
+
+        if not hasattr(self, 'detail_cancel_btn') or not self.detail_cancel_btn.get_parent():
+            _, button_fn, _, _, _ = ui()
+            self.detail_cancel_btn = button_fn('Cancel Installation', lambda: self.cancel_silent_installation(game_id), 'destructive-action')
+            if hasattr(self, 'detail_actions_box'):
+                self.detail_actions_box.append(self.detail_cancel_btn)
+        else:
+            self.detail_cancel_btn.set_label('Cancel Installation')
+
         start_time = time.time()
         prev_bytes = [0]
         prev_time = [start_time]
@@ -1405,12 +1541,12 @@ class CatalogUI:
                 speed_str = f"{format_size(speed)}/s" if speed > 0 else "unpacking..."
                 if expected_bytes > 0:
                     pct = min(current_bytes / expected_bytes, 0.99)
-                    self.detail_progress_bar.set_fraction(pct)
+                    self.detail_progress_bar.set_fraction(max(pct, 0.02))
                     pct_str = f"{int(pct * 100)}%"
-                    label_text = f"Installing {title}… {pct_str} • {format_size(current_bytes)} / {format_size(expected_bytes)} ({speed_str}) • {file_count} files"
+                    label_text = f"Installing {title}… {pct_str} · {format_size(current_bytes)} / {format_size(expected_bytes)} · {speed_str} ({file_count} files)"
                 else:
                     self.detail_progress_bar.pulse()
-                    label_text = f"Installing {title}… {format_size(current_bytes)} ({speed_str}) • {file_count} files"
+                    label_text = f"Installing {title}… {format_size(current_bytes)} · {speed_str} ({file_count} files)"
                 self.detail_progress_label.set_text(label_text)
 
             if state == 'Finished' and status.get('code') == 0:
@@ -1437,7 +1573,19 @@ class CatalogUI:
                 self.refresh_launch_state()
                 return False
             return True
+
         GLib.timeout_add(1000, check_status)
+
+    def cancel_silent_installation(self, game_id):
+        def do_cancel():
+            self.launcher.stop(game_id)
+            if hasattr(self, 'detail_download_box'):
+                self.detail_download_box.set_visible(False)
+            if hasattr(self, 'detail_cancel_btn') and self.detail_cancel_btn.get_parent():
+                self.detail_cancel_btn.get_parent().remove(self.detail_cancel_btn)
+            self.refresh_launch_state()
+            self.notify('Installation cancelled. Downloaded installer files were preserved.')
+        self.confirm('Cancel Installation?', 'This will stop the installer process. Downloaded installer files will be kept.', 'Cancel Installation', do_cancel, destructive=True)
     def on_portable_release_complete(self,game_id,download_dir,dest_dir,prov_name):
         title=self.game.get('title','Game')
         staged_folder = download_manager.stage_portable(download_dir, dest_dir)
@@ -1482,6 +1630,9 @@ class CatalogUI:
             current=next((g for g in self.library.games() if g['id']==game['id']),None)
             if current!=game:raise ValueError('Game setup changed. Review removal again.')
             self.library.delete(game['id']);self.return_from_detail();self.notify('Removed from library. Game files, saves and prefixes were kept.')
+            self.library.data.setdefault('downloaded_installers', {}).pop(game['id'], None)
+            try: self.library._write()
+            except Exception: pass
         def confirmed():
             try:remove()
             except Exception as error:self.error(error)
@@ -1509,6 +1660,9 @@ class CatalogUI:
             def run_delete():
                 remove_game_directory(detected_root)
                 self.library.delete(game['id'])
+                self.library.data.setdefault('downloaded_installers', {}).pop(game['id'], None)
+                try: self.library._write()
+                except Exception: pass
             def complete(_):
                 self.return_from_detail()
                 self.notify(f'{game["title"]} uninstalled and files removed.')
