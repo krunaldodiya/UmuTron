@@ -12,16 +12,23 @@ source=Path(__file__).resolve().parents[1]
 target=Path.home()/'.local/opt/umutron'
 legacy_target=Path.home()/'.local/opt/game-library-launcher'
 source_pkg=source/'umutron' if (source/'umutron').is_dir() else source/'game_library'
-for item in source_pkg.glob('*.py'):
-    atomic_write(target/'umutron'/item.name,item.read_bytes())
-    atomic_write(target/'game_library'/item.name,item.read_bytes())
+
+def install_package(destination):
+    for item in source_pkg.iterdir():
+        if item.is_file() and item.suffix == '.py':
+            atomic_write(destination/item.name,item.read_bytes())
+        elif item.is_dir() and item.name != '__pycache__':
+            shutil.copytree(item,destination/item.name,dirs_exist_ok=True,
+                            ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+
+install_package(target/'umutron')
+install_package(target/'game_library')
 atomic_write(target/'run.py',(source/'run.py').read_bytes())
 if not legacy_target.exists():
     try: legacy_target.symlink_to('umutron', target_is_directory=True)
     except OSError: pass
 if legacy_target.is_dir() and not legacy_target.is_symlink():
-    for item in source_pkg.glob('*.py'):
-        atomic_write(legacy_target/'game_library'/item.name,item.read_bytes())
+    install_package(legacy_target/'game_library')
     atomic_write(legacy_target/'run.py',(source/'run.py').read_bytes())
 icon=Path.home()/'.local/share/icons/hicolor/scalable/apps/game-library-launcher.svg'
 atomic_write(icon,(source/'assets/umutron.svg').read_bytes())
