@@ -1,5 +1,20 @@
 """Release data shared by the source-provider adapters."""
 import re
+from urllib.parse import urlsplit
+
+
+def source_link_kind(uri):
+    """Label an API-provided link for display/copy; never fetch it here."""
+    if not isinstance(uri, str) or not uri or len(uri) > 1024 or any(ord(ch) <= 32 or ord(ch) == 127 for ch in uri):
+        return None
+    if uri.startswith('magnet:'):
+        return 'Magnet'
+    try:
+        if urlsplit(uri).path.lower().endswith('.torrent'):
+            return 'Torrent file'
+    except ValueError:
+        pass
+    return 'Link'
 
 
 def parse_size_bytes(size_str):

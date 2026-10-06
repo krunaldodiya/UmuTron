@@ -13,8 +13,8 @@ from .sources import (
 from .sources.model import parse_size_bytes
 from .payload_pipeline import (
     InstallerType, PayloadInfo, PayloadKind, classify_payload,
-    extract_archive, get_silent_installer_arguments, rank_game_executables,
-    run_native_innoextract, stage_portable_game,
+    extract_archive, get_silent_installer_arguments, is_pe_executable,
+    rank_game_executables, run_native_innoextract, stage_portable_game,
 )
 
 
@@ -250,6 +250,7 @@ class TorrentDownloadManager:
         speed_text = f"{format_size(speed)}/s" if total > 0 else f"Connecting ({connections} peers)..."
         eta = ((total - completed) // speed) if speed > 0 and total > completed else 0
         eta_str = f"{eta // 60}m {eta % 60}s" if eta >= 60 else f"{eta}s" if eta > 0 else ""
+        files = [f.get('path') for f in data.get('files', []) if isinstance(f.get('path'), str) and f.get('path')]
         job.update({
             'status': status,
             'completed_bytes': completed,
@@ -258,7 +259,7 @@ class TorrentDownloadManager:
             'speed_bps': speed,
             'speed_text': speed_text,
             'eta_text': eta_str,
-            'files': [f.get('path') for f in data.get('files', []) if f.get('path')]
+            'files': files,
         })
         return job
 
@@ -307,9 +308,9 @@ class TorrentDownloadManager:
     def inspect_payload(self, download_dir):
         return classify_payload(Path(download_dir))
 
-    def detect_main_executable(self, folder, title=''):
+    def detect_main_executable(self, folder, title='', verified=False):
         ranked = rank_game_executables(Path(folder), title)
-        return ranked[0] if ranked else None
+        return next((exe for exe in ranked if not verified or (not exe.is_symlink() and is_pe_executable(exe))), None)
 
     def stage_portable(self, source_dir, target_dir):
         return stage_portable_game(Path(source_dir), Path(target_dir))

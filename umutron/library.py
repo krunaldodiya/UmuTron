@@ -234,7 +234,9 @@ class Library:
 
     def export_zip(self, destination):
         manifest=deepcopy(self.data)
-        manifest['settings']={'theme':self.data['settings'].get('theme','system'),'default_proton':self.data['settings'].get('default_proton','UMU-Latest'),'default_display_mode':self.data['settings'].get('default_display_mode','desktop')}
+        manifest['settings']={'theme':self.data['settings'].get('theme','system'),
+                              'default_proton':self.data['settings'].get('default_proton','UMU-Latest'),
+                              'default_display_mode':self.data['settings'].get('default_display_mode','desktop')}
         for game in manifest['games']: game['sync']=None
         fd,temp=tempfile.mkstemp(suffix='.zip',dir=Path(destination).parent); os.close(fd)
         try:

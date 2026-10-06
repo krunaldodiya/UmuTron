@@ -2,9 +2,9 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
-from umutron.sources.cache import DownloadSourceCache, search_game_releases
+from umutron.sources.cache import DownloadSourceCache, _releases_from_response, search_game_releases
 from umutron.sources.model import DownloadRelease
 from umutron.sources.registry import DownloadSource, SourceProviderRegistry
 from umutron.download_service import download_manager
@@ -29,8 +29,32 @@ def release(source_id, name, identity=None):
         'title': name,
         'file_size': '10 GB',
         'upload_date': '2026-01-01',
-        'uris': [f'magnet:?xt=urn:btih:{source_id}-{name}'],
+        'uris': [f'magnet:?xt=urn:btih:{source_id}-{quote(name)}'],
     }
+
+
+class PublicLinkFilterTests(unittest.TestCase):
+    def test_public_releases_keep_each_provided_link_and_direct_only_editions(self):
+        mixed = release('source-a', 'Game')
+        mixed['uris'] = [
+            'https://example.com/Game.torrent',
+            'https://example.com/Game.zip',
+            'magnet:?xt=urn:btih:game',
+            'https://example.com/secret.zip?token=hidden',
+            'https://127.0.0.1/internal.exe',
+        ]
+        direct_only = release('source-a', 'Direct')
+        direct_only['uris'] = ['https://example.com/Direct.torrent']
+        results, has_more = _releases_from_response(
+            {'data': [mixed, direct_only], 'has_more': False},
+            {'source-a': 'Source A'},
+        )
+        self.assertFalse(has_more)
+        self.assertEqual([entry.title for entry in results], ['Game', 'Direct'])
+        self.assertEqual(results[0].uris, mixed['uris'])
+        self.assertEqual(results[0].magnet, 'magnet:?xt=urn:btih:game')
+        self.assertEqual(results[1].uris, direct_only['uris'])
+        self.assertEqual(results[1].magnet, '')
 
 
 class SourceDiscoveryTests(unittest.TestCase):
@@ -251,7 +275,7 @@ class SourceDiscoveryTests(unittest.TestCase):
         for title in valid_titles:
             self.assertFalse(is_multipart_title(title), f'Expected valid title: {title}')
 
-    def test_search_game_releases_filters_out_multipart_entries(self):
+    def test_search_game_releases_preserves_multipart_entries_for_picker(self):
         registry = SourceProviderRegistry()
         items = [
             {
@@ -298,8 +322,8 @@ class SourceDiscoveryTests(unittest.TestCase):
                     transport=transport,
                     force_refresh=True,
                 )
-        self.assertEqual(len(results), 1)
-        self.assertEqual(results[0].title, 'Complete Adventure')
+        self.assertEqual([result.title for result in results],
+                         ['Complete Adventure', 'Complete Adventure [Part 1 of 3]', 'Adventure Chunk'])
         self.assertEqual(results[0].magnet, 'magnet:?xt=urn:btih:complete-adventure')
 
 if __name__ == '__main__':

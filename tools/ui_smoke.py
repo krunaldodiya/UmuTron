@@ -98,9 +98,12 @@ with tempfile.TemporaryDirectory() as temp:
         DownloadSource('source-e','Source E')])
     library.data.setdefault('settings',{})['disabled_sources']=['source-c']
     source_registry.apply_disabled_sources(['source-c'])
-    source_a=DownloadRelease('source-a','Source A','Game installer','42 GB','magnet:?xt=urn:btih:fixture-a')
+    source_a=DownloadRelease('source-a','Source A','Game installer','42 GB','magnet:?xt=urn:btih:fixture-a',
+                             uris=['magnet:?xt=urn:btih:fixture-a','https://example.test/game.torrent','https://example.test/game.zip'])
     source_b=DownloadRelease('source-b','Source B','Game edition','68 GB','magnet:?xt=urn:btih:fixture-b')
     source_c=DownloadRelease('source-c','Source C','Game repack','55 GB','magnet:?xt=urn:btih:fixture-c')
+    source_d=DownloadRelease('source-d','Source D','Direct edition','24 GB','',
+                             uris=['https://example.test/direct.zip'])
     availability_started=Event();availability_continue=Event()
     def blocked_lookup(*_args,**_kwargs):
         availability_started.set()
@@ -128,8 +131,8 @@ with tempfile.TemporaryDirectory() as temp:
     assert w.detail_primary.get_sensitive()
     assert 'lookup failed' in (w.detail_primary.get_tooltip_text() or '').lower()
     source_lookup_mock.side_effect=None
-    source_lookup_mock.return_value=[source_a,source_b,source_c]
-    w.set_detail_releases([source_a,source_b,source_c])
+    source_lookup_mock.return_value=[source_a,source_b,source_c,source_d]
+    w.set_detail_releases([source_a,source_b,source_c,source_d])
     assert w.detail_size.get_label()=='Source A · Download: 42 GB  ▾'
     assert w.detail_refresh.get_tooltip_text()=='Refresh source results'
     refresh_calls=source_lookup_mock.call_count
@@ -138,8 +141,8 @@ with tempfile.TemporaryDirectory() as temp:
     pump_until(lambda:source_lookup_mock.call_count>refresh_calls)
     pump_until(lambda:w.detail_refresh.get_sensitive())
     assert source_lookup_mock.call_args.kwargs.get('force_refresh') is True
-    assert [release.provider_id for release in w.detail_all_releases]==['source-a','source-b','source-c']
-    assert [release.provider_id for release in w.detail_releases]==['source-a','source-b']
+    assert [release.provider_id for release in w.detail_all_releases]==['source-a','source-b','source-c','source-d']
+    assert [release.provider_id for release in w.detail_releases]==['source-a','source-b','source-d']
     screenshot('detail-source-button-dark.png')
     w.detail_size.emit('clicked')
     source_dialog=next(window for window in Gtk.Window.get_toplevels()
@@ -149,18 +152,26 @@ with tempfile.TemporaryDirectory() as temp:
     notebook=notebooks[0]
     tabs=[notebook.get_tab_label_text(notebook.get_nth_page(index))
           for index in range(notebook.get_n_pages())]
-    assert tabs==['Source A','Source B']
+    assert tabs==['Source A','Source B','Source D']
     page_titles=[[widget.get_title() for widget in widgets(notebook.get_nth_page(index))
                   if isinstance(widget,Adw.ActionRow)] for index in range(notebook.get_n_pages())]
-    assert page_titles==[['Game installer'],['Game edition']]
+    assert page_titles==[['Game installer'],['Game edition'],['Direct edition']]
     checks=[widget for widget in widgets(source_dialog) if isinstance(widget,Gtk.CheckButton)]
-    assert len(checks)==2 and checks[0].get_active() and not checks[1].get_active()
+    assert len(checks)==3 and checks[0].get_active() and not checks[1].get_active()
     assert source_dialog.source_key_controller.emit('key-pressed',Gdk.KEY_Right,0,Gdk.ModifierType(0))
     assert notebook.get_current_page()==1, 'Desktop arrow navigation did not change source tab'
     assert source_dialog.source_key_controller.emit('key-pressed',Gdk.KEY_Left,0,Gdk.ModifierType(0))
     assert notebook.get_current_page()==0
     assert source_dialog.get_focus() is notebook, 'Desktop arrow navigation must retain visible notebook focus'
     screenshot('source-selection-dark.png',source_dialog)
+    click(source_dialog,'Links')
+    link_dialog=next(window for window in Gtk.Window.get_toplevels()
+                     if isinstance(window,Gtk.Window) and window.get_title()=='Download links')
+    links=[widget.get_subtitle() for widget in widgets(link_dialog) if isinstance(widget,Adw.ActionRow)]
+    assert links==source_a.uris
+    assert len([button for button in buttons(link_dialog) if button.get_label()=='Copy'])==3
+    screenshot('source-links-dark.png',link_dialog)
+    link_dialog.close();pump_until(lambda:not link_dialog.get_visible())
     checks[1].set_active(True)
     click(source_dialog,'Use Source')
     pump_until(lambda:not source_dialog.get_visible())
@@ -179,6 +190,15 @@ with tempfile.TemporaryDirectory() as temp:
     groups=[widget for widget in widgets(install_dialog) if isinstance(widget,Adw.PreferencesGroup)]
     assert any(group.get_title()=='Matched Source: Source B' for group in groups)
     install_dialog.close();pump_until(lambda:not install_dialog.get_visible())
+    w.set_detail_release(source_d)
+    w.install_detail()
+    direct_links=next(window for window in Gtk.Window.get_toplevels()
+                      if isinstance(window,Gtk.Window) and window.get_title()=='Download links')
+    assert [widget.get_subtitle() for widget in widgets(direct_links)
+            if isinstance(widget,Adw.ActionRow)]==source_d.uris
+    assert not any(window.get_title()==install_title for window in Gtk.Window.get_toplevels() if window.get_visible())
+    direct_links.close();pump_until(lambda:not direct_links.get_visible())
+    w.set_detail_release(source_b)
     w.storage_service=original_storage
     w.open_manage();assert not w.advanced.get_expanded();w.advanced.set_expanded(True);settle()
     assert w.launch_args.is_ancestor(w.executable_panel) and not w.launch_args.is_ancestor(w.advanced)

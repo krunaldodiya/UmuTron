@@ -16,6 +16,8 @@ from .download_service import (
     download_manager, parse_size_bytes, format_size, estimate_space_requirements,
     source_registry, DownloadRelease, PayloadKind, InstallerType,
 )
+from .sources.base import is_multipart_release
+from .sources.model import source_link_kind
 from .fullscreen import cover as console_cover, set_art, CoverPicture, CoverLayout
 from .library import description_excerpt
 
@@ -922,13 +924,16 @@ class CatalogUI:
             for release in source_releases:
                 size=(release.get('file_size') or 'Unknown size').strip()
                 release_title=release.get('title') or self.game.get('title','Game')
-                row=Adw.ActionRow(title=release_title,subtitle=f'Download size: {size}')
+                row=Adw.ActionRow(title=release_title,subtitle=f'Download size: {size} · {len(release.get("uris") or [])} links')
                 row.set_use_markup(False);row.set_subtitle_lines(2)
                 check=Gtk.CheckButton(valign=Gtk.Align.CENTER)
                 if radio_group is None:radio_group=check
                 else:check.set_group(radio_group)
                 check.set_active(release is selected[0])
                 check.connect('toggled',lambda control,r=release: selected.__setitem__(0,r) if control.get_active() else None)
+                links_button = Gtk.Button(label='Links', valign=Gtk.Align.CENTER)
+                links_button.connect('clicked', lambda _button, r=release: self.show_release_links_dialog(r, dialog))
+                row.add_suffix(links_button)
                 row.add_suffix(check);row.set_activatable_widget(check);group.add(row)
                 page_options.append(check)
             page=Gtk.ScrolledWindow(vexpand=True,hscrollbar_policy=Gtk.PolicyType.NEVER)
@@ -994,6 +999,37 @@ class CatalogUI:
         dialog.present()
         if self.tv_mode:self.restrict_tv_focus(content)
         notebook.grab_focus()
+
+    def show_release_links_dialog(self, release, parent=None):
+        title = release.get('title') or 'Download'
+        links = [(uri, kind) for uri in (release.get('uris') or [])
+                 if (kind := source_link_kind(uri))]
+        dialog = modal_window(parent or self, 'Download links', width=720, height=600, subtitle=title)
+        content = dialog_body(dialog)
+        description = Gtk.Label(
+            label='Copy a link to use it with your own download tool. Only magnet links from complete releases can be installed here.',
+            xalign=0, wrap=True)
+        description.add_css_class('dim-label')
+        content.append(description)
+        group = Adw.PreferencesGroup()
+        for index, (uri, kind) in enumerate(links, 1):
+            row = Adw.ActionRow(title=f'{kind} {index}', subtitle=uri)
+            row.set_use_markup(False)
+            row.set_subtitle_lines(2)
+            copy = Gtk.Button(label='Copy', valign=Gtk.Align.CENTER)
+            copy.connect('clicked', lambda _button, value=uri: Gdk.Display.get_default().get_clipboard().set(value))
+            row.add_suffix(copy)
+            group.add(row)
+        scroll = Gtk.ScrolledWindow(vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER)
+        scroll.set_child(group)
+        content.append(scroll)
+        footer = dialog_footer()
+        content.append(footer)
+        close = Gtk.Button(label='Close')
+        close.connect('clicked', lambda *_: dialog.close())
+        footer.append(close)
+        dialog.present()
+        return dialog
 
     def ensure_saved_game(self):
         """Ensure current game is a valid library entry with a genuine UUID before install/launch."""
@@ -1209,6 +1245,9 @@ class CatalogUI:
         release_size=(release.get('file_size') or 'Unknown size').strip()
         magnet=release.get('magnet','')
         prov_name=release.get('provider_name') or 'Download'
+        if source_link_kind(magnet) != 'Magnet' or is_multipart_release(release_title, release.get('uris') or []):
+            self.show_release_links_dialog(release)
+            return
         drives=[];default_drive=None
         if hasattr(self,'storage_service') and self.storage_service:
             try:
@@ -1231,7 +1270,11 @@ class CatalogUI:
         _,button_fn,_,_,_=ui()
         repack_group=Adw.PreferencesGroup(title=f'Matched Source: {prov_name}')
         repack_row=Adw.ActionRow(title=release_title,subtitle=f'Download size: {release_size}')
-        repack_row.set_use_markup(False);repack_row.set_subtitle_lines(3);repack_group.add(repack_row);content.append(repack_group)
+        repack_row.set_use_markup(False);repack_row.set_subtitle_lines(3)
+        links_button = Gtk.Button(label='View links', valign=Gtk.Align.CENTER)
+        links_button.connect('clicked', lambda *_: self.show_release_links_dialog(release, dialog))
+        repack_row.add_suffix(links_button)
+        repack_group.add(repack_row);content.append(repack_group)
         space_group=Adw.PreferencesGroup(title='Storage Requirement')
         content.append(space_group)
         space_row=Adw.ActionRow(title=f'Total Required Space: ~{req_str}')
@@ -1430,7 +1473,7 @@ class CatalogUI:
             self.detail_progress_label.set_text(f'Preparing {prov_name} installation…')
 
         payload = download_manager.inspect_payload(download_dir)
-        if strategy == 'portable' or payload.kind == PayloadKind.PORTABLE_LOOSE:
+        if payload.kind == PayloadKind.PORTABLE_LOOSE and download_manager.detect_main_executable(download_dir, title, verified=True):
             self.on_portable_release_complete(game_id, download_dir, dest_dir, prov_name)
             return
 
@@ -1672,8 +1715,14 @@ class CatalogUI:
         self.confirm('Cancel Installation?', 'This will stop the installer process. Downloaded installer files will be kept.', 'Cancel Installation', do_cancel, destructive=True)
     def on_portable_release_complete(self,game_id,download_dir,dest_dir,prov_name):
         title=self.game.get('title','Game')
+        if Path(dest_dir).is_dir() and any(Path(dest_dir).iterdir()):
+            self.notify(f'{title} destination already contains files. Choose a separate folder in Setup; existing files were kept.')
+            if hasattr(self, 'detail_primary'):
+                self.detail_primary.set_label('Setup')
+                self.detail_primary.set_sensitive(True)
+            return
         staged_folder = download_manager.stage_portable(download_dir, dest_dir)
-        found_exe = download_manager.detect_main_executable(staged_folder, title)
+        found_exe = download_manager.detect_main_executable(staged_folder, title, verified=True)
 
         if not found_exe:
             self.notify(f'Downloaded {title}, but executable could not be auto-detected. Choose executable in Setup.')

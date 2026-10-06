@@ -4,8 +4,8 @@ import os
 from pathlib import Path
 from urllib.parse import urlencode
 
-from .base import build_search_queries, is_multipart_link, is_multipart_release
-from .model import DownloadRelease
+from .base import build_search_queries
+from .model import DownloadRelease, source_link_kind
 from .registry import source_registry
 from ..providers import api_request
 
@@ -36,7 +36,7 @@ class DownloadSourceCache:
     def _key(title, source_identity, base_url=None):
         identity = json.dumps(list(source_identity), ensure_ascii=True, separators=(',', ':'))
         origin = (base_url or '').strip().rstrip('/').lower()
-        return f"origin:{origin}|{title.strip().lower()}|sources:{identity}"
+        return f"public-links-v2|origin:{origin}|{title.strip().lower()}|sources:{identity}"
 
     def get(self, title, source_identity, base_url=None):
         if not title:
@@ -99,12 +99,8 @@ def _releases_from_response(payload, source_ids, provider_id=None):
         uris = item.get('uris')
         if not isinstance(uris, list):
             continue
-        if is_multipart_release(title, uris):
-            continue
-        magnets = [uri for uri in uris
-                   if isinstance(uri, str) and uri.startswith('magnet:') and len(uri) <= 1024
-                   and not is_multipart_link(uri)][:2]
-        if not magnets:
+        links = [uri for uri in uris if source_link_kind(uri)]
+        if not links:
             continue
         source_name = source_ids[source_id]
         file_size = item.get('file_size')
@@ -116,7 +112,7 @@ def _releases_from_response(payload, source_ids, provider_id=None):
             'title': title.strip()[:240],
             'file_size': file_size[:120] if isinstance(file_size, str) else 'Unknown size',
             'upload_date': upload_date[:80] if isinstance(upload_date, str) else None,
-            'uris': magnets,
+            'uris': links,
         }
         if isinstance(release_id, (str, int)) and not isinstance(release_id, bool):
             raw['id'] = str(release_id)[:160]
@@ -125,8 +121,8 @@ def _releases_from_response(payload, source_ids, provider_id=None):
             provider_name=source_name,
             title=raw['title'],
             file_size=raw['file_size'],
-            magnet=magnets[0],
-            uris=magnets,
+            magnet=next((uri for uri in links if source_link_kind(uri) == 'Magnet'), ''),
+            uris=links,
             upload_date=raw['upload_date'],
             raw=raw,
         ))
@@ -163,7 +159,7 @@ def search_game_releases(base_url, title, transport=None, provider_id=None, forc
                                {'q': query, 'page': page}, transport)
             results, has_more = _releases_from_response(payload, source_ids, provider_id)
             for release in results:
-                identity = (release.provider_id, release.get('id'), release.title, release.magnet)
+                identity = (release.provider_id, release.get('id'), release.title, tuple(release.uris))
                 found.setdefault(identity, release)
             if not has_more:
                 break

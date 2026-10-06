@@ -144,6 +144,78 @@ class PayloadPipelineTests(unittest.TestCase):
             self.assertIn(f'/DIR={to_wine_path(dest_dir)}', silent_args)
 
 
+    def test_download_completion_stages_only_verified_loose_files(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from umutron.catalog_ui import CatalogUI
+
+        with tempfile.TemporaryDirectory() as temp:
+            download = Path(temp) / 'download'
+            download.mkdir()
+            exe = download / 'Game.exe'
+            pe = bytearray(132)
+            pe[:2] = b'MZ'
+            pe[60:64] = (128).to_bytes(4, 'little')
+            pe[128:132] = b'PE\x00\x00'
+            exe.write_bytes(pe)
+            game = {'id': 'game', 'title': 'Game'}
+            saved = Mock()
+            ui = SimpleNamespace(
+                game=game, library=SimpleNamespace(games=lambda: [game], save=saved),
+                detail_item=None, ensure_saved_game=lambda: None,
+                show_shared_detail=lambda *_: None, notify=Mock(),
+                error=lambda error: self.fail(str(error)),
+            )
+            ui.on_portable_release_complete = lambda *args: CatalogUI.on_portable_release_complete(ui, *args)
+            destination = Path(temp) / 'installed'
+            CatalogUI.on_release_download_complete(ui, 'game', str(download), str(destination), '')
+            self.assertEqual(game['executable'], str(destination / 'Game.exe'))
+            saved.assert_called_once_with(game)
+
+            symlink_download = Path(temp) / 'symlink'
+            symlink_download.mkdir()
+            (symlink_download / 'Game.exe').symlink_to(destination / 'Game.exe')
+            ui.detail_no_installer_found = False
+            CatalogUI.on_release_download_complete(ui, 'game', str(symlink_download), str(destination), '')
+            self.assertTrue(ui.detail_no_installer_found)
+            self.assertTrue((destination / 'Game.exe').is_file())
+            saved.assert_called_once_with(game)
+
+    def test_portable_source_label_does_not_stage_installer_payload(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock, patch
+        from umutron.catalog_ui import CatalogUI
+        from umutron.library import Library
+
+        with tempfile.TemporaryDirectory() as temp:
+            download = Path(temp) / 'download'
+            download.mkdir()
+            setup = download / 'setup.exe'
+            setup.write_bytes(b'MZ' + b'Inno Setup')
+            companion = download / 'data.bin'
+            companion.write_bytes(b'inert companion')
+            destination = Path(temp) / 'installed'
+            game = Library.new_game()
+            game['title'] = 'Example'
+            installation = Mock()
+            ui = SimpleNamespace(
+                game=game, library=SimpleNamespace(data={'settings': {}}, games=lambda: [game]),
+                detail_item=None, installations=SimpleNamespace(start=installation),
+                ensure_saved_game=lambda: None, refresh_launch_state=lambda: None,
+                notify=lambda _: None, error=lambda error: self.fail(str(error)),
+                monitor_silent_installation=lambda *_args, **_kwargs: None,
+                on_portable_release_complete=lambda *_args: self.fail('Installer treated as portable'),
+            )
+            with patch('umutron.catalog_ui.download_manager.run_innoextract', return_value=False):
+                CatalogUI.on_release_download_complete(
+                    ui, game['id'], str(download), str(destination), '', strategy='portable')
+
+            self.assertEqual(installation.call_count, 1)
+            self.assertEqual(game['installation']['installer'], str(setup))
+            self.assertTrue(setup.is_file())
+            self.assertTrue(companion.is_file())
+            self.assertFalse((destination / 'setup.exe').exists())
+
     def test_download_manager_combination_three_archive_portable_workflow(self):
         import zipfile
         with tempfile.TemporaryDirectory() as temp:
