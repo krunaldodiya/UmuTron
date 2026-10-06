@@ -62,6 +62,26 @@ def estimate_space_requirements(installer_bytes):
     installed_bytes = int(installer_bytes * 3.33)
     total_required = installer_bytes + installed_bytes
     return installer_bytes, installed_bytes, total_required
+PUBLIC_TRACKERS = [
+    'udp://tracker.opentrackr.org:1337/announce',
+    'udp://open.tracker.cl:1337/announce',
+    'udp://opentracker.i2p.rocks:6969/announce',
+    'udp://tracker.torrent.eu.org:451/announce',
+    'udp://open.demonii.com:1337/announce',
+    'udp://tracker.openbittorrent.com:80/announce',
+    'udp://exodus.desync.com:6969/announce',
+    'http://tracker.openbittorrent.com:80/announce',
+    'udp://tracker.dler.org:6969/announce',
+]
+
+
+def enrich_magnet_uri(magnet):
+    if not magnet or not magnet.startswith('magnet:'): return magnet
+    if '&tr=' in magnet: return magnet
+    from urllib.parse import quote
+    tr_params = '&'.join([f'tr={quote(t)}' for t in PUBLIC_TRACKERS])
+    return f'{magnet}&{tr_params}'
+
 
 
 def ensure_downloader_binary():
@@ -105,8 +125,16 @@ class TorrentDownloadManager:
             '--rpc-listen-all=false',
             '--daemon=true',
             f'--rpc-secret={self.secret}',
-            '--follow-torrent=mem',
+            '--enable-dht=true',
+            '--enable-dht6=true',
+            '--dht-entry-point=router.bittorrent.com:6881',
+            '--dht-entry-point6=dht.transmissionbt.com:6881',
+            '--enable-peer-exchange=true',
+            '--bt-enable-lpd=true',
+            '--bt-max-peers=100',
             '--seed-time=0',
+            '--follow-torrent=mem',
+            f'--bt-tracker={",".join(PUBLIC_TRACKERS)}',
             '--max-connection-per-server=8',
             '--split=8',
             '--summary-interval=0'
@@ -133,6 +161,7 @@ class TorrentDownloadManager:
 
     def start_download(self, magnet_uri, download_dir, game_id, title=''):
         import time
+        magnet_uri = enrich_magnet_uri(magnet_uri)
         Path(download_dir).mkdir(parents=True, exist_ok=True)
         res = self._rpc('aria2.addUri', [[magnet_uri], {'dir': str(download_dir)}])
         gid = res.get('result')
@@ -140,6 +169,7 @@ class TorrentDownloadManager:
             raise RuntimeError('Failed to start torrent download')
         job = {
             'gid': gid,
+            'active_gid': gid,
             'game_id': game_id,
             'title': title,
             'dir': str(download_dir),
@@ -154,8 +184,14 @@ class TorrentDownloadManager:
         job = self.active_jobs.get(game_id)
         if not job:
             return None
+        current_gid = job.get('active_gid', job['gid'])
         try:
-            data = self._rpc('aria2.tellStatus', [job['gid']]).get('result', {})
+            data = self._rpc('aria2.tellStatus', [current_gid]).get('result', {})
+            followed = data.get('followedBy', [])
+            if followed:
+                job['active_gid'] = followed[0]
+                current_gid = followed[0]
+                data = self._rpc('aria2.tellStatus', [current_gid]).get('result', {})
         except Exception:
             return {**job, 'percent': 0.0, 'speed_text': '0 B/s', 'eta_text': ''}
         status = data.get('status', 'active')
@@ -163,6 +199,8 @@ class TorrentDownloadManager:
         total = int(data.get('totalLength', 0))
         speed = int(data.get('downloadSpeed', 0))
         pct = (completed / total * 100.0) if total > 0 else 0.0
+        connections = data.get('connections', '0')
+        speed_text = f"{format_size(speed)}/s" if total > 0 else f"Connecting ({connections} peers)..."
         eta = ((total - completed) // speed) if speed > 0 and total > completed else 0
         eta_str = f"{eta // 60}m {eta % 60}s" if eta >= 60 else f"{eta}s" if eta > 0 else ""
         job.update({
@@ -171,7 +209,7 @@ class TorrentDownloadManager:
             'total_bytes': total,
             'percent': pct,
             'speed_bps': speed,
-            'speed_text': f"{format_size(speed)}/s",
+            'speed_text': speed_text,
             'eta_text': eta_str,
             'files': [f.get('path') for f in data.get('files', []) if f.get('path')]
         })
@@ -179,8 +217,9 @@ class TorrentDownloadManager:
 
     def pause(self, game_id):
         job = self.active_jobs.get(game_id)
-        if job and job.get('gid'):
-            try: self._rpc('aria2.pause', [job['gid']])
+        gid = job.get('active_gid', job.get('gid')) if job else None
+        if gid:
+            try: self._rpc('aria2.pause', [gid])
             except Exception: pass
             job['status'] = 'paused'
             return True
@@ -188,8 +227,9 @@ class TorrentDownloadManager:
 
     def resume(self, game_id):
         job = self.active_jobs.get(game_id)
-        if job and job.get('gid'):
-            try: self._rpc('aria2.unpause', [job['gid']])
+        gid = job.get('active_gid', job.get('gid')) if job else None
+        if gid:
+            try: self._rpc('aria2.unpause', [gid])
             except Exception: pass
             job['status'] = 'active'
             return True
@@ -197,9 +237,11 @@ class TorrentDownloadManager:
 
     def cancel(self, game_id, cleanup=True):
         job = self.active_jobs.pop(game_id, None)
-        if job and job.get('gid'):
-            try: self._rpc('aria2.remove', [job['gid']])
-            except Exception: pass
+        if job:
+            for g in {job.get('gid'), job.get('active_gid')}:
+                if g:
+                    try: self._rpc('aria2.remove', [g])
+                    except Exception: pass
             if cleanup:
                 import shutil
                 folder = Path(job['dir'])
