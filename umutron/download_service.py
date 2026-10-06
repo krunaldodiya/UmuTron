@@ -258,36 +258,64 @@ class TorrentDownloadManager:
         for cand in p.rglob('*.exe'):
             if cand.is_file(): return cand
         return None
-class FitGirlCache:
-    def __init__(self, cache_file=None):
-        if cache_file is None:
-            root = Path(os.environ.get('XDG_DATA_HOME', Path.home()/'.local/share')) / 'umutron'
-            cache_file = root / 'fitgirl-cache.json'
-        self.path = Path(cache_file)
-        self.data = {}
-        if self.path.is_file():
-            try: self.data = json.loads(self.path.read_text())
-            except Exception: pass
-
-    def get(self, title):
-        if not title: return None
-        return self.data.get(title.strip().lower())
-
-    def set(self, title, repack):
-        if not title: return
-        self.data[title.strip().lower()] = repack
-        try:
-            from .library import atomic_write
-            atomic_write(self.path, json.dumps(self.data, indent=2).encode())
-        except Exception:
-            pass
-
-fitgirl_cache = FitGirlCache()
-
-
 
 
 download_manager = TorrentDownloadManager()
+class DownloadRelease:
+    def __init__(self, provider_id, provider_name, title, file_size, magnet, uris=None, install_strategy='installer', upload_date=None, raw=None):
+        self.provider_id = provider_id
+        self.provider_name = provider_name
+        self.title = title
+        self.file_size = file_size
+        self.size_bytes = parse_size_bytes(file_size)
+        self.magnet = magnet
+        self.uris = uris or ([magnet] if magnet else [])
+        self.install_strategy = install_strategy
+        self.upload_date = upload_date
+        self.raw = raw or {}
+
+    def __getitem__(self, key):
+        if hasattr(self, key):
+            val = getattr(self, key)
+            if val is not None: return val
+        return self.raw.get(key)
+
+    def get(self, key, default=None):
+        if hasattr(self, key):
+            val = getattr(self, key)
+            if val is not None: return val
+        return self.raw.get(key, default)
+
+    def to_dict(self):
+        d = dict(self.raw)
+        d.update({
+            'provider_id': self.provider_id,
+            'provider_name': self.provider_name,
+            'title': self.title,
+            'file_size': self.file_size,
+            'size_bytes': self.size_bytes,
+            'magnet': self.magnet,
+            'uris': self.uris,
+            'install_strategy': self.install_strategy,
+            'upload_date': self.upload_date,
+        })
+        return d
+
+    @classmethod
+    def from_dict(cls, data):
+        if not data or not isinstance(data, dict): return None
+        return cls(
+            provider_id=data.get('provider_id', 'unknown'),
+            provider_name=data.get('provider_name', 'Unknown'),
+            title=data.get('title', ''),
+            file_size=data.get('file_size', 'Unknown size'),
+            magnet=data.get('magnet', ''),
+            uris=data.get('uris', []),
+            install_strategy=data.get('install_strategy', 'installer'),
+            upload_date=data.get('upload_date'),
+            raw=data
+        )
+
 def normalize_title(title):
     if not title or not isinstance(title, str):
         return ''
@@ -303,7 +331,6 @@ def build_search_queries(title):
     if not norm:
         return []
     queries = [norm]
-    # Curly apostrophe variant
     if "'" in norm:
         queries.append(norm.replace("'", '’'))
     if ':' in norm:
@@ -314,7 +341,6 @@ def build_search_queries(title):
             base = norm.split(sep)[0].strip()
             if len(base) > 2 and base not in queries:
                 queries.append(base)
-    # Roman numeral mapping (V -> 5, IV -> 4, etc.)
     roman_map = [
         (r'\bVIII\b', '8'), (r'\bVII\b', '7'), (r'\bVI\b', '6'),
         (r'\bIV\b', '4'), (r'\bV\b', '5'), (r'\bIII\b', '3'), (r'\bII\b', '2')
@@ -326,58 +352,203 @@ def build_search_queries(title):
         queries.append(roman_variant)
     return queries
 
+class BaseSourceProvider:
+    id = ''
+    name = ''
+    priority = 100
+    install_strategy = 'installer'
+
+    def filter_candidates(self, items):
+        return [it for it in items if 'patch from' not in it.get('title', '').lower()]
+
+    def search(self, base_url, title, api_key=None, transport=None):
+        if not base_url or not title:
+            return []
+        key = api_key or os.environ.get('UMUTRON_API_KEY') or os.environ.get('INTERNAL_API_KEY') or DEFAULT_API_KEY
+        queries = build_search_queries(title)
+        seen_queries = set()
+
+        for query in queries:
+            q_clean = query.strip()
+            if not q_clean or q_clean in seen_queries:
+                continue
+            seen_queries.add(q_clean)
+
+            params = urlencode({'link_type': 'magnet', 'source_name': self.id, 'q': q_clean, 'limit': 10})
+            endpoint = f"{base_url.rstrip('/')}/api/downloads?{params}"
+
+            try:
+                if transport is not None:
+                    data = transport(endpoint)
+                else:
+                    req = Request(endpoint, headers={'x-api-key': key, 'Accept': 'application/json',
+                                                      'User-Agent': f'UmuTron/provider-{self.id}'})
+                    with build_opener(ProxyHandler({})).open(req, timeout=15) as resp:
+                        data = json.loads(resp.read().decode('utf-8'))
+
+                items = data.get('data', [])
+                if items:
+                    candidates = self.filter_candidates(items)
+                    results = []
+                    for item in candidates:
+                        uris = item.get('uris', [])
+                        magnet = next((u for u in uris if u.startswith('magnet:')), None)
+                        if magnet:
+                            rel = DownloadRelease(
+                                provider_id=self.id,
+                                provider_name=self.name,
+                                title=item.get('title', title),
+                                file_size=item.get('file_size') or 'Unknown size',
+                                magnet=magnet,
+                                uris=uris,
+                                install_strategy=self.install_strategy,
+                                upload_date=item.get('upload_date'),
+                                raw=item
+                            )
+                            results.append(rel)
+                    if results:
+                        return results
+            except Exception:
+                continue
+
+        return []
+
+
+class FitGirlProvider(BaseSourceProvider):
+    id = 'fitgirl'
+    name = 'FitGirl'
+    priority = 10
+    install_strategy = 'installer'
+
+
+class DODIProvider(BaseSourceProvider):
+    id = 'dodi'
+    name = 'DODI'
+    priority = 20
+    install_strategy = 'installer'
+
+    def filter_candidates(self, items):
+        return [it for it in items if 'patch' not in it.get('title', '').lower()]
+
+
+class ByXatabProvider(BaseSourceProvider):
+    id = 'byxatab'
+    name = 'ByXatab'
+    priority = 30
+    install_strategy = 'installer'
+
+    def filter_candidates(self, items):
+        full = [it for it in items if 'патч' not in it.get('title', '').lower() and 'patch' not in it.get('title', '').lower()]
+        return full if full else items
+
+
+class AnkerGamesProvider(BaseSourceProvider):
+    id = 'ankergames'
+    name = 'AnkerGames'
+    priority = 40
+    install_strategy = 'portable'
+
+
+class SourceProviderRegistry:
+    def __init__(self):
+        self._providers = {}
+        for p in (FitGirlProvider(), DODIProvider(), ByXatabProvider(), AnkerGamesProvider()):
+            self.register(p)
+
+    def register(self, provider):
+        self._providers[provider.id] = provider
+
+    def get(self, provider_id):
+        return self._providers.get(provider_id)
+
+    def providers(self):
+        return sorted(self._providers.values(), key=lambda p: p.priority)
+
+    def search_all(self, base_url, title, api_key=None, transport=None):
+        for provider in self.providers():
+            results = provider.search(base_url, title, api_key=api_key, transport=transport)
+            if results:
+                return results
+        return []
+
+source_registry = SourceProviderRegistry()
+
+
+class DownloadSourceCache:
+    def __init__(self, cache_file=None):
+        if cache_file is None:
+            root = Path(os.environ.get('XDG_DATA_HOME', Path.home()/'.local/share')) / 'umutron'
+            cache_file = root / 'source-releases-cache.json'
+        self.path = Path(cache_file)
+        self.legacy_path = self.path.parent / 'fitgirl-cache.json'
+        self.data = {}
+        self._load()
+
+    def _load(self):
+        if self.path.is_file():
+            try: self.data = json.loads(self.path.read_text())
+            except Exception: pass
+        elif self.legacy_path.is_file():
+            try:
+                legacy = json.loads(self.legacy_path.read_text())
+                for k, v in legacy.items():
+                    if v and isinstance(v, dict):
+                        v.setdefault('provider_id', 'fitgirl')
+                        v.setdefault('provider_name', 'FitGirl')
+                        v.setdefault('install_strategy', 'installer')
+                    self.data[k] = v
+            except Exception: pass
+
+    def get(self, title):
+        if not title: return None
+        val = self.data.get(title.strip().lower())
+        if val is None: return None
+        if val is False: return False
+        return DownloadRelease.from_dict(val)
+
+    def set(self, title, release):
+        if not title: return
+        key = title.strip().lower()
+        self.data[key] = release.to_dict() if isinstance(release, DownloadRelease) else (release if isinstance(release, dict) else False)
+        try:
+            from .library import atomic_write
+            atomic_write(self.path, json.dumps(self.data, indent=2).encode())
+        except Exception:
+            pass
+
+source_cache = DownloadSourceCache()
+fitgirl_cache = source_cache
+
+
+def search_game_release(base_url, title, api_key=None, transport=None, provider_id=None):
+    cached = source_cache.get(title)
+    if cached is not None:
+        return cached if isinstance(cached, DownloadRelease) else None
+
+    if provider_id:
+        prov = source_registry.get(provider_id)
+        results = prov.search(base_url, title, api_key=api_key, transport=transport) if prov else []
+    else:
+        results = source_registry.search_all(base_url, title, api_key=api_key, transport=transport)
+
+    if results:
+        best = results[0]
+        source_cache.set(title, best)
+        return best
+
+    source_cache.set(title, False)
+    return None
+
 
 def search_fitgirl_repack(base_url, title, api_key=None, transport=None):
-    """Query UmuTron API for FitGirl magnet repacks matching the given game title."""
-    if not base_url or not title:
-        return []
-    cached = fitgirl_cache.get(title)
-    if cached is not None:
-        return [cached] if (cached and isinstance(cached, dict)) else []
-    key = api_key or os.environ.get('UMUTRON_API_KEY') or os.environ.get('INTERNAL_API_KEY') or DEFAULT_API_KEY
-    queries = build_search_queries(title)
-    seen_queries = set()
-
-    for query in queries:
-        q_clean = query.strip()
-        if not q_clean or q_clean in seen_queries:
-            continue
-        seen_queries.add(q_clean)
-
-        params = urlencode({'link_type': 'magnet', 'source_name': 'fitgirl', 'q': q_clean, 'limit': 10})
-        endpoint = f"{base_url.rstrip('/')}/api/downloads?{params}"
-
-        try:
-            if transport is not None:
-                data = transport(endpoint)
-            else:
-                req = Request(endpoint, headers={'x-api-key': key, 'Accept': 'application/json',
-                                                  'User-Agent': 'UmuTron/download-service'})
-                with build_opener(ProxyHandler({})).open(req, timeout=15) as resp:
-                    data = json.loads(resp.read().decode('utf-8'))
-
-            items = data.get('data', [])
-            if items:
-                # Filter and rank matches: prefer full releases over standalone patches
-                full_releases = [it for it in items if 'patch from' not in it.get('title', '').lower()]
-                candidates = full_releases if full_releases else items
-                # Extract primary magnet link
-                results = []
-                for item in candidates:
-                    uris = item.get('uris', [])
-                    magnet = next((u for u in uris if u.startswith('magnet:')), None)
-                    if magnet:
-                        item['magnet'] = magnet
-                        results.append(item)
-                if results:
-                    fitgirl_cache.set(title, results[0])
-                    return results
-        except Exception:
-            continue
-
-    fitgirl_cache.set(title, False)
-    return []
-
+    prov = source_registry.get('fitgirl')
+    if not prov: return []
+    results = prov.search(base_url, title, api_key=api_key, transport=transport)
+    if results:
+        source_cache.set(title, results[0])
+    else:
+        source_cache.set(title, False)
+    return results
 
 def configured_game(game):
     """Keep configured/unmounted games playable for the normal launch checks."""

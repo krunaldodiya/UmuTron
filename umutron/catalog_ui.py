@@ -11,8 +11,9 @@ from .browse_controls import BrowseChoice
 from .dialogs import style_surface, modal_window, dialog_body, dialog_footer
 from .catalog_work import CatalogWork
 from .download_service import (
-    UnavailableInstallService, configured_game, detail_actions, search_fitgirl_repack,
-    download_manager, parse_size_bytes, format_size, estimate_space_requirements, fitgirl_cache
+    UnavailableInstallService, configured_game, detail_actions, search_game_release,
+    download_manager, parse_size_bytes, format_size, estimate_space_requirements,
+    source_cache, source_registry, DownloadRelease
 )
 from .fullscreen import cover as console_cover, set_art, CoverPicture, CoverLayout
 from .library import description_excerpt
@@ -530,10 +531,10 @@ class CatalogUI:
         elif not reuse and focused_id is not None:self.restore_collection(getattr(self,'browse_navigation_revision',0))
         elif refresh and focused_id is not None:self.reveal_browse_control(current)
         base_url=getattr(getattr(self.catalog,'provider',None),'base','https://umu-tron-api.vercel.app')
-        unwarmed=[it['name'] for it in data.get('items',[]) if it.get('name') and fitgirl_cache.get(it['name']) is None]
+        unwarmed=[it['name'] for it in data.get('items',[]) if it.get('name') and source_cache.get(it['name']) is None]
         if unwarmed and not self.exiting:
             def warm_cards():
-                for name in unwarmed[:8]:search_fitgirl_repack(base_url,name)
+                for name in unwarmed[:8]:search_game_release(base_url,name)
             self.catalog_job(warm_cards,lambda _:None,lambda _:None,background=True)
 
     def open_catalog_item(self,item):
@@ -622,42 +623,44 @@ class CatalogUI:
         if download_manager.active_jobs.get(game['id']):
             self.track_download_progress(game['id'])
         game_title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
-        cached_repack=fitgirl_cache.get(game_title) if game_title else None
-        self.detail_repack=cached_repack;self.detail_install_pending=False
-        if cached_repack:
-            sz=(cached_repack.get('file_size') or '').strip()
-            self.detail_size.set_text(f'FitGirl Repack · Download: {sz}' if sz else 'FitGirl Repack · Available')
-        elif cached_repack is False:
+        cached_release=source_cache.get(game_title) if game_title else None
+        self.detail_release=cached_release;self.detail_install_pending=False
+        if cached_release:
+            sz=(cached_release.get('file_size') or '').strip()
+            prov_name=cached_release.get('provider_name') or 'Download'
+            self.detail_size.set_text(f'{prov_name} · Download: {sz}' if sz else f'{prov_name} · Available')
+        elif cached_release is False:
             self.detail_size.set_text('Installation size · Unknown')
         else:
-            self.detail_size.set_text('Checking FitGirl availability…')
+            self.detail_size.set_text('Checking download availability…')
             if game_title and not installed:
                 base_url=getattr(getattr(self.catalog,'provider',None),'base','https://umu-tron-api.vercel.app')
-                def check_fg_repack():return search_fitgirl_repack(base_url,game_title)
-                def fg_repack_loaded(repacks):
-                    if repacks:
-                        self.detail_repack=repacks[0]
-                        sz=(self.detail_repack.get('file_size') or '').strip()
+                def check_release():return search_game_release(base_url,game_title)
+                def release_loaded(rel):
+                    if rel:
+                        self.detail_release=rel
+                        sz=(rel.get('file_size') or '').strip()
+                        prov_name=rel.get('provider_name') or 'Download'
                         if hasattr(self,'detail_size') and self.detail_size:
-                            self.detail_size.set_text(f'FitGirl Repack · Download: {sz}' if sz else 'FitGirl Repack · Available')
+                            self.detail_size.set_text(f'{prov_name} · Download: {sz}' if sz else f'{prov_name} · Available')
                         if getattr(self,'detail_install_pending',False):
                             self.detail_install_pending=False
                             self.install_detail()
                     else:
-                        self.detail_repack=False
+                        self.detail_release=False
                         if hasattr(self,'detail_size') and self.detail_size:
                             self.detail_size.set_text('Installation size · Unknown')
                         if getattr(self,'detail_install_pending',False):
                             self.detail_install_pending=False
-                            self.prompt_no_repack(game_title)
-                def fg_repack_failed(error):
-                    self.detail_repack=False
+                            self.prompt_no_release(game_title)
+                def release_failed(error):
+                    self.detail_release=False
                     if hasattr(self,'detail_size') and self.detail_size:
                         self.detail_size.set_text('Installation size · Unknown')
                     if getattr(self,'detail_install_pending',False):
                         self.detail_install_pending=False
-                        self.notify(f'Could not reach FitGirl API: {error}')
-                self.catalog_job(check_fg_repack,fg_repack_loaded,fg_repack_failed,background=True)
+                        self.notify(f'Could not reach download source API: {error}')
+                self.catalog_job(check_release,release_loaded,release_failed,background=True)
         self.detail_related=None
         related=related_members(self.library,item) if item and not saved else []
         if related:
@@ -862,20 +865,32 @@ class CatalogUI:
                 draft=item_game(item,preview=False)
                 self.game=deepcopy(draft);self.original=deepcopy(draft)
         title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
-        if self.detail_repack and isinstance(self.detail_repack,dict):
-            self.show_install_repack_dialog(self.detail_repack)
+        if self.detail_release and (isinstance(self.detail_release, (DownloadRelease, dict)) or hasattr(self.detail_release, 'get')):
+            self.show_install_release_dialog(self.detail_release)
             return
-        if self.detail_repack is False:
-            self.prompt_no_repack(title)
+        if self.detail_release is False:
+            self.prompt_no_release(title)
             return
         self.detail_install_pending=True
-        self.detail_status.set_text(f'Finding FitGirl repack for "{title}"…')
+        self.detail_status.set_text(f'Finding download for "{title}"…')
 
-    def show_install_repack_dialog(self,repack):
+    def prompt_no_release(self,title):
+        body=(f'"{title}" is not available in our download catalog.\n\n'
+              'You can still add this game to your library and set it up manually using your own local files or an installer.')
+        def open_setup():
+            if not self.saved_detail():
+                self.detail_action()
+            self.open_manage()
+        self.confirm('No Download Found',body,'Set up Manually',open_setup)
+        if hasattr(self,'detail_status') and self.detail_status:
+            self.detail_status.set_text(f'No download found for "{title}". Use Setup for manual files.')
+
+    def show_install_release_dialog(self,release):
         title=self.game.get('title','Game')
-        repack_title=repack.get('title',title)
-        repack_size=(repack.get('file_size') or 'Unknown size').strip()
-        magnet=repack.get('magnet','')
+        release_title=release.get('title',title)
+        release_size=(release.get('file_size') or 'Unknown size').strip()
+        magnet=release.get('magnet','')
+        prov_name=release.get('provider_name') or 'Download'
         drives=[];default_drive=None
         if hasattr(self,'storage_service') and self.storage_service:
             try:
@@ -887,19 +902,18 @@ class CatalogUI:
             except Exception:pass
         if not default_drive and drives:default_drive=drives[0]
 
-        installer_bytes=parse_size_bytes(repack_size)
+        installer_bytes=parse_size_bytes(release_size)
         installer_b,installed_b,total_req_b=estimate_space_requirements(installer_bytes)
         inst_str=format_size(installer_b)
         game_str=format_size(installed_b)
         req_str=format_size(total_req_b)
 
-        dialog=modal_window(self,f'Install {title}',width=640,height=520,subtitle=f'FitGirl Repack · {repack_size}')
+        dialog=modal_window(self,f'Install {title}',width=640,height=520,subtitle=f'{prov_name} · {release_size}')
         content=dialog_body(dialog)
         _,button_fn,_,_,_=ui()
-        repack_group=Adw.PreferencesGroup(title='Matched FitGirl Repack')
-        repack_row=Adw.ActionRow(title=repack_title,subtitle=f'Installer download size: {repack_size}')
+        repack_group=Adw.PreferencesGroup(title=f'Matched Source: {prov_name}')
+        repack_row=Adw.ActionRow(title=release_title,subtitle=f'Download size: {release_size}')
         repack_row.set_use_markup(False);repack_row.set_subtitle_lines(3);repack_group.add(repack_row);content.append(repack_group)
-
         space_group=Adw.PreferencesGroup(title='Storage Requirement')
         content.append(space_group)
         space_row=Adw.ActionRow(title=f'Total Required Space: ~{req_str}')
@@ -967,26 +981,26 @@ class CatalogUI:
             dest_dir=f'{selected_drive_path[0]}/{sanitized}'
             download_dir=f'{selected_drive_path[0]}/.umutron-downloads/{self.game["id"]}'
             self.game['working_dir']=dest_dir
-            self.start_fitgirl_download(magnet,download_dir,dest_dir,repack_title,inst_str)
+            self.start_release_download(magnet,download_dir,dest_dir,release_title,inst_str,prov_name)
 
         install_btn.connect('clicked',lambda *_:on_confirm())
         footer.append(install_btn);dialog.present()
 
-    def start_fitgirl_download(self,magnet,download_dir,dest_dir,repack_title,inst_str):
+    def start_release_download(self,magnet,download_dir,dest_dir,release_title,inst_str,prov_name='Download'):
         title=self.game.get('title','Game')
         game_id=self.game['id']
         try:
             download_manager.start_download(magnet,download_dir,game_id,title)
         except Exception as error:
             self.error(error);return
-        self.track_download_progress(game_id,download_dir,dest_dir,inst_str)
+        self.track_download_progress(game_id,download_dir,dest_dir,inst_str,prov_name)
 
-    def track_download_progress(self,game_id,download_dir=None,dest_dir=None,inst_str=None):
+    def track_download_progress(self,game_id,download_dir=None,dest_dir=None,inst_str=None,prov_name='Download'):
         if hasattr(self,'detail_download_box'):
             self.detail_download_box.set_visible(True)
         if hasattr(self,'detail_primary'):
             self.detail_primary.set_label('Pause')
-            self.detail_primary.set_tooltip_text('Pause downloading FitGirl repack')
+            self.detail_primary.set_tooltip_text(f'Pause downloading {prov_name} release')
 
             def toggle_pause(*_):
                 job=download_manager.get_status(game_id)
@@ -1001,7 +1015,7 @@ class CatalogUI:
 
         if not hasattr(self,'detail_cancel_btn') or not self.detail_cancel_btn.get_parent():
             _,button_fn,_,_,_=ui()
-            self.detail_cancel_btn=button_fn('Cancel Download',lambda:self.cancel_fitgirl_download(game_id),'destructive-action')
+            self.detail_cancel_btn=button_fn('Cancel Download',lambda:self.cancel_release_download(game_id),'destructive-action')
             self.detail_actions_box.append(self.detail_cancel_btn)
 
         def poll_tick():
@@ -1011,7 +1025,7 @@ class CatalogUI:
             if not job:return False
             status=job.get('status')
             if status=='complete':
-                self.on_fitgirl_download_complete(game_id,download_dir or job.get('dir'),dest_dir,inst_str)
+                self.on_release_download_complete(game_id,download_dir or job.get('dir'),dest_dir,inst_str,prov_name)
                 return False
             elif status=='paused':
                 self.detail_primary.set_label('Resume')
@@ -1029,7 +1043,7 @@ class CatalogUI:
 
         GLib.timeout_add(1000,poll_tick)
 
-    def cancel_fitgirl_download(self,game_id):
+    def cancel_release_download(self,game_id):
         def do_cancel():
             download_manager.cancel(game_id,cleanup=True)
             if any(g['id']==game_id for g in self.library.games()):
@@ -1041,14 +1055,14 @@ class CatalogUI:
             self.notify('Download cancelled and files cleaned up.')
         self.confirm('Cancel Download?','This will stop the download and remove any partial download files.','Cancel Download',do_cancel,destructive=True)
 
-    def on_fitgirl_download_complete(self,game_id,download_dir,dest_dir,inst_str):
+    def on_release_download_complete(self,game_id,download_dir,dest_dir,inst_str,prov_name='Download'):
         if hasattr(self,'detail_primary'):
             self.detail_primary.set_label('Installing...')
             self.detail_primary.set_sensitive(False)
         if hasattr(self,'detail_progress_bar'):
             self.detail_progress_bar.set_fraction(1.0)
         if hasattr(self,'detail_progress_label'):
-            self.detail_progress_label.set_text('Download complete. Launching FitGirl installer through UMU…')
+            self.detail_progress_label.set_text(f'Download complete. Launching {prov_name} installer through UMU…')
         setup_exe=download_manager.find_setup_exe(download_dir)
         if not setup_exe:
             self.notify('Could not find setup.exe in downloaded files.')
@@ -1067,7 +1081,7 @@ class CatalogUI:
         try:
             self.installations.start(self.game)
             self.refresh_launch_state()
-            self.notify(f'FitGirl installer started for {title}.')
+            self.notify(f'{prov_name} installer started for {title}.')
         except Exception as error:
             self.error(error)
 
