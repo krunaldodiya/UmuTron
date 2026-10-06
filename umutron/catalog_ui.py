@@ -11,7 +11,7 @@ from .browse_controls import BrowseChoice
 from .dialogs import style_surface, modal_window, dialog_body, dialog_footer
 from .catalog_work import CatalogWork
 from .download_service import (
-    UnavailableInstallService, configured_game, detail_actions, search_game_release,
+    UnavailableInstallService, configured_game, detail_actions, search_game_releases,
     download_manager, parse_size_bytes, format_size, estimate_space_requirements,
     source_cache, source_registry, DownloadRelease
 )
@@ -129,6 +129,7 @@ class CatalogUI:
     def init_catalog(self,provider=None):
         if provider is None:provider=configured_catalog()
         self.catalog=CatalogService(provider,self.library.root/'catalog-cache')
+        source_registry.apply_disabled_sources(self.library.data.get('settings',{}).get('disabled_sources',[]))
         self.catalog_pool=CatalogWork()
         self.store_item_futures=[];self.store_render_revision=0
         self.catalog_futures=[];self.catalog_generation=0;self.route='library';self.detail_origin='library'
@@ -144,9 +145,11 @@ class CatalogUI:
         for future in self.catalog_futures:future.cancel()
         self.catalog_futures=[];self.store_item_futures=[]
 
-    def catalog_job(self,work,done,failed=None,*,image=False,background=False,valid=None):
+    def catalog_job(self,work,done,failed=None,*,image=False,source=False,background=False,valid=None):
         generation=self.catalog_generation
-        future=self.catalog_pool.submit_image(work) if image else self.catalog_pool.submit(work,background=background)
+        future=(self.catalog_pool.submit_source(work) if source else
+                self.catalog_pool.submit_image(work) if image else
+                self.catalog_pool.submit(work,background=background))
         self.catalog_futures.append(future)
         def finish():
             if future in self.catalog_futures:self.catalog_futures.remove(future)
@@ -530,12 +533,6 @@ class CatalogUI:
         if not refresh:self.restore_collection(navigation_revision)
         elif not reuse and focused_id is not None:self.restore_collection(getattr(self,'browse_navigation_revision',0))
         elif refresh and focused_id is not None:self.reveal_browse_control(current)
-        base_url=getattr(getattr(self.catalog,'provider',None),'base','https://umu-tron-api.vercel.app')
-        unwarmed=[it['name'] for it in data.get('items',[]) if it.get('name') and source_cache.get(it['name']) is None]
-        if unwarmed and not self.exiting:
-            def warm_cards():
-                for name in unwarmed[:8]:search_game_release(base_url,name)
-            self.catalog_job(warm_cards,lambda _:None,lambda _:None,background=True)
 
     def open_catalog_item(self,item):
         self.capture_route();self.detail_origin='store';self.detail_item=item
@@ -588,7 +585,8 @@ class CatalogUI:
         info.append(label(excerpt,'detail-copy',xalign=0,wrap=True,lines=3,ellipsize=Pango.EllipsizeMode.END))
         credits=' · '.join(dict.fromkeys(filter(None,(game.get('developers'),game.get('publishers')))))
         credit=label(credits,'dim-label',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END);credit.add_css_class('detail-meta');info.append(credit)
-        self.detail_size=label('Installation size · Unknown','detail-meta',xalign=0,wrap=True)
+        self.detail_size=button('Checking download availability…',self.show_source_selection_dialog)
+        self.detail_size.set_halign(Gtk.Align.START);self.detail_size.set_sensitive(False)
         info.append(self.detail_size)
         actions=box(False,12);panel.append(actions);self.detail_actions_box=actions
         saved=self.saved_detail();installed=configured_game(game) and bool(game.get('executable') and Path(game['executable']).is_file())
@@ -623,44 +621,31 @@ class CatalogUI:
         if download_manager.active_jobs.get(game['id']):
             self.track_download_progress(game['id'])
         game_title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
-        cached_release=source_cache.get(game_title) if game_title else None
-        self.detail_release=cached_release;self.detail_install_pending=False
-        if cached_release:
-            sz=(cached_release.get('file_size') or '').strip()
-            prov_name=cached_release.get('provider_name') or 'Download'
-            self.detail_size.set_text(f'{prov_name} · Download: {sz}' if sz else f'{prov_name} · Available')
-        elif cached_release is False:
-            self.detail_size.set_text('Installation size · Unknown')
+        cached_releases=source_cache.get(game_title) if game_title else None
+        self.detail_releases=[];self.detail_release=False;self.detail_install_pending=False
+        if isinstance(cached_releases,list):
+            self.set_detail_releases(cached_releases)
+        elif cached_releases is False:
+            self.set_detail_releases([])
         else:
-            self.detail_size.set_text('Checking download availability…')
+            self.detail_size.set_label('Checking download availability…')
+            self.detail_size.set_sensitive(False)
             if game_title and not installed:
                 base_url=getattr(getattr(self.catalog,'provider',None),'base','https://umu-tron-api.vercel.app')
-                def check_release():return search_game_release(base_url,game_title)
-                def release_loaded(rel):
-                    if rel:
-                        self.detail_release=rel
-                        sz=(rel.get('file_size') or '').strip()
-                        prov_name=rel.get('provider_name') or 'Download'
-                        if hasattr(self,'detail_size') and self.detail_size:
-                            self.detail_size.set_text(f'{prov_name} · Download: {sz}' if sz else f'{prov_name} · Available')
-                        if getattr(self,'detail_install_pending',False):
-                            self.detail_install_pending=False
-                            self.install_detail()
-                    else:
-                        self.detail_release=False
-                        if hasattr(self,'detail_size') and self.detail_size:
-                            self.detail_size.set_text('Installation size · Unknown')
-                        if getattr(self,'detail_install_pending',False):
-                            self.detail_install_pending=False
-                            self.prompt_no_release(game_title)
-                def release_failed(error):
-                    self.detail_release=False
-                    if hasattr(self,'detail_size') and self.detail_size:
-                        self.detail_size.set_text('Installation size · Unknown')
+                def check_releases():return search_game_releases(base_url,game_title)
+                def releases_loaded(releases):
+                    self.set_detail_releases(releases)
+                    if getattr(self,'detail_install_pending',False):
+                        self.detail_install_pending=False
+                        if releases:self.install_detail()
+                        else:self.prompt_no_release(game_title)
+                def releases_failed(error):
+                    self.set_detail_releases([])
                     if getattr(self,'detail_install_pending',False):
                         self.detail_install_pending=False
                         self.notify(f'Could not reach download source API: {error}')
-                self.catalog_job(check_release,release_loaded,release_failed,background=True)
+                self.catalog_job(check_releases,releases_loaded,releases_failed,source=True)
+            if installed or not game_title:self.set_detail_releases([])
         self.detail_related=None
         related=related_members(self.library,item) if item and not saved else []
         if related:
@@ -841,6 +826,63 @@ class CatalogUI:
         self.game=deepcopy(draft);self.original=deepcopy(draft)
         if self.tv_mode and not self.set_tv_mode(False):return
         self.open_manage()
+
+    def set_detail_releases(self,releases):
+        self.detail_releases=list(releases or [])
+        self.detail_release=self.detail_releases[0] if self.detail_releases else False
+        if not self.detail_releases:
+            self.detail_size.set_label('Installation size · Unknown')
+            self.detail_size.set_sensitive(False)
+            return
+        self.set_detail_release(self.detail_releases[0])
+
+    def set_detail_release(self,release):
+        self.detail_release=release
+        provider=release.get('provider_name') or 'Download'
+        size=(release.get('file_size') or '').strip()
+        label=f'{provider} · Download: {size}' if size else f'{provider} · Available'
+        self.detail_size.set_label(label+'  ▾')
+        self.detail_size.set_tooltip_text('Select from available download sources')
+        self.detail_size.set_sensitive(True)
+
+    def show_source_selection_dialog(self):
+        releases=getattr(self,'detail_releases',[])
+        if not releases:return
+        game_id=self.game['id']
+        generation=self.catalog_generation
+        dialog=modal_window(self,'Select Download Source',width=680,height=560,
+                            subtitle='Choose a release source and edition.')
+        content=dialog_body(dialog)
+        group=Adw.PreferencesGroup(title='Available releases',
+                                   description='Source-reported download sizes; installed size may differ.')
+        content.append(group)
+        selected=[self.detail_release if self.detail_release in releases else releases[0]]
+        radio_group=None
+        for release in releases:
+            provider=release.get('provider_name') or 'Download'
+            size=(release.get('file_size') or 'Unknown size').strip()
+            strategy=release.get('install_strategy','installer')
+            method='Pre-installed files' if strategy=='portable' else 'Installer'
+            release_title=release.get('title') or self.game.get('title','Game')
+            row=Adw.ActionRow(title=f'{provider} · {release_title}',
+                              subtitle=f'Download size: {size} · {method}')
+            row.set_use_markup(False);row.set_subtitle_lines(2)
+            check=Gtk.CheckButton(valign=Gtk.Align.CENTER)
+            if radio_group is None:radio_group=check
+            else:check.set_group(radio_group)
+            check.set_active(release is selected[0])
+            check.connect('toggled',lambda control,r=release: selected.__setitem__(0,r) if control.get_active() else None)
+            row.add_suffix(check);row.set_activatable_widget(check);group.add(row)
+        footer=dialog_footer();content.append(footer)
+        _,button_fn,_,_,_=ui()
+        footer.append(button_fn('Cancel',dialog.close))
+        def use_source():
+            if self.route=='detail' and self.game and self.game['id']==game_id and self.catalog_generation==generation:
+                self.set_detail_release(selected[0])
+            dialog.close()
+        use=button_fn('Use Source',use_source,'suggested-action');footer.append(use)
+        dialog.present()
+        if self.tv_mode:self.restrict_tv_focus(content)
 
     def install_detail(self):
         drives=[]

@@ -17,10 +17,7 @@ class SourcesPage(Adw.PreferencesPage):
         )
         self.add(group)
 
-        disabled = set(self.library.data.get('settings', {}).get('disabled_sources', []))
-        for p in source_registry.providers(only_enabled=False):
-            if p.id in disabled:
-                source_registry.set_enabled(p.id, False)
+        source_registry.apply_disabled_sources(self.library.data.get('settings', {}).get('disabled_sources', []))
 
         for provider in source_registry.providers(only_enabled=False):
             desc = {

@@ -91,7 +91,7 @@ with tempfile.TemporaryDirectory(prefix='umutron-header-action-') as temp:
                     assert (w.get_width(),w.get_height())==(width,height)
                     expected=('Open desktop Setup' if tv else 'Setup') if state=='Setup' else ('Add to library' if state=='Add' else state)
                     assert w.detail_primary.get_label()==expected,(expected,w.detail_primary.get_label())
-                    assert w.detail_size.get_text()=='Installation size · Unknown'
+                    assert w.detail_size.get_label()=='Installation size · Unknown'
                     assert w.detail_size.get_visible() and w.detail_primary.get_label()!='Install'
                     boxes=aligned(w)
                     viewport=bounds(w.detail_scroll,w)

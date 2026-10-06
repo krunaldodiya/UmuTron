@@ -299,6 +299,15 @@ Keyboard/controller navigation follows search input → Search → Filter → ca
 
 Installation-size information requires a separate release-bound contract. Existing catalog metadata does not provide installed size, source feed byte lengths are not game sizes, and the Storage policy's 1.5× expansion reservation is not installation size. The read-only detail shows “Installation size · Unknown” while no release-bound size is available. It adds no lookup, fabricated byte value, new Install availability or payload operation. Existing source-reported file_size may be shown only as Reported size by a future selected-release flow; it is not necessarily download or installed bytes.
 
+## Multi-source release selection — feature-branch candidate
+
+This candidate supersedes the preceding Interface statement that automatic downloads and detail-page source lookup are unavailable, and the Search and Filter statement that release-size display is deferred. Opening an unconfigured game's shared detail page queries every provider enabled in Settings; Store cards remain read-only and never start a download. Release discovery uses the IGDB title only, with no local library, launch settings or filesystem paths sent to the source API. Results are cached by title and enabled-provider set, so toggling a source cannot reuse a result set from a different selection.
+
+The detail page exposes a source-selection button labeled with the selected provider and its source-reported download size. Activating it opens a modal listing available release editions across enabled sources; the first result in provider-priority order is the initial selection. Use Source updates the detail selection, and the existing explicit Install action then uses that selected release and its provider strategy. No install starts from opening detail or choosing a source, and installation never auto-launches a game.
+
+`file_size` is source-reported download metadata, not installed size, verified payload size, archive contents, executable identity or proof of readiness. Source-specific adapters, notes and filtering live under `umutron/sources/providers/<provider-id>/`; shared request, release, registry and cache behavior lives under `umutron/sources/`. The selection delta does not broaden filesystem ownership, uninstall, UMU/Proton launch or operation-lock authority.
+
+
 
 ## Consistent native dialogs — 0.4.32 candidate
 

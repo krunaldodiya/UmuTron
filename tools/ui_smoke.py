@@ -12,6 +12,7 @@ from game_library.app import Application,Window
 from game_library.demo import prepare_demo
 from catalog_fixtures import FixtureCatalog
 from game_library.play_history import record
+from game_library.sources.model import DownloadRelease
 from uuid import uuid4
 from gi.repository import Adw,Gio,GLib,Gtk
 
@@ -45,6 +46,8 @@ with tempfile.TemporaryDirectory() as temp:
     os.environ['XDG_CACHE_HOME']=temp
     library=prepare_demo(seed=True)
     app=Application(demo=True);app.set_flags(Gio.ApplicationFlags.NON_UNIQUE);app.register(None)
+    source_lookup=patch('game_library.catalog_ui.search_game_releases',return_value=[])
+    source_lookup.start()
     with patch('game_library.app.Controller') as controller:
         controller.return_value.name = ''
         controller.return_value.error = ''
@@ -75,6 +78,36 @@ with tempfile.TemporaryDirectory() as temp:
     assert w.detail_gear.get_visible()
     assert not any(b.get_tooltip_text()=='Edit Metadata' for b in buttons(w))
     assert library.path.read_bytes()==before and {p.name:p.read_bytes() for p in library.art_dir.iterdir()}==art
+    w.set_detail_releases([
+        DownloadRelease('fitgirl','FitGirl','Game installer','42 GB','magnet:?xt=urn:btih:fixture-fitgirl'),
+        DownloadRelease('byxatab','ByXatab','Game [Папка игры]','68 GB','magnet:?xt=urn:btih:fixture-byxatab',install_strategy='portable')
+    ])
+    assert w.detail_size.get_label()=='FitGirl · Download: 42 GB  ▾'
+    screenshot('detail-source-button-dark.png')
+    w.detail_size.emit('clicked')
+    source_dialog=next(window for window in Gtk.Window.get_toplevels()
+                       if isinstance(window,Gtk.Window) and window.get_title()=='Select Download Source')
+    checks=[widget for widget in widgets(source_dialog) if isinstance(widget,Gtk.CheckButton)]
+    assert len(checks)==2 and checks[0].get_active() and not checks[1].get_active()
+    screenshot('source-selection-dark.png',source_dialog)
+    checks[1].set_active(True)
+    click(source_dialog,'Use Source')
+    pump_until(lambda:not source_dialog.get_visible())
+    assert w.detail_release.provider_id=='byxatab'
+    class FixtureStorage:
+        def snapshot(self):
+            return {'registrations':[{'id':'fixture-drive','roles':['install'],'path':temp,'label':'Fixture'}],
+                    'default_install':'fixture-drive'}
+    original_storage=w.storage_service
+    w.storage_service=FixtureStorage()
+    w.install_detail()
+    install_title='Install '+w.game['title']
+    install_dialog=next(window for window in Gtk.Window.get_toplevels()
+                        if isinstance(window,Gtk.Window) and window.get_title()==install_title)
+    groups=[widget for widget in widgets(install_dialog) if isinstance(widget,Adw.PreferencesGroup)]
+    assert any(group.get_title()=='Matched Source: ByXatab' for group in groups)
+    install_dialog.close();pump_until(lambda:not install_dialog.get_visible())
+    w.storage_service=original_storage
     w.open_manage();assert not w.advanced.get_expanded();w.advanced.set_expanded(True);settle()
     assert w.launch_args.is_ancestor(w.executable_panel) and not w.launch_args.is_ancestor(w.advanced)
 
@@ -200,5 +233,7 @@ with tempfile.TemporaryDirectory() as temp:
     navigate('right');settle();assert w.focused_control(w) is w.tv_games_tab
     w.show_game(library.games()[0]);settle()
     assert not any(isinstance(i,(Gtk.Entry,Gtk.DropDown)) for i in widgets(w.body))
-    w.catalog_cancel();w.catalog_pool.shutdown(wait=True,cancel_futures=True);w.pool.shutdown(wait=True);w.exiting=True;w.destroy()
+    w.exiting=True;w.catalog_cancel();w.catalog_pool.shutdown(wait=True,cancel_futures=True)
+    source_lookup.stop()
+    w.pool.shutdown(wait=True);w.destroy()
 print('PASS: native Store/shared detail, Setup cancellation/save/installer continuity, runtime and one-game guards, backup, Proton, tray/Exit and navigation fixtures')

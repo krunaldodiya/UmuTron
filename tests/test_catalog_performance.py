@@ -184,6 +184,19 @@ class CachePerformanceTests(unittest.TestCase):
 
 
 class CatalogWorkTests(unittest.TestCase):
+    def test_held_source_lookup_does_not_block_catalog_metadata(self):
+        work=CatalogWork();entered=threading.Event();release=threading.Event()
+        def held_source():
+            entered.set();self.assertTrue(release.wait(3))
+        source=work.submit_source(held_source)
+        try:
+            self.assertTrue(entered.wait(2))
+            metadata=work.submit(lambda:'detail')
+            self.assertEqual(metadata.result(2),'detail')
+            self.assertFalse(source.done())
+        finally:
+            release.set();work.shutdown(wait=True,cancel_futures=True)
+
     def test_foreground_work_precedes_queued_optional_enrichment(self):
         work=BoundedWork(1,4,'priority-fixture');release=threading.Event();entered=threading.Event();order=[]
         def held():entered.set();self.assertTrue(release.wait(3))

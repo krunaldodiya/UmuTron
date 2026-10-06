@@ -75,10 +75,11 @@ class BoundedWork:
 
 
 class CatalogWork:
-    """One lifecycle owner; artwork cannot consume metadata workers or slots."""
+    """Own independent bounded lifecycles for metadata, art and source lookup."""
     def __init__(self):
         self.metadata = BoundedWork(3, 32, 'catalog-metadata')
         self.images = BoundedWork(2, 32, 'catalog-image')
+        self.sources = BoundedWork(2, 16, 'source-discovery')
 
     def submit(self, work, *, background=False):
         return self.metadata.submit(work, background=background)
@@ -86,10 +87,12 @@ class CatalogWork:
     def submit_image(self, work):
         return self.images.submit(work, background=True)
 
+    def submit_source(self, work):
+        return self.sources.submit(work, background=True)
+
     def shutdown(self, wait=True, *, cancel_futures=False):
-        # Cancel both queues before waiting for either group.
-        self.metadata.shutdown(False, cancel_futures=cancel_futures)
-        self.images.shutdown(False, cancel_futures=cancel_futures)
+        for group in (self.metadata, self.images, self.sources):
+            group.shutdown(False, cancel_futures=cancel_futures)
         if wait:
-            self.metadata.shutdown(True)
-            self.images.shutdown(True)
+            for group in (self.metadata, self.images, self.sources):
+                group.shutdown(True)
