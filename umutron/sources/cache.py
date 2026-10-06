@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from urllib.parse import urlencode
 
-from .base import build_search_queries
+from .base import build_search_queries, is_multipart_link, is_multipart_release
 from .model import DownloadRelease
 from .registry import source_registry
 from ..providers import api_request
@@ -99,8 +99,11 @@ def _releases_from_response(payload, source_ids, provider_id=None):
         uris = item.get('uris')
         if not isinstance(uris, list):
             continue
+        if is_multipart_release(title, uris):
+            continue
         magnets = [uri for uri in uris
-                   if isinstance(uri, str) and uri.startswith('magnet:') and len(uri) <= 1024][:2]
+                   if isinstance(uri, str) and uri.startswith('magnet:') and len(uri) <= 1024
+                   and not is_multipart_link(uri)][:2]
         if not magnets:
             continue
         source_name = source_ids[source_id]

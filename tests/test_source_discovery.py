@@ -8,6 +8,7 @@ from umutron.sources.cache import DownloadSourceCache, search_game_releases
 from umutron.sources.model import DownloadRelease
 from umutron.sources.registry import DownloadSource, SourceProviderRegistry
 from umutron.download_service import download_manager
+from umutron.sources.base import is_multipart_link, is_multipart_release, is_multipart_title
 
 
 SOURCES = [
@@ -194,6 +195,112 @@ class SourceDiscoveryTests(unittest.TestCase):
         self.assertEqual(provider.get_install_strategy(portable), 'portable')
         self.assertEqual(provider.get_install_strategy(repack), 'installer')
 
+
+    def test_multipart_link_identification(self):
+        split_uris = [
+            'https://example.com/games/release.part1.rar',
+            'https://example.com/games/release.part02.rar',
+            'https://example.com/games/release.part003.rar',
+            'https://example.com/games/release.part1.exe',
+            'https://example.com/games/release.7z.001',
+            'https://example.com/games/release.zip.001',
+            'https://example.com/games/release.rar.001',
+            'https://example.com/games/release.r00',
+            'https://example.com/games/release.r01',
+            'https://example.com/games/release.z01',
+            'https://example.com/games/release.001',
+            'magnet:?xt=urn:btih:abc&dn=Game.Release.part1.rar',
+            'magnet:?xt=urn:btih:abc&dn=Game.Release.7z.001',
+        ]
+        for uri in split_uris:
+            self.assertTrue(is_multipart_link(uri), f'Expected split link: {uri}')
+
+        valid_uris = [
+            'https://example.com/games/release.zip',
+            'https://example.com/games/release.rar',
+            'https://example.com/games/release.7z',
+            'https://example.com/games/release.iso',
+            'https://example.com/games/setup.exe',
+            'magnet:?xt=urn:btih:abc&dn=Game.Complete.Edition',
+            'magnet:?xt=urn:btih:abc&dn=The+Witcher+3+Wild+Hunt',
+        ]
+        for uri in valid_uris:
+            self.assertFalse(is_multipart_link(uri), f'Expected valid link: {uri}')
+
+    def test_multipart_title_identification(self):
+        split_titles = [
+            'Game Name (Part 1 of 4)',
+            'Game Name [Part 1/5]',
+            'Game Name - CD 1 of 2',
+            'Game Name - Disc 1/3',
+            'Game.Name.part1.rar',
+            'Game.Name.7z.001',
+        ]
+        for title in split_titles:
+            self.assertTrue(is_multipart_title(title), f'Expected split title: {title}')
+
+        valid_titles = [
+            'The Last of Us Part 1',
+            '.hack//Infection Part 1',
+            'Mario Party Megamix',
+            'A Fold Apart',
+            'Game Name v1.001',
+            'Cyberpunk 2077: Ultimate Edition',
+            'The Witcher 3: Wild Hunt - Complete Edition',
+        ]
+        for title in valid_titles:
+            self.assertFalse(is_multipart_title(title), f'Expected valid title: {title}')
+
+    def test_search_game_releases_filters_out_multipart_entries(self):
+        registry = SourceProviderRegistry()
+        items = [
+            {
+                'id': 'full-game',
+                'source_id': 'source-a',
+                'source_name': 'Source A',
+                'title': 'Complete Adventure',
+                'file_size': '20 GB',
+                'upload_date': '2026-01-01',
+                'uris': ['magnet:?xt=urn:btih:complete-adventure'],
+            },
+            {
+                'id': 'split-title',
+                'source_id': 'source-a',
+                'source_name': 'Source A',
+                'title': 'Complete Adventure [Part 1 of 3]',
+                'file_size': '7 GB',
+                'upload_date': '2026-01-01',
+                'uris': ['magnet:?xt=urn:btih:part-one-title'],
+            },
+            {
+                'id': 'split-magnet',
+                'source_id': 'source-a',
+                'source_name': 'Source A',
+                'title': 'Adventure Chunk',
+                'file_size': '5 GB',
+                'upload_date': '2026-01-01',
+                'uris': ['magnet:?xt=urn:btih:chunk&dn=Adventure.part1.rar'],
+            },
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            cache = DownloadSourceCache(Path(temp) / 'releases.json')
+            with patch('umutron.sources.cache.source_registry', registry), \
+                    patch('umutron.sources.cache.source_cache', cache):
+                registry.load_sources('https://api.example', transport=lambda _: {'sources': SOURCES})
+                def transport(url):
+                    if '/api/sources' in url:
+                        return {'sources': SOURCES}
+                    return {'data': items, 'has_more': False}
+
+                results = search_game_releases(
+                    'https://api.example',
+                    'Adventure',
+                    transport=transport,
+                    force_refresh=True,
+                )
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].title, 'Complete Adventure')
+        self.assertEqual(results[0].magnet, 'magnet:?xt=urn:btih:complete-adventure')
 
 if __name__ == '__main__':
     unittest.main()

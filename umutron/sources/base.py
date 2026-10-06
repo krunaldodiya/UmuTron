@@ -3,7 +3,7 @@ import json
 import os
 import re
 import unicodedata
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, unquote, urlencode, urlparse
 from urllib.request import ProxyHandler, Request, build_opener
 
 from .model import DownloadRelease
@@ -41,6 +41,68 @@ def build_search_queries(title):
     if roman_variant != normalized and roman_variant not in queries:
         queries.append(roman_variant)
     return queries
+
+MULTIPART_FILE_PATTERNS = (
+    re.compile(r'(?i)\.part\d+\.(?:rar|7z|zip|exe|bin)$'),
+    re.compile(r'(?i)\.7z\.\d{3}$'),
+    re.compile(r'(?i)\.(?:zip|rar)\.\d{3}$'),
+    re.compile(r'(?i)\.[rz]\d{2}$'),
+    re.compile(r'(?i)\.001$'),
+)
+
+MULTIPART_TITLE_PATTERNS = (
+    re.compile(r'(?i)\b(?:part|cd|disc|dvd)\s*\d+\s*(?:of|/)\s*\d+\b'),
+    re.compile(r'(?i)\[part\s*\d+\s*(?:of|/)\s*\d+\]'),
+    re.compile(r'(?i)\(part\s*\d+\s*(?:of|/)\s*\d+\)'),
+    re.compile(r'(?i)\.part\d+\.(?:rar|7z|zip|exe)\b'),
+    re.compile(r'(?i)\.7z\.\d{3}\b'),
+    re.compile(r'(?i)\.(?:rar|zip)\.\d{3}\b'),
+)
+
+
+def is_multipart_link(uri):
+    """Return True if the URI points to a split / multi-part archive segment."""
+    if not uri or not isinstance(uri, str):
+        return False
+    try:
+        parsed = urlparse(uri)
+    except Exception:
+        return False
+    filename = ''
+    if parsed.scheme == 'magnet':
+        qs = parse_qs(parsed.query)
+        dn = qs.get('dn', [''])[0]
+        filename = unquote(dn)
+    else:
+        path = unquote(parsed.path)
+        filename = path.rstrip('/').split('/')[-1] if path else ''
+
+    if filename:
+        for pattern in MULTIPART_FILE_PATTERNS:
+            if pattern.search(filename):
+                return True
+    return False
+
+
+def is_multipart_title(title):
+    """Return True if the release title denotes an individual split / multi-part volume."""
+    if not title or not isinstance(title, str):
+        return False
+    for pattern in MULTIPART_TITLE_PATTERNS:
+        if pattern.search(title):
+            return True
+    return False
+
+
+def is_multipart_release(title, uris):
+    """Return True if the title or any associated link represents a split / multi-part archive."""
+    if is_multipart_title(title):
+        return True
+    if isinstance(uris, (list, tuple)):
+        for uri in uris:
+            if is_multipart_link(uri):
+                return True
+    return False
 
 
 class BaseSourceProvider:
