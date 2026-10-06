@@ -1,5 +1,5 @@
-# FitGirl source adapter
+# Historical FitGirl adapter
 
-Provider ID: `fitgirl`. Search uses the UmuTron downloads API with `link_type=magnet` and returns the API's stored release title, file-size label, magnet URI and upload date. FitGirl results use the `installer` strategy; they require explicit installer execution through the existing UMU/Proton installation flow. Filtering excludes patch-only records. API file size is a reported source value, not installed size or a verified payload size.
+This provider-specific adapter remains only for compatibility tests. The application discovers sources and release metadata from the configured public UmuTron API; it does not register this adapter, keep a provider roster, or use its strategy classification. Shared API/cache behavior lives in `umutron/sources/`.
 
-Keep source-specific matching/filtering in `provider.py`; shared HTTP/API handling belongs in `umutron/sources/base.py`. Never add provider credentials or execute a release during lookup.
+Lookup never executes a release. Reported file size is not installed size or verified payload size. Do not add credentials to the desktop.

@@ -5,10 +5,9 @@ from pathlib import Path
 from urllib.request import Request, build_opener, ProxyHandler
 
 from .sources import (
-    AnkerGamesProvider, BaseSourceProvider, ByXatabProvider, DODIProvider,
-    DownloadRelease, DownloadSourceCache, FitGirlProvider, SourceProviderRegistry,
-    build_search_queries, fitgirl_cache, normalize_title, search_fitgirl_repack,
-    search_game_release, search_game_releases, source_cache, source_registry,
+    DownloadRelease, DownloadSource, DownloadSourceCache, SourceProviderRegistry,
+    build_search_queries, normalize_title, search_game_release, search_game_releases,
+    source_cache, source_registry,
 )
 
 from .sources.model import parse_size_bytes
@@ -243,8 +242,6 @@ class TorrentDownloadManager:
         p = Path(download_dir)
         if not p.is_dir(): return None
         for cand in p.rglob('setup.exe'):
-            if cand.is_file(): return cand
-        for cand in p.rglob('*.exe'):
             if cand.is_file(): return cand
         return None
 

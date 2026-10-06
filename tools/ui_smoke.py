@@ -5,6 +5,7 @@ import sys
 import tempfile
 import time
 from unittest.mock import patch
+from threading import Event
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 os.environ.setdefault('GSK_RENDERER','broadway' if os.environ.get('GDK_BACKEND')=='broadway' else 'cairo')
 os.environ.setdefault('GSETTINGS_BACKEND','memory')
@@ -13,10 +14,12 @@ from game_library.app import Application,Window
 from game_library.demo import prepare_demo
 from catalog_fixtures import FixtureCatalog
 from game_library.play_history import record
+from game_library.catalog_work import CatalogWork
+from game_library.sources.registry import DownloadSource
 from game_library.sources.model import DownloadRelease
 from game_library.download_service import source_registry
 from uuid import uuid4
-from gi.repository import Adw,Gio,GLib,Gtk
+from gi.repository import Adw,Gdk,Gio,GLib,Gtk
 
 
 def pump_until(condition,timeout=5):
@@ -89,14 +92,45 @@ with tempfile.TemporaryDirectory() as temp:
     w.show_game(installed)
     assert not w.detail_size.get_visible() and not w.detail_source_row.get_visible()
     assert source_lookup_mock.call_count==calls_before_installed
-    w.show_game(uninstalled_game);pump_until(lambda:w.detail_refresh.get_sensitive())
-    fitgirl=DownloadRelease('fitgirl','FitGirl','Game installer','42 GB','magnet:?xt=urn:btih:fixture-fitgirl')
-    byxatab=DownloadRelease('byxatab','ByXatab','Game [Папка игры]','68 GB','magnet:?xt=urn:btih:fixture-byxatab',install_strategy='portable')
-    dodi=DownloadRelease('dodi','DODI','Game repack','55 GB','magnet:?xt=urn:btih:fixture-dodi')
-    source_registry.set_enabled('dodi',False)
-    source_lookup_mock.return_value=[fitgirl,byxatab,dodi]
-    w.set_detail_releases([fitgirl,byxatab,dodi])
-    assert w.detail_size.get_label()=='FitGirl · Download: 42 GB  ▾'
+    source_registry.replace_sources([
+        DownloadSource('source-a','Source A'),DownloadSource('source-b','Source B'),
+        DownloadSource('source-c','Source C'),DownloadSource('source-d','Source D'),
+        DownloadSource('source-e','Source E')])
+    library.data.setdefault('settings',{})['disabled_sources']=['source-c']
+    source_registry.apply_disabled_sources(['source-c'])
+    source_a=DownloadRelease('source-a','Source A','Game installer','42 GB','magnet:?xt=urn:btih:fixture-a')
+    source_b=DownloadRelease('source-b','Source B','Game edition','68 GB','magnet:?xt=urn:btih:fixture-b')
+    source_c=DownloadRelease('source-c','Source C','Game repack','55 GB','magnet:?xt=urn:btih:fixture-c')
+    availability_started=Event();availability_continue=Event()
+    def blocked_lookup(*_args,**_kwargs):
+        availability_started.set()
+        availability_continue.wait(2)
+        return []
+    source_lookup_mock.side_effect=blocked_lookup
+    w.demo=False
+    w.show_game(uninstalled_game)
+    pump_until(availability_started.is_set)
+    assert w.detail_availability_checking and not w.detail_primary.get_sensitive()
+    w.install_detail()
+    assert not any(window.get_title()=='Install '+uninstalled_game['title']
+                   for window in Gtk.Window.get_toplevels())
+    availability_continue.set()
+    pump_until(lambda:not w.detail_availability_checking)
+    assert w.detail_primary.get_sensitive(), f'Install did not re-enable after an empty result: demo={w.demo}, tv={w.tv_mode}, checking={w.detail_availability_checking}, active={w.launcher.active()}, label={w.detail_primary.get_label()}'
+    failed_lookup=Event()
+    def failing_lookup(*_args,**_kwargs):
+        failed_lookup.set()
+        raise RuntimeError('fixture source API failure')
+    source_lookup_mock.side_effect=failing_lookup
+    w.load_detail_sources(force_refresh=False)
+    pump_until(failed_lookup.is_set)
+    pump_until(lambda:not w.detail_availability_checking)
+    assert w.detail_primary.get_sensitive()
+    assert 'lookup failed' in (w.detail_primary.get_tooltip_text() or '').lower()
+    source_lookup_mock.side_effect=None
+    source_lookup_mock.return_value=[source_a,source_b,source_c]
+    w.set_detail_releases([source_a,source_b,source_c])
+    assert w.detail_size.get_label()=='Source A · Download: 42 GB  ▾'
     assert w.detail_refresh.get_tooltip_text()=='Refresh source results'
     refresh_calls=source_lookup_mock.call_count
     w.detail_refresh.emit('clicked')
@@ -104,8 +138,8 @@ with tempfile.TemporaryDirectory() as temp:
     pump_until(lambda:source_lookup_mock.call_count>refresh_calls)
     pump_until(lambda:w.detail_refresh.get_sensitive())
     assert source_lookup_mock.call_args.kwargs.get('force_refresh') is True
-    assert [release.provider_id for release in w.detail_all_releases]==['fitgirl','byxatab','dodi']
-    assert [release.provider_id for release in w.detail_releases]==['fitgirl','byxatab']
+    assert [release.provider_id for release in w.detail_all_releases]==['source-a','source-b','source-c']
+    assert [release.provider_id for release in w.detail_releases]==['source-a','source-b']
     screenshot('detail-source-button-dark.png')
     w.detail_size.emit('clicked')
     source_dialog=next(window for window in Gtk.Window.get_toplevels()
@@ -115,18 +149,23 @@ with tempfile.TemporaryDirectory() as temp:
     notebook=notebooks[0]
     tabs=[notebook.get_tab_label_text(notebook.get_nth_page(index))
           for index in range(notebook.get_n_pages())]
-    assert tabs==['FitGirl','ByXatab']
+    assert tabs==['Source A','Source B']
     page_titles=[[widget.get_title() for widget in widgets(notebook.get_nth_page(index))
                   if isinstance(widget,Adw.ActionRow)] for index in range(notebook.get_n_pages())]
-    assert page_titles==[['Game installer'],['Game [Папка игры]']]
+    assert page_titles==[['Game installer'],['Game edition']]
     checks=[widget for widget in widgets(source_dialog) if isinstance(widget,Gtk.CheckButton)]
     assert len(checks)==2 and checks[0].get_active() and not checks[1].get_active()
+    assert source_dialog.source_key_controller.emit('key-pressed',Gdk.KEY_Right,0,Gdk.ModifierType(0))
+    assert notebook.get_current_page()==1, 'Desktop arrow navigation did not change source tab'
+    assert source_dialog.source_key_controller.emit('key-pressed',Gdk.KEY_Left,0,Gdk.ModifierType(0))
+    assert notebook.get_current_page()==0
+    assert source_dialog.get_focus() is notebook, 'Desktop arrow navigation must retain visible notebook focus'
     screenshot('source-selection-dark.png',source_dialog)
     checks[1].set_active(True)
     click(source_dialog,'Use Source')
     pump_until(lambda:not source_dialog.get_visible())
-    assert w.detail_release.provider_id=='byxatab'
-    source_registry.set_enabled('dodi',True)
+    assert w.detail_release.provider_id=='source-b'
+    source_registry.set_enabled('source-c',True)
     class FixtureStorage:
         def snapshot(self):
             return {'registrations':[{'id':'fixture-drive','roles':['install'],'path':temp,'label':'Fixture'}],
@@ -138,7 +177,7 @@ with tempfile.TemporaryDirectory() as temp:
     install_dialog=next(window for window in Gtk.Window.get_toplevels()
                         if isinstance(window,Gtk.Window) and window.get_title()==install_title)
     groups=[widget for widget in widgets(install_dialog) if isinstance(widget,Adw.PreferencesGroup)]
-    assert any(group.get_title()=='Matched Source: ByXatab' for group in groups)
+    assert any(group.get_title()=='Matched Source: Source B' for group in groups)
     install_dialog.close();pump_until(lambda:not install_dialog.get_visible())
     w.storage_service=original_storage
     w.open_manage();assert not w.advanced.get_expanded();w.advanced.set_expanded(True);settle()
@@ -233,14 +272,19 @@ with tempfile.TemporaryDirectory() as temp:
     assert 'CONTINUE' in dialog.get_body();dialog.emit('response','cancel');assert not w.exiting
     quit_original=app.quit;exit_calls=[];app.quit=lambda:exit_calls.append('exit');w.explicit_exit()
     dialog=next(d for d in Gtk.Window.get_toplevels() if isinstance(d,Adw.MessageDialog) and d.get_heading()=='Exit UmuTron?');dialog.emit('response','confirm')
-    assert exit_calls==['exit'] and fake.active();app.quit=quit_original;w.exiting=False;w.pool=__import__('concurrent.futures',fromlist=['ThreadPoolExecutor']).ThreadPoolExecutor(max_workers=2)
+    assert exit_calls==['exit'] and fake.active();app.quit=quit_original;w.exiting=False;w.pool=__import__('concurrent.futures',fromlist=['ThreadPoolExecutor']).ThreadPoolExecutor(max_workers=2);w.catalog_pool=CatalogWork()
     w.launcher=real;w.show_game(installed)
     archive=Path(temp)/'backup.zip';library.export_zip(archive);library.import_zip(archive,'replace')
     assert library.games()[0]['launch']['arguments']==['one argument','--flag']
     w.proton_manager.releases=lambda *args,**kwargs:[{'family':'GE-Proton','version':'GE-Proton11-fixture','name':'GE-Proton11-fixture.tar.gz','architecture':'x86_64','source':'Official upstream fixture','url':'https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-fixture/GE-Proton11-fixture.tar.gz','size':1,'digest':'sha256:'+'0'*64,'checksum_url':''}]
+    source_load=patch.object(source_registry,'load_sources',return_value=source_registry.providers())
+    source_load.start()
     w.open_settings();settle();settings=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Settings')
+    pump_until(lambda:len(w.sources_settings_page._rows)==5)
+    assert [row.get_title() for row in w.sources_settings_page._rows]==[
+        'Source A','Source B','Source C','Source D','Source E']
     assert any(b.get_label()=='Export ZIP' for b in buttons(settings));settings.set_visible_page(w.proton_settings_page);w.proton_panel.stack.set_visible_child_name('GE-Proton');w.proton_panel.load('GE-Proton',1)
-    pump_until(lambda:any(b.get_label()=='Install' for b in buttons(settings)));screenshot('proton-manager-dark.png',settings);settings.destroy()
+    pump_until(lambda:any(b.get_label()=='Install' for b in buttons(settings)));screenshot('proton-manager-dark.png',settings);settings.destroy();source_load.stop()
     for leftover in list(Gtk.Window.get_toplevels()):
         if leftover is not w:leftover.destroy()
     w.present();settle()
@@ -264,6 +308,25 @@ with tempfile.TemporaryDirectory() as temp:
     for _ in range(4):navigate('back');assert w.tv_mode and w.route=='library'
     w.tv_home_tab.grab_focus();navigate('right');settle();assert w.focused_control(w) is w.tv_library_tab
     navigate('right');settle();assert w.focused_control(w) is w.tv_games_tab
+    w.show_game(uninstalled_game);pump_until(lambda:w.detail_refresh.get_sensitive())
+    w.detail_size.emit('clicked')
+    source_dialog=next(window for window in Gtk.Window.get_toplevels()
+                       if isinstance(window,Gtk.Window) and window.get_title()=='Select Download Source')
+    notebook=source_dialog.source_notebook
+    assert source_dialog.get_focus() is notebook
+    actual_navigation=w.navigation_window
+    w.navigation_window=lambda:source_dialog
+    try:
+        w.controller_action('right')
+        assert notebook.get_current_page()==1, 'Fullscreen controller navigation did not change source tab'
+        w.controller_action('select')
+        assert source_dialog.get_focus() is source_dialog.source_option_pages[1][0]
+        w.controller_action('down')
+        assert source_dialog.get_focus() is source_dialog.source_footer_controls[1]
+    finally:
+        w.navigation_window=actual_navigation
+        source_dialog.close()
+    pump_until(lambda:not source_dialog.get_visible())
     w.show_game(installed);settle()
     assert not any(isinstance(i,(Gtk.Entry,Gtk.DropDown)) for i in widgets(w.body))
     w.exiting=True;w.catalog_cancel();w.catalog_pool.shutdown(wait=True,cancel_futures=True)

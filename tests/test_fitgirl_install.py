@@ -1,11 +1,8 @@
 import unittest
 
-from game_library.download_service import (
-    build_search_queries,
-    detail_actions,
-    normalize_title,
-    search_fitgirl_repack,
-)
+from game_library.download_service import build_search_queries, detail_actions
+from game_library.sources.base import normalize_title
+from game_library.sources.providers.fitgirl import FitGirlProvider
 
 
 class FitGirlInstallTests(unittest.TestCase):
@@ -44,7 +41,7 @@ class FitGirlInstallTests(unittest.TestCase):
                 ]
             }
 
-        results = search_fitgirl_repack("https://mock-api.local", "The Witcher 3: Wild Hunt", transport=mock_transport)
+        results = FitGirlProvider().search("https://mock-api.local", "The Witcher 3: Wild Hunt", transport=mock_transport)
         self.assertTrue(len(results) > 0)
         # Full release is preferred over patch
         self.assertEqual(results[0]["id"], "full-1")

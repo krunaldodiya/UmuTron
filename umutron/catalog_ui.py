@@ -3,7 +3,7 @@ from copy import deepcopy
 import os
 from pathlib import Path
 import re
-from gi.repository import Adw, GLib, Gtk, Pango
+from gi.repository import Adw, Gdk, GLib, Gtk, Pango
 
 from .catalog import CatalogService, configured_catalog, add_item, item_game, members, related_members, entity_label, validate_item, needs_membership_lookup, MAX_PAGE
 from .collection import library_page, page_numbers
@@ -13,7 +13,7 @@ from .catalog_work import CatalogWork
 from .download_service import (
     UnavailableInstallService, configured_game, search_game_releases,
     download_manager, parse_size_bytes, format_size, estimate_space_requirements,
-    source_cache, source_registry, DownloadRelease
+    source_registry, DownloadRelease,
 )
 from .fullscreen import cover as console_cover, set_art, CoverPicture, CoverLayout
 from .library import description_excerpt
@@ -129,7 +129,7 @@ class CatalogUI:
     def init_catalog(self,provider=None):
         if provider is None:provider=configured_catalog()
         self.catalog=CatalogService(provider,self.library.root/'catalog-cache')
-        source_registry.apply_disabled_sources(self.library.data.get('settings',{}).get('disabled_sources',[]))
+
         self.catalog_pool=CatalogWork()
         self.store_item_futures=[];self.store_render_revision=0
         self.catalog_futures=[];self.catalog_generation=0;self.route='library';self.detail_origin='library'
@@ -613,10 +613,10 @@ class CatalogUI:
         self.detail_gear=Gtk.MenuButton(icon_name='emblem-system-symbolic');self.detail_gear.add_css_class('circular');self.detail_gear.set_tooltip_text('Game options');self.detail_gear.set_valign(Gtk.Align.CENTER);actions.append(self.detail_gear)
         popover=style_surface(Gtk.Popover());menu=box(spacing=6);margins(menu,8);popover.set_child(menu);self.detail_gear.set_popover(popover)
         def menu_action(callback):self.detail_gear.popdown();callback()
-        menu.append(button('Setup',lambda:menu_action(self.setup_detail)))
+        menu.append(button('Add an installed game',lambda:menu_action(self.setup_detail)))
         if installed:menu.append(button('Uninstall…',lambda:menu_action(self.review_uninstall)))
         menu.append(button('Game Info',lambda:menu_action(lambda:self.show_game_info(self.game))))
-        self.detail_repack=None;self.detail_install_pending=False
+        self.detail_repack=None
         self.detail_download_box=box(spacing=8)
         self.detail_download_box.set_visible(False)
         self.detail_progress_bar=Gtk.ProgressBar()
@@ -629,13 +629,8 @@ class CatalogUI:
         if download_manager.active_jobs.get(game['id']):
             self.track_download_progress(game['id'])
         game_title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
-        cached_releases=source_cache.get(game_title) if game_title and not installed else None
-        self.detail_releases=[];self.detail_all_releases=[];self.detail_release=False;self.detail_install_pending=False
-        if isinstance(cached_releases,list):
-            self.set_detail_releases(cached_releases)
-        elif cached_releases is False:
-            self.set_detail_releases([])
-        elif not installed:
+        self.detail_releases=[];self.detail_all_releases=[];self.detail_release=False;self.detail_availability_checking=False;self.detail_no_installer_found=False
+        if not installed:
             if game_title:self.load_detail_sources()
             else:self.set_detail_releases([])
         self.detail_related=None
@@ -824,24 +819,30 @@ class CatalogUI:
         title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
         if not title:return
         game_id=self.game['id'];generation=self.catalog_generation
+        self.detail_availability_checking=True
+        self.detail_primary.set_sensitive(False)
+        self.detail_primary.set_tooltip_text('Checking download availability')
         self.detail_refresh.set_sensitive(False)
         if force_refresh and not self.detail_releases:
             self.detail_size.set_label('Refreshing download sources…')
             self.detail_size.set_sensitive(False)
-        base_url=getattr(getattr(self.catalog,'provider',None),'base','https://umu-tron-api.vercel.app')
+        base_url=getattr(getattr(self.catalog,'provider',None),'base',None)
         def current_detail():
             return (self.route=='detail' and self.game and self.game['id']==game_id
                     and self.catalog_generation==generation)
         def releases_loaded(releases):
             if not current_detail():return
+            source_registry.apply_disabled_sources(self.library.data.get('settings',{}).get('disabled_sources',[]))
             self.set_detail_releases(releases)
+            self.detail_availability_checking=False
+            self.refresh_launch_state()
+            self.detail_primary.set_tooltip_text(None)
             self.detail_refresh.set_sensitive(True)
-            if getattr(self,'detail_install_pending',False):
-                self.detail_install_pending=False
-                if self.detail_releases:self.install_detail()
-                else:self.prompt_no_release(title)
         def releases_failed(error):
             if not current_detail():return
+            self.detail_availability_checking=False
+            self.refresh_launch_state()
+            self.detail_primary.set_tooltip_text('Download lookup failed; refresh source results or add an installed game')
             self.detail_refresh.set_sensitive(True)
             if not self.detail_all_releases:
                 self.detail_releases=[];self.detail_release=False
@@ -849,9 +850,6 @@ class CatalogUI:
                 self.detail_size.set_tooltip_text('Use Refresh source results to retry')
                 self.detail_size.set_sensitive(False)
             if force_refresh:self.notify(f'Could not refresh source results: {error}')
-            if getattr(self,'detail_install_pending',False):
-                self.detail_install_pending=False
-                self.notify(f'Could not reach download source API: {error}')
         self.catalog_job(lambda:search_game_releases(base_url,title,force_refresh=force_refresh),
                          releases_loaded,releases_failed,source=True)
 
@@ -896,19 +894,19 @@ class CatalogUI:
         for release in releases:
             sources.setdefault(release.provider_id,[]).append(release)
         notebook=Gtk.Notebook()
-        notebook.set_scrollable(True);notebook.set_hexpand(True);notebook.set_vexpand(True)
+        notebook.set_scrollable(True);notebook.set_hexpand(True);notebook.set_vexpand(True);notebook.set_focusable(True)
+        notebook.add_css_class('source-picker-tabs')
         notebook.update_property([Gtk.AccessibleProperty.LABEL],['Download sources'])
         selected=[self.detail_release if self.detail_release in releases else releases[0]]
-        radio_group=None
+        option_pages=[];source_ids=[];radio_group=None
         for provider_id,source_releases in sources.items():
             provider=source_releases[0].get('provider_name') or provider_id
             group=Adw.PreferencesGroup()
+            page_options=[]
             for release in source_releases:
                 size=(release.get('file_size') or 'Unknown size').strip()
-                strategy=release.get('install_strategy','installer')
-                method='Pre-installed files' if strategy=='portable' else 'Installer'
                 release_title=release.get('title') or self.game.get('title','Game')
-                row=Adw.ActionRow(title=release_title,subtitle=f'Download size: {size} · {method}')
+                row=Adw.ActionRow(title=release_title,subtitle=f'Download size: {size}')
                 row.set_use_markup(False);row.set_subtitle_lines(2)
                 check=Gtk.CheckButton(valign=Gtk.Align.CENTER)
                 if radio_group is None:radio_group=check
@@ -916,25 +914,76 @@ class CatalogUI:
                 check.set_active(release is selected[0])
                 check.connect('toggled',lambda control,r=release: selected.__setitem__(0,r) if control.get_active() else None)
                 row.add_suffix(check);row.set_activatable_widget(check);group.add(row)
+                page_options.append(check)
             page=Gtk.ScrolledWindow(vexpand=True,hscrollbar_policy=Gtk.PolicyType.NEVER)
             page.set_child(group)
             tab=Gtk.Label(label=provider)
             tab.set_tooltip_text(f'{len(source_releases)} matching releases from {provider}')
             notebook.append_page(page,tab)
+            option_pages.append(page_options);source_ids.append(provider_id)
         content.append(notebook)
         footer=dialog_footer();content.append(footer)
         _,button_fn,_,_,_=ui()
-        footer.append(button_fn('Cancel',dialog.close))
+        cancel=button_fn('Cancel',dialog.close);footer.append(cancel)
         def use_source():
             if (self.route=='detail' and self.game and self.game['id']==game_id
                     and self.catalog_generation==generation and source_registry.is_enabled(selected[0].provider_id)):
                 self.set_detail_release(selected[0])
             dialog.close()
         use=button_fn('Use Source',use_source,'suggested-action');footer.append(use)
+        footer_controls=[cancel,use]
+        if selected[0].provider_id in source_ids:
+            notebook.set_current_page(source_ids.index(selected[0].provider_id))
+        def navigate(action):
+            page=notebook.get_current_page()
+            options=option_pages[page] if 0<=page<len(option_pages) else []
+            focus=dialog.get_focus()
+            if action in ('left','right'):
+                if focus in footer_controls:
+                    index=footer_controls.index(focus)+(1 if action=='right' else -1)
+                    footer_controls[max(0,min(len(footer_controls)-1,index))].grab_focus()
+                elif source_ids:
+                    notebook.set_current_page((page+(1 if action=='right' else -1))%len(source_ids))
+                    notebook.grab_focus()
+                return
+            if action in ('up','previous'):
+                if focus is notebook:return
+                if focus in options:
+                    index=options.index(focus)
+                    (options[index-1] if index else notebook).grab_focus()
+                elif focus in footer_controls:
+                    (options[-1] if options else notebook).grab_focus()
+                return
+            if action in ('down','next'):
+                if focus is notebook:
+                    (options[0] if options else footer_controls[0]).grab_focus()
+                elif focus in options:
+                    index=options.index(focus)
+                    (options[index+1] if index+1<len(options) else use).grab_focus()
+                elif focus in footer_controls:
+                    index=footer_controls.index(focus)
+                    (footer_controls[index+1] if index+1<len(footer_controls) else notebook).grab_focus()
+        dialog.source_notebook=notebook
+        dialog.source_option_pages=option_pages
+        dialog.source_footer_controls=footer_controls
+        dialog.source_navigation=navigate
+        keys=Gtk.EventControllerKey();keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        def picker_key(_controller,keyval,_keycode,state):
+            if state&(Gdk.ModifierType.SHIFT_MASK|Gdk.ModifierType.CONTROL_MASK|Gdk.ModifierType.ALT_MASK|Gdk.ModifierType.SUPER_MASK):return False
+            action={Gdk.KEY_Left:'left',Gdk.KEY_Right:'right',Gdk.KEY_Up:'up',Gdk.KEY_Down:'down'}.get(keyval)
+            if action is None:return False
+            navigate(action)
+            return True
+        keys.connect('key-pressed',picker_key);dialog.add_controller(keys);dialog.source_key_controller=keys
         dialog.present()
         if self.tv_mode:self.restrict_tv_focus(content)
+        notebook.grab_focus()
 
     def install_detail(self):
+        if getattr(self,'detail_availability_checking',False):return
+        if getattr(self,'detail_no_installer_found',False):
+            self.setup_detail()
+            return
         drives=[]
         if hasattr(self,'storage_service') and self.storage_service:
             try:
@@ -963,19 +1012,18 @@ class CatalogUI:
         if self.detail_release is False:
             self.prompt_no_release(title)
             return
-        self.detail_install_pending=True
-        self.detail_status.set_text(f'Finding download for "{title}"…')
+        self.load_detail_sources()
 
     def prompt_no_release(self,title):
         body=(f'"{title}" is not available in our download catalog.\n\n'
-              'You can still add this game to your library and set it up manually using your own local files or an installer.')
+            'You can still add this game to your library and set it up manually using your own local files or an installer.')
         def open_setup():
             if not self.saved_detail():
                 self.detail_action()
             self.open_manage()
-        self.confirm('No Download Found',body,'Set up Manually',open_setup)
+        self.confirm('No Download Found',body,'Add an installed game',open_setup)
         if hasattr(self,'detail_status') and self.detail_status:
-            self.detail_status.set_text(f'No download found for "{title}". Use Setup for manual files.')
+            self.detail_status.set_text(f'No download found for "{title}". Use Add an installed game for manual files.')
 
     def show_install_release_dialog(self,release):
         title=self.game.get('title','Game')
@@ -1160,7 +1208,12 @@ class CatalogUI:
             self.detail_progress_label.set_text(f'Download complete. Launching {prov_name} installer through UMU…')
         setup_exe=download_manager.find_setup_exe(download_dir)
         if not setup_exe:
-            self.notify('Could not find setup.exe in downloaded files.')
+            self.detail_no_installer_found=True
+            self.notify(f'Downloaded {title}, but no setup.exe was found. Use Add an installed game to choose files or an installer manually.')
+            if hasattr(self,'detail_primary'):
+                self.detail_primary.set_label('Add an installed game')
+                self.detail_primary.set_tooltip_text('Choose the downloaded files or a local installer manually')
+                self.refresh_launch_state()
             return
 
         self.game['installation']={

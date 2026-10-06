@@ -8,7 +8,6 @@ from urllib.request import ProxyHandler, Request, build_opener
 
 from .model import DownloadRelease
 
-DEFAULT_API_KEY = 'mysupersecretkey'
 
 
 def normalize_title(title):
@@ -59,7 +58,7 @@ class BaseSourceProvider:
     def search(self, base_url, title, api_key=None, transport=None):
         if not base_url or not title:
             return []
-        key = api_key or os.environ.get('UMUTRON_API_KEY') or os.environ.get('INTERNAL_API_KEY') or DEFAULT_API_KEY
+        key = api_key or os.environ.get('UMUTRON_API_KEY') or os.environ.get('INTERNAL_API_KEY')
         seen_queries = set()
         for query in build_search_queries(title):
             clean_query = query.strip()
@@ -72,11 +71,13 @@ class BaseSourceProvider:
                 if transport is not None:
                     data = transport(endpoint)
                 else:
-                    request = Request(endpoint, headers={
-                        'x-api-key': key,
+                    headers = {
                         'Accept': 'application/json',
-                        'User-Agent': f'UmuTron/provider-{self.id}',
-                    })
+                        'User-Agent': 'UmuTron/compatibility-adapter',
+                    }
+                    if key:
+                        headers['x-api-key'] = key
+                    request = Request(endpoint, headers=headers)
                     with build_opener(ProxyHandler({})).open(request, timeout=15) as response:
                         data = json.loads(response.read().decode('utf-8'))
                 results = []

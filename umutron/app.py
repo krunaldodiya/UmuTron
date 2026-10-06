@@ -368,8 +368,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
 
     def restrict_tv_focus(self,widget):
         if isinstance(widget,Gtk.Label):widget.set_selectable(False)
-        if isinstance(widget,Gtk.Viewport):widget.set_scroll_to_focus(self.route!='home' and widget.get_child() is not getattr(self,'tv_rail',None))
-        if not isinstance(widget,(Gtk.Button,Gtk.MenuButton)):widget.set_focusable(False)
+        if not isinstance(widget,(Gtk.Button,Gtk.MenuButton,Gtk.CheckButton,Gtk.Notebook)):widget.set_focusable(False)
         child=widget.get_first_child()
         while child:self.restrict_tv_focus(child);child=child.get_next_sibling()
 
@@ -579,6 +578,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
     def controller_action(self,action):
         if not self.controller_enabled():return
         target=self.navigation_window()
+        if target is None:return
         if target is self:self.mark_browse_input()
         popover=self.controller_popover(target)
         if popover:
@@ -594,6 +594,14 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                 if focus and focus.is_sensitive() and focus.is_ancestor(popover):focus.activate()
                 else:self.move_control_focus(target,'next')
             return
+        source_navigation=getattr(target,'source_navigation',None)
+        if callable(source_navigation):
+            if action in ('left','right','up','down','next','previous'):
+                source_navigation(action);return
+            focus=target.get_focus()
+            notebook=getattr(target,'source_notebook',None)
+            if action=='select' and notebook is not None and focus is not None and (focus is notebook or focus.is_ancestor(notebook)):
+                source_navigation('down');return
         if action=='desktop':
             if target is self and self.tv_mode:self.tv_menu.grab_focus();self.open_tv_options()
             return
@@ -1141,7 +1149,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                         self.notify(f'Installer files deleted ({size_str} reclaimed).')
                     self.confirm('Installation Complete',
                                  f"{game['title']} has been successfully installed.\n\n"
-                                 f"Would you like to delete the original FitGirl installer files ({size_str}) to reclaim disk space, or keep them?",
+                                 f"Would you like to delete the original installer files ({size_str}) to reclaim disk space, or keep them?",
                                  'Delete Installer Files',delete_installer,destructive=True)
 
     def source_text(self):
@@ -1239,7 +1247,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         dialog.connect('close-request',clear_settings);dialog.connect('unrealize',clear_settings)
         self.storage_settings_page=StoragePage(self.storage_service,dialog);dialog.add(self.storage_settings_page)
         from .settings_sources import SourcesPage
-        self.sources_settings_page=SourcesPage(self.library,dialog);dialog.add(self.sources_settings_page)
+        self.sources_settings_page=SourcesPage(self.library,self);dialog.add(self.sources_settings_page)
         if section=='storage' and self.tv_mode:
             dialog.set_title('Storage');dialog.present();return
         if section=='sources' and self.tv_mode:
@@ -1383,10 +1391,18 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             detail=getattr(self,'route',None)=='detail' and self.game and self.game['id']==game_id
             setup_needed=detail and not configured and not own
             control.set_label('Preparing…' if preparing else 'Stopping…' if stopping else ('Stop installer' if installer else 'Stop' if own else 'Play' if configured else 'Open desktop Setup' if self.tv_mode and detail else 'Setup'))
-            control.set_sensitive(not self.demo and not stopping and not preparing and (not active or own) and (not self.tv_mode or configured or own or setup_needed))
+            checking=getattr(self,'detail_availability_checking',False) if detail else False
+            control.set_sensitive(not checking and not self.demo and not stopping and not preparing and (not active or own) and (not self.tv_mode or configured or own or setup_needed))
             control.set_tooltip_text(('Active: '+current.get('title','game')+'. Finish it before starting another.') if active and not own else 'Stop this game' if own else 'Play through UMU' if configured else 'Switch to desktop mode to set up this game' if self.tv_mode else 'Set up existing game files or a local installer')
             if setup_needed and not active:
                 self.detail_status.set_text('Open desktop Setup to choose your game files or a local installer.' if self.tv_mode else 'Set up your existing game files or choose a local installer.')
+        if (getattr(self,'route',None)=='detail' and self.game and hasattr(self,'detail_primary')
+                and not configured_game(self.game)
+                and not (hasattr(self,'detail_download_box') and self.detail_download_box.get_visible())):
+            checking=getattr(self,'detail_availability_checking',False)
+            adding=getattr(self,'detail_adding',False)
+            self.detail_primary.set_sensitive(
+                not checking and not adding and not self.demo and not active)
         if self.tv_mode and self.game is None and hasattr(self,'tv_hints'):
             status=' · '+self.controller.name if hasattr(self,'controller') and self.controller.name else ''
             self.tv_hints.set_text('← ↑ ↓ → / D-pad  Browse     Enter / A  View game     Esc / B  Back     X  Focus Play / Stop     F11 / Start  Options'+status)

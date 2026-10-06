@@ -41,6 +41,14 @@ CSS = b'''
 .umu-surface.umu-dark button:focus, .umu-surface.umu-dark button:focus-visible, .umu-surface.umu-dark .control-focused,
 .umu-surface.umu-dark checkbutton:focus, .umu-surface.umu-dark checkbutton:focus-visible,
 .umu-surface.umu-dark entry:focus-within, .umu-surface.umu-dark textview:focus-within { outline-color: #a6f5df; }
+.umu-surface notebook.source-picker-tabs > header > tabs > tab:focus {
+  outline: 3px solid #267c6c; outline-offset: 2px; }
+.umu-surface.umu-dark notebook.source-picker-tabs > header > tabs > tab:focus {
+  outline-color: #a6f5df; }
+.umu-surface notebook.source-picker-tabs:focus {
+  outline: 3px solid #267c6c; outline-offset: 2px; }
+.umu-surface.umu-dark notebook.source-picker-tabs:focus {
+  outline-color: #a6f5df; }
 .umu-surface menubutton.control-focused > button:focus { outline: none; }
 .umu-surface entry, .umu-surface textview, .umu-surface textview text,
 .umu-surface list.boxed-list { background-color: #e7edf1; color: #172b36; }
