@@ -595,8 +595,11 @@ class CatalogUI:
         self.detail_refresh.update_property([Gtk.AccessibleProperty.LABEL],['Refresh source results'])
         self.detail_refresh.connect('clicked',lambda *_:self.refresh_detail_sources())
         self.detail_source_row=box(False,8);self.detail_source_row.append(self.detail_size);self.detail_source_row.append(self.detail_refresh)
-        self.detail_source_row.set_visible(not installed)
-        self.detail_size.set_visible(not installed);self.detail_refresh.set_visible(not installed)
+        game_title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
+        has_installer = bool(self.find_existing_downloaded_installer(game_title)) if game_title else False
+        show_sources = not installed and not has_installer
+        self.detail_source_row.set_visible(show_sources)
+        self.detail_size.set_visible(show_sources);self.detail_refresh.set_visible(show_sources)
         info.append(self.detail_source_row)
         actions=box(False,12);panel.append(actions);self.detail_actions_box=actions
         if installed:
@@ -611,6 +614,7 @@ class CatalogUI:
         else:
             lib_btn=button('Add to library',self.detail_action);lib_btn.add_css_class('detail-primary')
         lib_btn.set_valign(Gtk.Align.CENTER);actions.append(lib_btn)
+        self.detail_lib_btn = lib_btn
         self.detail_gear=Gtk.MenuButton(icon_name='emblem-system-symbolic');self.detail_gear.add_css_class('circular');self.detail_gear.set_tooltip_text('Game options');self.detail_gear.set_valign(Gtk.Align.CENTER);actions.append(self.detail_gear)
         popover=style_surface(Gtk.Popover());menu=box(spacing=6);margins(menu,8);popover.set_child(menu);self.detail_gear.set_popover(popover)
         def menu_action(callback):self.detail_gear.popdown();callback()
@@ -631,7 +635,7 @@ class CatalogUI:
             self.track_download_progress(game['id'])
         game_title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
         self.detail_releases=[];self.detail_all_releases=[];self.detail_release=False;self.detail_availability_checking=False;self.detail_no_installer_found=False
-        if not installed:
+        if not installed and not has_installer:
             if game_title:self.load_detail_sources()
             else:self.set_detail_releases([])
         self.detail_related=None
@@ -819,6 +823,11 @@ class CatalogUI:
         if self.route!='detail' or not self.game or not self.detail_source_row.get_visible():return
         title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
         if not title:return
+        if self.find_existing_downloaded_installer(title):
+            self.detail_source_row.set_visible(False)
+            self.detail_size.set_visible(False)
+            self.detail_refresh.set_visible(False)
+            return
         game_id=self.game['id'];generation=self.catalog_generation
         self.detail_availability_checking=True
         self.detail_primary.set_sensitive(False)
@@ -859,6 +868,12 @@ class CatalogUI:
             self.load_detail_sources(force_refresh=True)
 
     def set_detail_releases(self,releases):
+        game_title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
+        if game_title and self.find_existing_downloaded_installer(game_title):
+            self.detail_source_row.set_visible(False)
+            self.detail_size.set_visible(False)
+            self.detail_refresh.set_visible(False)
+            return
         self.detail_all_releases=list(releases or [])
         enabled={provider.id for provider in source_registry.providers(only_enabled=True)}
         self.detail_releases=[release for release in self.detail_all_releases
@@ -980,6 +995,55 @@ class CatalogUI:
         if self.tv_mode:self.restrict_tv_focus(content)
         notebook.grab_focus()
 
+    def ensure_saved_game(self):
+        """Ensure current game is a valid library entry with a genuine UUID before install/launch."""
+        if self.saved_detail():
+            return self.game
+        if self.detail_item:
+            existing = members(self.library, self.detail_item)
+            if existing:
+                self.game = deepcopy(existing[0])
+                return self.game
+            art = {}
+            for kind, url in self.detail_item.get('images', {}).items():
+                try:
+                    p = self.catalog.image(url)
+                    if p and Path(p).is_file():
+                        art[kind] = Path(p).read_bytes()
+                except Exception:
+                    pass
+            try:
+                self.game, _ = add_item(self.library, self.detail_item, art)
+                return self.game
+            except Exception:
+                pass
+        from uuid import UUID
+        game_id = self.game.get('id', '')
+        try:
+            UUID(game_id)
+            if not any(g['id'] == game_id for g in self.library.games()):
+                self.library.save(self.game)
+            if hasattr(self, 'detail_lib_btn') and self.detail_lib_btn:
+                self.detail_lib_btn.set_label('Remove from library')
+                self.detail_lib_btn.connect('clicked', lambda *_: self.remove_detail())
+            return self.game
+        except (ValueError, TypeError):
+            from .library import Library
+            new_game = Library.new_game()
+            for k in ('title', 'description', 'release_date', 'genres', 'developers', 'publishers'):
+                if self.game.get(k):
+                    new_game[k] = self.game[k]
+            if self.game.get('installation'):
+                new_game['installation'] = deepcopy(self.game['installation'])
+            if self.game.get('working_dir'):
+                new_game['working_dir'] = self.game['working_dir']
+            self.library.save(new_game)
+            self.game = new_game
+            if hasattr(self, 'detail_lib_btn') and self.detail_lib_btn:
+                self.detail_lib_btn.set_label('Remove from library')
+                self.detail_lib_btn.connect('clicked', lambda *_: self.remove_detail())
+            return self.game
+
     def find_existing_downloaded_installer(self, title):
         game_id = self.game.get('id') if self.game else None
         drives = []
@@ -988,7 +1052,14 @@ class CatalogUI:
                 state = self.storage_service.snapshot()
                 for r in state.get('registrations', []):
                     if 'install' in r.get('roles', []):
-                        drives.append(r.get('path'))
+                        if r.get('paths', {}).get('install'):
+                            drives.append(r['paths']['install'])
+                        if r.get('path'):
+                            drives.append(r['path'])
+                        if r.get('root'):
+                            drives.append(r['root'])
+                        if r.get('last_root'):
+                            drives.append(r['last_root'])
             except Exception:
                 pass
 
@@ -1042,20 +1113,22 @@ class CatalogUI:
                     if not sub.is_dir():
                         continue
                     sub_clean = re.sub(r'[^a-z0-9]', '', sub.name.lower())
-                    match = clean_title and (clean_title in sub_clean or sub_clean in clean_title)
-                    if not match:
+                    target = None
+                    if clean_title and (clean_title in sub_clean or sub_clean in clean_title):
+                        target = sub
+                    else:
                         for nested in sub.iterdir():
                             if nested.is_dir():
                                 nested_clean = re.sub(r'[^a-z0-9]', '', nested.name.lower())
                                 if clean_title and (clean_title in nested_clean or nested_clean in clean_title):
-                                    match = True
+                                    target = nested
                                     break
-                    if match:
-                        payload = download_manager.inspect_payload(sub)
+                    if target and target.is_dir():
+                        payload = download_manager.inspect_payload(target)
                         if payload.kind in (PayloadKind.INSTALLER_LOOSE, PayloadKind.PORTABLE_LOOSE, PayloadKind.ARCHIVE):
                             entry = {
                                 'title': title,
-                                'download_dir': str(sub),
+                                'download_dir': str(target),
                                 'dest_dir': dest_dir,
                                 'strategy': 'installer',
                                 'prov_name': 'Download',
@@ -1078,12 +1151,8 @@ class CatalogUI:
         # Bypass picker completely if a downloaded installer already exists on disk
         existing = self.find_existing_downloaded_installer(title)
         if existing:
-            if not self.saved_detail():
-                item = deepcopy(self.detail_item) if self.detail_item else None
-                if item:
-                    draft = item_game(item, preview=False)
-                    self.game = deepcopy(draft); self.original = deepcopy(draft)
             self.notify(f'Using downloaded installer for {title}. Starting installation…')
+            self.ensure_saved_game()
             self.on_release_download_complete(
                 self.game['id'],
                 existing['download_dir'],
@@ -1260,6 +1329,7 @@ class CatalogUI:
                     payload = download_manager.inspect_payload(candidate)
                     if payload.kind in (PayloadKind.INSTALLER_LOOSE, PayloadKind.PORTABLE_LOOSE, PayloadKind.ARCHIVE):
                         self.notify(f'Found existing downloaded files for {title}. Starting installation…')
+                        self.ensure_saved_game()
                         self.on_release_download_complete(self.game['id'], str(candidate), dest_dir, inst_str, prov_name, strategy)
                         return
 
@@ -1344,7 +1414,11 @@ class CatalogUI:
         self.confirm('Cancel Download?','This will stop the download and remove any partial download files.','Cancel Download',do_cancel,destructive=True)
 
     def on_release_download_complete(self, game_id, download_dir, dest_dir, inst_str, prov_name='Download', strategy='installer'):
+        self.ensure_saved_game()
+        game_id = self.game['id']
         title = self.game.get('title', 'Game')
+        try: Path(dest_dir).mkdir(parents=True, exist_ok=True)
+        except Exception: pass
         if hasattr(self, 'detail_download_box'):
             self.detail_download_box.set_visible(True)
         if hasattr(self, 'detail_primary'):
@@ -1430,6 +1504,11 @@ class CatalogUI:
                         self.monitor_silent_installation(game_id, dest_dir, title, inner_payload.crack_dir, expected_bytes=expected_bytes)
                         return
                     except Exception as error:
+                        if hasattr(self, 'detail_primary'):
+                            self.detail_primary.set_label('Install')
+                            self.detail_primary.set_sensitive(True)
+                        if hasattr(self, 'detail_progress_label'):
+                            self.detail_progress_label.set_text(f'Installer launch error: {error}')
                         self.error(error); return
 
         setup_exe = payload.installer_exe or download_manager.find_setup_exe(download_dir)
@@ -1485,6 +1564,11 @@ class CatalogUI:
             self.notify(f'Silent background installer started for {title}.')
             self.monitor_silent_installation(game_id, dest_dir, title, payload.crack_dir, expected_bytes=expected_bytes)
         except Exception as error:
+            if hasattr(self, 'detail_primary'):
+                self.detail_primary.set_label('Install')
+                self.detail_primary.set_sensitive(True)
+            if hasattr(self, 'detail_progress_label'):
+                self.detail_progress_label.set_text(f'Installer launch error: {error}')
             self.error(error)
 
     def monitor_silent_installation(self, game_id, dest_dir, title, crack_dir=None, expected_bytes=0):
