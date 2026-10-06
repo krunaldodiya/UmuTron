@@ -12,7 +12,7 @@ from .dialogs import style_surface, modal_window, dialog_body, dialog_footer
 from .catalog_work import CatalogWork
 from .download_service import (
     UnavailableInstallService, configured_game, detail_actions, search_fitgirl_repack,
-    download_manager, parse_size_bytes, format_size, estimate_space_requirements
+    download_manager, parse_size_bytes, format_size, estimate_space_requirements, fitgirl_cache
 )
 from .fullscreen import cover as console_cover, set_art, CoverPicture, CoverLayout
 from .library import description_excerpt
@@ -529,6 +529,12 @@ class CatalogUI:
         if not refresh:self.restore_collection(navigation_revision)
         elif not reuse and focused_id is not None:self.restore_collection(getattr(self,'browse_navigation_revision',0))
         elif refresh and focused_id is not None:self.reveal_browse_control(current)
+        base_url=getattr(getattr(self.catalog,'provider',None),'base','https://umu-tron-api.vercel.app')
+        unwarmed=[it['name'] for it in data.get('items',[]) if it.get('name') and fitgirl_cache.get(it['name']) is None]
+        if unwarmed and not self.exiting:
+            def warm_cards():
+                for name in unwarmed[:8]:search_fitgirl_repack(base_url,name)
+            self.catalog_job(warm_cards,lambda _:None,lambda _:None,background=True)
 
     def open_catalog_item(self,item):
         self.capture_route();self.detail_origin='store';self.detail_item=item
@@ -616,31 +622,42 @@ class CatalogUI:
         if download_manager.active_jobs.get(game['id']):
             self.track_download_progress(game['id'])
         game_title=(self.detail_item.get('name') if self.detail_item else self.game.get('title')) or self.game.get('title','')
-        if game_title and not installed:
-            base_url=getattr(getattr(self.catalog,'provider',None),'base','https://umu-tron-api.vercel.app')
-            def check_fg_repack():return search_fitgirl_repack(base_url,game_title)
-            def fg_repack_loaded(repacks):
-                if repacks:
-                    self.detail_repack=repacks[0]
-                    sz=(self.detail_repack.get('file_size') or '').strip()
-                    if hasattr(self,'detail_size') and self.detail_size:
-                        self.detail_size.set_text(f'FitGirl Repack · {sz}' if sz else 'FitGirl Repack · Available')
-                    if getattr(self,'detail_install_pending',False):
-                        self.detail_install_pending=False
-                        self.install_detail()
-                else:
+        cached_repack=fitgirl_cache.get(game_title) if game_title else None
+        self.detail_repack=cached_repack;self.detail_install_pending=False
+        if cached_repack:
+            sz=(cached_repack.get('file_size') or '').strip()
+            self.detail_size.set_text(f'FitGirl Repack · Download: {sz}' if sz else 'FitGirl Repack · Available')
+        elif cached_repack is False:
+            self.detail_size.set_text('Installation size · Unknown')
+        else:
+            self.detail_size.set_text('Checking FitGirl availability…')
+            if game_title and not installed:
+                base_url=getattr(getattr(self.catalog,'provider',None),'base','https://umu-tron-api.vercel.app')
+                def check_fg_repack():return search_fitgirl_repack(base_url,game_title)
+                def fg_repack_loaded(repacks):
+                    if repacks:
+                        self.detail_repack=repacks[0]
+                        sz=(self.detail_repack.get('file_size') or '').strip()
+                        if hasattr(self,'detail_size') and self.detail_size:
+                            self.detail_size.set_text(f'FitGirl Repack · Download: {sz}' if sz else 'FitGirl Repack · Available')
+                        if getattr(self,'detail_install_pending',False):
+                            self.detail_install_pending=False
+                            self.install_detail()
+                    else:
+                        self.detail_repack=False
+                        if hasattr(self,'detail_size') and self.detail_size:
+                            self.detail_size.set_text('Installation size · Unknown')
+                        if getattr(self,'detail_install_pending',False):
+                            self.detail_install_pending=False
+                            self.prompt_no_repack(game_title)
+                def fg_repack_failed(error):
                     self.detail_repack=False
                     if hasattr(self,'detail_size') and self.detail_size:
                         self.detail_size.set_text('Installation size · Unknown')
                     if getattr(self,'detail_install_pending',False):
                         self.detail_install_pending=False
-                        self.prompt_no_repack(game_title)
-            def fg_repack_failed(error):
-                self.detail_repack=False
-                if getattr(self,'detail_install_pending',False):
-                    self.detail_install_pending=False
-                    self.notify(f'Could not reach FitGirl API: {error}')
-            self.catalog_job(check_fg_repack,fg_repack_loaded,fg_repack_failed,background=True)
+                        self.notify(f'Could not reach FitGirl API: {error}')
+                self.catalog_job(check_fg_repack,fg_repack_loaded,fg_repack_failed,background=True)
         self.detail_related=None
         related=related_members(self.library,item) if item and not saved else []
         if related:

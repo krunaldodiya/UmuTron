@@ -258,6 +258,33 @@ class TorrentDownloadManager:
         for cand in p.rglob('*.exe'):
             if cand.is_file(): return cand
         return None
+class FitGirlCache:
+    def __init__(self, cache_file=None):
+        if cache_file is None:
+            root = Path(os.environ.get('XDG_DATA_HOME', Path.home()/'.local/share')) / 'umutron'
+            cache_file = root / 'fitgirl-cache.json'
+        self.path = Path(cache_file)
+        self.data = {}
+        if self.path.is_file():
+            try: self.data = json.loads(self.path.read_text())
+            except Exception: pass
+
+    def get(self, title):
+        if not title: return None
+        return self.data.get(title.strip().lower())
+
+    def set(self, title, repack):
+        if not title: return
+        self.data[title.strip().lower()] = repack
+        try:
+            from .library import atomic_write
+            atomic_write(self.path, json.dumps(self.data, indent=2).encode())
+        except Exception:
+            pass
+
+fitgirl_cache = FitGirlCache()
+
+
 
 
 download_manager = TorrentDownloadManager()
@@ -304,6 +331,9 @@ def search_fitgirl_repack(base_url, title, api_key=None, transport=None):
     """Query UmuTron API for FitGirl magnet repacks matching the given game title."""
     if not base_url or not title:
         return []
+    cached = fitgirl_cache.get(title)
+    if cached is not None:
+        return [cached] if (cached and isinstance(cached, dict)) else []
     key = api_key or os.environ.get('UMUTRON_API_KEY') or os.environ.get('INTERNAL_API_KEY') or DEFAULT_API_KEY
     queries = build_search_queries(title)
     seen_queries = set()
@@ -340,10 +370,12 @@ def search_fitgirl_repack(base_url, title, api_key=None, transport=None):
                         item['magnet'] = magnet
                         results.append(item)
                 if results:
+                    fitgirl_cache.set(title, results[0])
                     return results
         except Exception:
             continue
 
+    fitgirl_cache.set(title, False)
     return []
 
 
