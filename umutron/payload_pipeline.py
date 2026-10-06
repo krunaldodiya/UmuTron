@@ -148,20 +148,27 @@ def find_crack_directory(directory: Path) -> Path | None:
             return matches[0]
     return None
 
+def to_wine_path(posix_path: Path) -> str:
+    r"""Convert a POSIX path to a Wine drive letter path (e.g. Z:\run\media\...)."""
+    clean = str(posix_path).replace('/', '\\')
+    if not clean.startswith('\\'):
+        clean = '\\' + clean
+    return f'Z:{clean}'
+
+
 def get_silent_installer_arguments(installer_type: InstallerType, target_dir: Path) -> list[str]:
     """Return standard unattended silent CLI arguments for the detected installer framework."""
-    target_str = str(target_dir)
+    wine_target = to_wine_path(target_dir)
     if installer_type == InstallerType.INNO:
-        return ['/VERYSILENT', '/SP-', '/NORESTART', '/SUPPRESSMSGBOXES', f'/DIR={target_str}']
+        return ['/VERYSILENT', '/SP-', '/NORESTART', '/SUPPRESSMSGBOXES', f'/DIR={wine_target}']
     elif installer_type == InstallerType.NSIS:
-        return ['/S', f'/D={target_str}']
+        return ['/S', f'/D={wine_target}']
     elif installer_type == InstallerType.MSI:
-        return ['/qn', f'TARGETDIR={target_str}']
+        return ['/qn', f'TARGETDIR={wine_target}']
     elif installer_type == InstallerType.INSTALLSHIELD:
-        return ['/s', f'/v"/qn INSTALLDIR=\\"{target_str}\\""']
+        return ['/s', f'/v"/qn INSTALLDIR=\\"{wine_target}\\""']
     else:
-        return ['/VERYSILENT', '/SP-', '/NORESTART', '/SUPPRESSMSGBOXES', f'/DIR={target_str}']
-
+        return ['/VERYSILENT', '/SP-', '/NORESTART', '/SUPPRESSMSGBOXES', f'/DIR={wine_target}']
 
 def can_use_innoextract(setup_exe: Path) -> bool:
     """Return True only if setup_exe is a standalone Inno Setup package without external compressed archives."""

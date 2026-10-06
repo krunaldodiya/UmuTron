@@ -1118,12 +1118,44 @@ class CatalogUI:
 
         strategy=release.get('install_strategy','installer')
         def on_confirm():
+            dialog.close()
             sanitized=re.sub(r'[^\w\s-]','',title).strip() or 'Game'
             dest_dir=f'{selected_drive_path[0]}/{sanitized}'
-            download_dir=f'{selected_drive_path[0]}/{sanitized} - Installer'
+            download_dir=f'{selected_drive_path[0]}/.umutron-downloads/{sanitized}'
             self.game['working_dir']=dest_dir
-            self.start_release_download(magnet,download_dir,dest_dir,release_title,inst_str,prov_name,strategy)
 
+            # Check if an existing download already exists on disk
+            search_dirs = [
+                Path(download_dir),
+                Path(f'{selected_drive_path[0]}/.umutron-downloads/{self.game["id"]}'),
+                Path(f'{selected_drive_path[0]}/{sanitized} - Installer'),
+            ]
+            parent_downloads = Path(f'{selected_drive_path[0]}/.umutron-downloads')
+            if parent_downloads.is_dir():
+                clean_title = re.sub(r'[^a-z0-9]', '', title.lower())
+                for sub in parent_downloads.iterdir():
+                    if not sub.is_dir() or sub in search_dirs:
+                        continue
+                    sub_clean = re.sub(r'[^a-z0-9]', '', sub.name.lower())
+                    if clean_title and (clean_title in sub_clean or sub_clean in clean_title):
+                        search_dirs.append(sub)
+                    else:
+                        for nested in sub.iterdir():
+                            if nested.is_dir():
+                                nested_clean = re.sub(r'[^a-z0-9]', '', nested.name.lower())
+                                if clean_title and (clean_title in nested_clean or nested_clean in clean_title):
+                                    search_dirs.append(sub)
+                                    break
+
+            for candidate in search_dirs:
+                if candidate.is_dir():
+                    payload = download_manager.inspect_payload(candidate)
+                    if payload.kind in (PayloadKind.INSTALLER_LOOSE, PayloadKind.PORTABLE_LOOSE, PayloadKind.ARCHIVE):
+                        self.notify(f'Found existing downloaded files for {title}. Starting installation…')
+                        self.on_release_download_complete(self.game['id'], str(candidate), dest_dir, inst_str, prov_name, strategy)
+                        return
+
+            self.start_release_download(magnet, download_dir, dest_dir, release_title, inst_str, prov_name, strategy)
         install_btn.connect('clicked',lambda *_:on_confirm())
         footer.append(install_btn);dialog.present()
 

@@ -4,6 +4,7 @@ from pathlib import Path
 from umutron.payload_pipeline import (
     InstallerType, PayloadKind, classify_payload, detect_installer_engine,
     get_silent_installer_arguments, rank_game_executables, stage_portable_game,
+    to_wine_path,
 )
 from umutron.payload_pipeline import can_use_innoextract
 from umutron.installations import validate_installation
@@ -99,21 +100,21 @@ class PayloadPipelineTests(unittest.TestCase):
             self.assertEqual(detect_installer_engine(inno), InstallerType.INNO)
             inno_args = get_silent_installer_arguments(InstallerType.INNO, Path('/target/game'))
             self.assertIn('/VERYSILENT', inno_args)
-            self.assertIn('/DIR=/target/game', inno_args)
+            self.assertIn(f'/DIR={to_wine_path(Path("/target/game"))}', inno_args)
 
             nsis = folder / 'nsis_setup.exe'
             nsis.write_bytes(b'MZ' + b'...' + b'NullsoftInst' + b'\x00' * 100)
             self.assertEqual(detect_installer_engine(nsis), InstallerType.NSIS)
             nsis_args = get_silent_installer_arguments(InstallerType.NSIS, Path('/target/game'))
             self.assertIn('/S', nsis_args)
-            self.assertIn('/D=/target/game', nsis_args)
+            self.assertIn(f'/D={to_wine_path(Path("/target/game"))}', nsis_args)
 
             msi = folder / 'package.msi'
             msi.write_bytes(b'msi data')
             self.assertEqual(detect_installer_engine(msi), InstallerType.MSI)
             msi_args = get_silent_installer_arguments(InstallerType.MSI, Path('/target/game'))
             self.assertIn('/qn', msi_args)
-            self.assertIn('TARGETDIR=/target/game', msi_args)
+            self.assertIn(f'TARGETDIR={to_wine_path(Path("/target/game"))}', msi_args)
 
     def test_validate_installation_accepts_silent_arguments(self):
         config = {
@@ -140,7 +141,7 @@ class PayloadPipelineTests(unittest.TestCase):
 
             silent_args = download_manager.get_silent_args(payload.installer_type, dest_dir)
             self.assertIn('/VERYSILENT', silent_args)
-            self.assertIn(f'/DIR={dest_dir}', silent_args)
+            self.assertIn(f'/DIR={to_wine_path(dest_dir)}', silent_args)
 
 
     def test_download_manager_combination_three_archive_portable_workflow(self):
@@ -262,7 +263,7 @@ class PayloadPipelineTests(unittest.TestCase):
             # Step 4: Resolve silent arguments
             silent_args = download_manager.get_silent_args(inner_payload.installer_type, dest_dir)
             self.assertIn('/VERYSILENT', silent_args)
-            self.assertIn(f'/DIR={dest_dir}', silent_args)
+            self.assertIn(f'/DIR={to_wine_path(dest_dir)}', silent_args)
 
     def test_can_use_innoextract_rejects_repacks_with_companion_bin_archives(self):
         with tempfile.TemporaryDirectory() as temp:
