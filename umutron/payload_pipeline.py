@@ -47,11 +47,14 @@ KNOWN_AUXILIARY_NAMES = {
     'easyanticheat.exe', 'easyanticheat_setup.exe', 'battleye.exe', 'beservice.exe',
     'setup.exe', 'install.exe', 'installer.exe', 'autorun.exe',
     'directx-setup.exe', 'websetup.exe',
+    'fsb.exe', 'hosts.exe', 'quicksfv.exe', 'flushfilecache.exe', 'oggre_dec.exe',
+    'rz.exe', 'rzw.exe', 'x2.exe', 'x5.exe', 'x6.exe',
 }
 
 DISFAVORED_FOLDER_NAMES = {
     '_redist', '_commonredist', 'commonredist', 'redist', 'directx',
     'vcredist', 'dotnet', 'support', 'prerequisites', 'installer',
+    'tmp', 'temp',
 }
 
 
@@ -160,8 +163,21 @@ def get_silent_installer_arguments(installer_type: InstallerType, target_dir: Pa
         return ['/VERYSILENT', '/SP-', '/NORESTART', '/SUPPRESSMSGBOXES', f'/DIR={target_str}']
 
 
-def run_native_innoextract(setup_exe: Path, target_dir: Path) -> bool:
-    """If innoextract is available on the system, unpack Inno Setup payloads natively."""
+def can_use_innoextract(setup_exe: Path) -> bool:
+    """Return True only if setup_exe is a standalone Inno Setup package without external compressed archives."""
+    if not setup_exe.is_file():
+        return False
+    directory = setup_exe.parent
+    for ext in ('*.bin', '*.doi', '*.cab', '*.fgpack*', '*.arc', '*.7z', '*.rar'):
+        if list(directory.glob(ext)) or list(directory.glob(ext.upper())):
+            return False
+    return True
+
+
+def run_native_innoextract(setup_exe: Path, target_dir: Path, title: str = '') -> bool:
+    """If innoextract is available and installer has no external archives, unpack Inno Setup payloads natively."""
+    if not can_use_innoextract(setup_exe):
+        return False
     from .download_service import ensure_innoextract_binary
     inno_bin = ensure_innoextract_binary()
     if not inno_bin or not setup_exe.is_file():
@@ -171,7 +187,15 @@ def run_native_innoextract(setup_exe: Path, target_dir: Path) -> bool:
     cmd = [inno_bin, '--silent', '--extract', '--output-dir', str(target_dir), str(setup_exe)]
     try:
         res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return res.returncode == 0
+        if res.returncode == 0:
+            # Validate that genuine game executables were unpacked, not merely helper decompression tools
+            ranked = rank_game_executables(target_dir, title)
+            if ranked:
+                return True
+            # Only helper scripts or archives unpacked; clean target and fall back to Proton execution
+            shutil.rmtree(target_dir, ignore_errors=True)
+            return False
+        return False
     except Exception:
         return False
 
@@ -311,8 +335,12 @@ def rank_game_executables(folder: Path, title: str = '') -> list[Path]:
         name_lower = exe.name.lower()
         if name_lower in KNOWN_AUXILIARY_NAMES:
             continue
-        if any(part.lower() in DISFAVORED_FOLDER_NAMES for part in exe.parts):
-            continue
+        try:
+            rel_dir_parts = [p.lower() for p in exe.relative_to(folder).parts[:-1]]
+            if any(part in DISFAVORED_FOLDER_NAMES for part in rel_dir_parts):
+                continue
+        except ValueError:
+            pass
 
         score = 0
         stem_lower = exe.stem.lower()

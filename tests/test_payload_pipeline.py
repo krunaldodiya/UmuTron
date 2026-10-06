@@ -5,6 +5,7 @@ from umutron.payload_pipeline import (
     InstallerType, PayloadKind, classify_payload, detect_installer_engine,
     get_silent_installer_arguments, rank_game_executables, stage_portable_game,
 )
+from umutron.payload_pipeline import can_use_innoextract
 from umutron.installations import validate_installation
 from umutron.download_service import download_manager
 
@@ -262,6 +263,37 @@ class PayloadPipelineTests(unittest.TestCase):
             silent_args = download_manager.get_silent_args(inner_payload.installer_type, dest_dir)
             self.assertIn('/VERYSILENT', silent_args)
             self.assertIn(f'/DIR={dest_dir}', silent_args)
+
+    def test_can_use_innoextract_rejects_repacks_with_companion_bin_archives(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            setup_exe = folder / 'setup.exe'
+            setup_exe.write_bytes(b'MZ' + b'Inno Setup')
+
+            # Standalone Inno Setup package
+            self.assertTrue(can_use_innoextract(setup_exe))
+
+            # Repack with companion archive files (FitGirl, DODI, etc.)
+            (folder / 'fg-01.bin').write_bytes(b'bin data')
+            self.assertFalse(can_use_innoextract(setup_exe))
+
+    def test_rank_game_executables_strictly_excludes_decompression_helpers_and_tmp(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            tmp_dir = folder / 'tmp'
+            tmp_dir.mkdir()
+            (tmp_dir / 'fsb.exe').write_bytes(b'sound extractor')
+            (tmp_dir / 'cls-srep_x64.exe').write_bytes(b'decompressor')
+            (folder / 'hosts.exe').write_bytes(b'hosts modifier')
+            (folder / 'QuickSFV.EXE').write_bytes(b'checksum checker')
+
+            # Real game executable
+            game_exe = folder / 'hollow_knight.exe'
+            game_exe.write_bytes(b'real game binary' * 1000)
+
+            ranked = rank_game_executables(folder, title='Hollow Knight')
+            self.assertEqual(len(ranked), 1)
+            self.assertEqual(ranked[0], game_exe)
 
 if __name__ == '__main__':
     unittest.main()

@@ -1213,10 +1213,10 @@ class CatalogUI:
                     staged_folder = download_manager.stage_portable(extract_dir, dest_dir)
                     found_exe = download_manager.detect_main_executable(staged_folder, title)
                     if found_exe:
-                        download_manager.cancel(game_id, cleanup=True)
+                        download_manager.cancel(game_id, cleanup=False)
                         self.game['executable'] = str(found_exe)
                         self.game['working_dir'] = str(found_exe.parent)
-                        self.game['installation'] = {'mode': 'installed', 'confirmed': True}
+                        self.game['installation'] = {'mode': 'installed', 'confirmed': True, 'root': dest_dir}
                         if not any(g['id'] == self.game['id'] for g in self.library.games()) and getattr(self, 'detail_item', None):
                             self._save_detail_item_artwork(self.game)
                         self.library.save(self.game)
@@ -1226,16 +1226,16 @@ class CatalogUI:
 
                 # Combination 4: Archive -> Silent Installer
                 setup_exe = inner_payload.installer_exe
-                if setup_exe and download_manager.run_innoextract(setup_exe, dest_dir):
+                if setup_exe and download_manager.run_innoextract(setup_exe, dest_dir, title):
                     found_exe = download_manager.detect_main_executable(dest_dir, title)
                     if found_exe:
                         if inner_payload.crack_dir and Path(inner_payload.crack_dir).is_dir():
                             import shutil
                             shutil.copytree(inner_payload.crack_dir, dest_dir, dirs_exist_ok=True)
-                        download_manager.cancel(game_id, cleanup=True)
+                        download_manager.cancel(game_id, cleanup=False)
                         self.game['executable'] = str(found_exe)
                         self.game['working_dir'] = str(found_exe.parent)
-                        self.game['installation'] = {'mode': 'installed', 'confirmed': True}
+                        self.game['installation'] = {'mode': 'installed', 'confirmed': True, 'root': dest_dir}
                         if not any(g['id'] == self.game['id'] for g in self.library.games()) and getattr(self, 'detail_item', None):
                             self._save_detail_item_artwork(self.game)
                         self.library.save(self.game)
@@ -1249,6 +1249,7 @@ class CatalogUI:
                         'mode': 'installer',
                         'installer': str(setup_exe),
                         'arguments': silent_args,
+                        'root': dest_dir,
                         'confirmed': False,
                     }
                     self.game['working_dir'] = dest_dir
@@ -1282,16 +1283,16 @@ class CatalogUI:
             return
 
         # Tier 1: Try native innoextract if available
-        if payload.installer_type == InstallerType.INNO and download_manager.run_innoextract(setup_exe, dest_dir):
+        if payload.installer_type == InstallerType.INNO and download_manager.run_innoextract(setup_exe, dest_dir, title):
             found_exe = download_manager.detect_main_executable(dest_dir, title)
             if found_exe:
                 if payload.crack_dir and Path(payload.crack_dir).is_dir():
                     import shutil
                     shutil.copytree(payload.crack_dir, dest_dir, dirs_exist_ok=True)
-                download_manager.cancel(game_id, cleanup=True)
+                download_manager.cancel(game_id, cleanup=False)
                 self.game['executable'] = str(found_exe)
                 self.game['working_dir'] = str(found_exe.parent)
-                self.game['installation'] = {'mode': 'installed', 'confirmed': True}
+                self.game['installation'] = {'mode': 'installed', 'confirmed': True, 'root': dest_dir}
                 if not any(g['id'] == self.game['id'] for g in self.library.games()) and getattr(self, 'detail_item', None):
                     self._save_detail_item_artwork(self.game)
                 self.library.save(self.game)
@@ -1305,6 +1306,7 @@ class CatalogUI:
             'mode': 'installer',
             'installer': str(setup_exe),
             'arguments': silent_args,
+            'root': dest_dir,
             'confirmed': False,
         }
         self.game['working_dir'] = dest_dir
@@ -1333,8 +1335,9 @@ class CatalogUI:
                     game['executable'] = str(found_exe)
                     game['working_dir'] = str(found_exe.parent)
                     game['installation']['confirmed'] = True
+                    game['installation']['root'] = dest_dir
                     self.library.save(game)
-                    download_manager.cancel(game_id, cleanup=True)
+                    download_manager.cancel(game_id, cleanup=False)
                     self.show_shared_detail(game, self.detail_item)
                     self.notify(f'{title} installation complete and ready to play!')
                 return False
@@ -1358,7 +1361,7 @@ class CatalogUI:
 
         self.game['executable']=str(found_exe)
         self.game['working_dir']=str(found_exe.parent)
-        self.game['installation']={'mode':'installed','confirmed':True}
+        self.game['installation']={'mode':'installed','confirmed':True,'root':dest_dir}
         if not any(g['id']==self.game['id'] for g in self.library.games()) and getattr(self,'detail_item',None):
             self._save_detail_item_artwork(self.game)
 

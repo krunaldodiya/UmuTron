@@ -9,11 +9,11 @@ from .installer_identity import is_installer_executable, matching_installer_atte
 
 
 def validate_installation(value):
-    if not isinstance(value,dict) or set(value)-{'mode','installer','session_id','prefix','proton','confirmed','arguments'}:
+    if not isinstance(value,dict) or set(value)-{'mode','installer','session_id','prefix','proton','confirmed','arguments','root'}:
         raise ValueError('Invalid installation settings.')
     # Legacy shortcut records remain readable; Manage Game maps them to Already installed.
     if value.get('mode','installed') not in ('installed','installer','shortcut'):raise ValueError('Unknown game installation mode.')
-    for key in ('installer','session_id','prefix','proton'):
+    for key in ('installer','session_id','prefix','proton','root'):
         item=value.get(key,'')
         if not isinstance(item,str) or len(item)>4096 or '\x00' in item:raise ValueError('Invalid installer '+key+'.')
     if value.get('session_id'):UUID(value['session_id'])

@@ -171,3 +171,34 @@ class GameUninstallTests(unittest.TestCase):
             remove_game_directory(Path('/'))
         with self.assertRaises(ValueError):
             remove_game_directory(Path.home())
+
+    def test_detect_game_root_never_returns_parent_container_folder(self):
+        from umutron.game_uninstall import detect_game_root, DANGEROUS_NAMES
+        # Setup: Games drive with EmuGames container folder containing two games
+        games_drive = self.root / 'GamesDrive'
+        emu_games = games_drive / 'EmuGames'
+        game_a_dir = emu_games / 'Game A'
+        game_b_dir = emu_games / 'Game B'
+        (game_a_dir / 'bin').mkdir(parents=True)
+        (game_b_dir / 'bin').mkdir(parents=True)
+        exe_a = game_a_dir / 'bin' / 'game_a.exe'
+        exe_b = game_b_dir / 'bin' / 'game_b.exe'
+        exe_a.write_bytes(b'game a')
+        exe_b.write_bytes(b'game b')
+
+        game_a = self.library.new_game()
+        game_a.update(title='Game A', executable=str(exe_a))
+        self.library.save(game_a)
+
+        game_b = self.library.new_game()
+        game_b.update(title='Game B', executable=str(exe_b))
+        self.library.save(game_b)
+
+        # detect_game_root for Game A must identify game_a_dir, NEVER emu_games!
+        detected = detect_game_root(game_a, self.library)
+        self.assertEqual(detected, game_a_dir)
+        self.assertNotEqual(detected, emu_games)
+        self.assertNotEqual(detected, games_drive)
+
+        # Also verify that EmuGames is in DANGEROUS_NAMES
+        self.assertIn('emugames', DANGEROUS_NAMES)

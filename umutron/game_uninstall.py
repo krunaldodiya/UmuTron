@@ -40,61 +40,88 @@ ROOT_MARKERS = {
     'uplay_r1_loader.ini': 4,
 }
 GENERIC_SUBDIRS = {'bin', 'binaries', 'win64', 'win_x64', 'win32', 'win_x86', 'x64', 'x86', 'release', 'retail', 'game', 'shipping', 'build'}
-DANGEROUS_NAMES = {'games', 'game', 'steamapps', 'common', 'program files', 'program files (x86)', 'downloads', 'documents', 'desktop', 'home', 'users', 'media', 'mnt', 'run'}
-
+DANGEROUS_NAMES = {
+    'games', 'game', 'emugames', 'pcgames', 'pc_games', 'roms', 'emulators',
+    'steamlibrary', 'steamapps', 'common', 'program files', 'program files (x86)',
+    'downloads', 'documents', 'desktop', 'home', 'users', 'media', 'mnt', 'run',
+    'gamelibrary', 'game_library', 'library', 'installed', 'my games',
+}
+SYSTEM_DIRS = {
+    Path('/'), Path.home(), Path('/usr'), Path('/var'), Path('/tmp'),
+    Path('/mnt'), Path('/run'), Path('/media'), Path('/run/media'),
+}
 
 def detect_game_root(game, library=None):
+    all_games = []
+    if library:
+        all_games = library.games() if hasattr(library, 'games') else list(library)
+
+    mounts = {Path(m).resolve() for m in mount_points()}
+
+    def is_safe_dedicated_folder(folder_path):
+        p = Path(folder_path).resolve()
+        if not p.is_dir():
+            return False
+        if p.name.lower() in DANGEROUS_NAMES or p in SYSTEM_DIRS or p in mounts:
+            return False
+        # Never accept a folder that contains the executable of another game in the library
+        for other in all_games:
+            if other.get('id') != game.get('id') and other.get('executable'):
+                try:
+                    other_exe = Path(other['executable']).resolve()
+                    if other_exe.is_relative_to(p):
+                        return False
+                except (ValueError, OSError):
+                    pass
+        return True
+
     inst_root = game.get('installation', {}).get('root')
-    if inst_root and Path(inst_root).is_dir():
-        p = Path(inst_root).resolve()
-        if p.name.lower() not in DANGEROUS_NAMES:
-            return p
+    if inst_root and is_safe_dedicated_folder(inst_root):
+        return Path(inst_root).resolve()
+
     exe_str = game.get('executable')
     if not exe_str or not Path(exe_str).is_file():
         return None
     exe = Path(exe_str).resolve()
-    library_roots = set()
-    if library:
-        all_games = library.games() if hasattr(library, 'games') else library
-        parents = [Path(g['executable']).resolve().parent for g in all_games if g.get('executable') and Path(g['executable']).is_file()]
-        for p in parents:
-            for ancestor in p.parents:
-                if ancestor.name.lower() in ('games', 'steamlibrary', 'steamapps', 'common') or len([other for other in parents if ancestor in other.parents]) >= 2:
-                    library_roots.add(ancestor)
-    for lib_root in sorted(library_roots, key=lambda p: len(p.parts), reverse=True):
-        if exe.is_relative_to(lib_root):
-            rel = exe.relative_to(lib_root)
-            if len(rel.parts) >= 2:
-                candidate = lib_root / rel.parts[0]
-                if candidate.is_dir() and candidate.name.lower() not in DANGEROUS_NAMES:
-                    return candidate
+
+    # Prefer working_dir if it exists, is safe, and exe is inside it
+    working_dir = game.get('working_dir')
+    if working_dir and is_safe_dedicated_folder(working_dir):
+        wdir = Path(working_dir).resolve()
+        if exe.is_relative_to(wdir):
+            return wdir
+
+    title = game.get('title', '')
+    title_words = [re.sub(r'[^a-z0-9]', '', w) for w in title.lower().split() if len(w) > 2]
+
+    # Walk upward from the executable parent
     curr = exe.parent
-    candidates = []
     depth = 0
-    mounts = {Path(m) for m in mount_points()}
+    matched_candidate = None
+    fallback_candidate = None
     while curr != curr.parent and depth < 6:
-        if curr in mounts or curr.name.lower() in DANGEROUS_NAMES or curr in [Path('/'), Path.home(), Path('/usr'), Path('/var'), Path('/tmp'), Path('/mnt'), Path('/run'), Path('/media')]:
+        if curr in mounts or curr.name.lower() in DANGEROUS_NAMES or curr in SYSTEM_DIRS:
             break
-        score = 0
-        try:
-            names = {p.name for p in curr.iterdir()}
-        except Exception:
-            names = set()
-        for marker, pts in ROOT_MARKERS.items():
-            if marker in names:
-                score += pts
-        title_words = [re.sub(r'[^a-z0-9]', '', w) for w in game.get('title', '').lower().split() if len(w) > 2]
-        if any(w in curr.name.lower() for w in title_words):
-            score += 10
-        if curr.name.lower() in GENERIC_SUBDIRS:
-            score -= 5
-        candidates.append((score, -depth, curr))
+        if not is_safe_dedicated_folder(curr):
+            break
+
+        curr_clean = re.sub(r'[^a-z0-9]', '', curr.name.lower())
+        title_clean = re.sub(r'[^a-z0-9]', '', title.lower())
+        title_match = (
+            (curr_clean and (curr_clean in title_clean or title_clean in curr_clean)) or
+            (title_words and any(w in curr.name.lower() for w in title_words))
+        )
+        if title_match and curr.name.lower() not in GENERIC_SUBDIRS:
+            matched_candidate = curr
+            break
+
+        if fallback_candidate is None and curr.name.lower() not in GENERIC_SUBDIRS:
+            fallback_candidate = curr
+
         curr = curr.parent
         depth += 1
-    if candidates:
-        best = max(candidates, key=lambda x: (x[0], x[1]))
-        return best[2]
-    return None
+
+    return matched_candidate or fallback_candidate
 
 
 def folder_summary(path):
@@ -114,7 +141,7 @@ def folder_summary(path):
 
 def remove_game_directory(root_path):
     root = Path(root_path).resolve()
-    if root.name.lower() in DANGEROUS_NAMES or root in [Path('/'), Path.home(), Path('/usr'), Path('/var'), Path('/tmp'), Path('/mnt'), Path('/run'), Path('/media')]:
+    if root.name.lower() in DANGEROUS_NAMES or root in SYSTEM_DIRS or any(root == s for s in SYSTEM_DIRS):
         raise ValueError(f"Refusing to delete unsafe directory: {root}")
     mounts = {Path(m) for m in mount_points()}
     if root in mounts:
