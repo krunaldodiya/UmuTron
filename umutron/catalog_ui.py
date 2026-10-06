@@ -13,7 +13,7 @@ from .catalog_work import CatalogWork
 from .download_service import (
     UnavailableInstallService, configured_game, search_game_releases,
     download_manager, parse_size_bytes, format_size, estimate_space_requirements,
-    source_registry, DownloadRelease,
+    source_registry, DownloadRelease, PayloadKind, InstallerType,
 )
 from .fullscreen import cover as console_cover, set_art, CoverPicture, CoverLayout
 from .library import description_excerpt
@@ -1195,9 +1195,73 @@ class CatalogUI:
 
     def on_release_download_complete(self,game_id,download_dir,dest_dir,inst_str,prov_name='Download',strategy='installer'):
         title=self.game.get('title','Game')
-        if strategy=='portable':
-            self.on_portable_release_complete(game_id,download_dir,dest_dir,prov_name)
+        payload = download_manager.inspect_payload(download_dir)
+        if strategy == 'portable' or payload.kind == PayloadKind.PORTABLE_LOOSE:
+            self.on_portable_release_complete(game_id, download_dir, dest_dir, prov_name)
             return
+        # Single container archive / disc image (Combinations 3 & 4)
+        if payload.kind == PayloadKind.ARCHIVE and payload.container:
+            container = payload.container
+            extract_dir = Path(download_dir) / '.extracted'
+            if hasattr(self, 'detail_progress_label'):
+                self.detail_progress_label.set_text(f'Extracting {container.name}…')
+            if download_manager.extract_container(container, extract_dir):
+                inner_payload = download_manager.inspect_payload(extract_dir)
+
+                # Combination 3: Archive -> Portable
+                if inner_payload.kind == PayloadKind.PORTABLE_LOOSE or not inner_payload.installer_exe:
+                    staged_folder = download_manager.stage_portable(extract_dir, dest_dir)
+                    found_exe = download_manager.detect_main_executable(staged_folder, title)
+                    if found_exe:
+                        download_manager.cancel(game_id, cleanup=True)
+                        self.game['executable'] = str(found_exe)
+                        self.game['working_dir'] = str(found_exe.parent)
+                        self.game['installation'] = {'mode': 'installed', 'confirmed': True}
+                        if not any(g['id'] == self.game['id'] for g in self.library.games()) and getattr(self, 'detail_item', None):
+                            self._save_detail_item_artwork(self.game)
+                        self.library.save(self.game)
+                        self.show_shared_detail(self.game, self.detail_item)
+                        self.notify(f'{title} is extracted and ready to play!')
+                        return
+
+                # Combination 4: Archive -> Silent Installer
+                setup_exe = inner_payload.installer_exe
+                if setup_exe and download_manager.run_innoextract(setup_exe, dest_dir):
+                    found_exe = download_manager.detect_main_executable(dest_dir, title)
+                    if found_exe:
+                        if inner_payload.crack_dir and Path(inner_payload.crack_dir).is_dir():
+                            import shutil
+                            shutil.copytree(inner_payload.crack_dir, dest_dir, dirs_exist_ok=True)
+                        download_manager.cancel(game_id, cleanup=True)
+                        self.game['executable'] = str(found_exe)
+                        self.game['working_dir'] = str(found_exe.parent)
+                        self.game['installation'] = {'mode': 'installed', 'confirmed': True}
+                        if not any(g['id'] == self.game['id'] for g in self.library.games()) and getattr(self, 'detail_item', None):
+                            self._save_detail_item_artwork(self.game)
+                        self.library.save(self.game)
+                        self.show_shared_detail(self.game, self.detail_item)
+                        self.notify(f'{title} is extracted, installed, and ready to play!')
+                        return
+
+                if setup_exe:
+                    silent_args = download_manager.get_silent_args(inner_payload.installer_type, dest_dir)
+                    self.game['installation'] = {
+                        'mode': 'installer',
+                        'installer': str(setup_exe),
+                        'arguments': silent_args,
+                        'confirmed': False,
+                    }
+                    self.game['working_dir'] = dest_dir
+                    if not any(g['id'] == self.game['id'] for g in self.library.games()) and getattr(self, 'detail_item', None):
+                        self._save_detail_item_artwork(self.game)
+                    try:
+                        self.installations.start(self.game)
+                        self.refresh_launch_state()
+                        self.notify(f'Silent background installer started for {title}.')
+                        self.monitor_silent_installation(game_id, dest_dir, title, inner_payload.crack_dir)
+                        return
+                    except Exception as error:
+                        self.error(error); return
 
         if hasattr(self,'detail_primary'):
             self.detail_primary.set_label('Installing...')
@@ -1205,10 +1269,11 @@ class CatalogUI:
         if hasattr(self,'detail_progress_bar'):
             self.detail_progress_bar.set_fraction(1.0)
         if hasattr(self,'detail_progress_label'):
-            self.detail_progress_label.set_text(f'Download complete. Launching {prov_name} installer through UMU…')
-        setup_exe=download_manager.find_setup_exe(download_dir)
+            self.detail_progress_label.set_text(f'Download complete. Running {prov_name} background installer…')
+
+        setup_exe = payload.installer_exe or download_manager.find_setup_exe(download_dir)
         if not setup_exe:
-            self.detail_no_installer_found=True
+            self.detail_no_installer_found = True
             self.notify(f'Downloaded {title}, but no setup.exe was found. Use Add an installed game to choose files or an installer manually.')
             if hasattr(self,'detail_primary'):
                 self.detail_primary.set_label('Add an installed game')
@@ -1216,32 +1281,73 @@ class CatalogUI:
                 self.refresh_launch_state()
             return
 
-        self.game['installation']={
-            'mode':'installer',
-            'installer':str(setup_exe),
-            'confirmed':False
+        # Tier 1: Try native innoextract if available
+        if payload.installer_type == InstallerType.INNO and download_manager.run_innoextract(setup_exe, dest_dir):
+            found_exe = download_manager.detect_main_executable(dest_dir, title)
+            if found_exe:
+                if payload.crack_dir and Path(payload.crack_dir).is_dir():
+                    import shutil
+                    shutil.copytree(payload.crack_dir, dest_dir, dirs_exist_ok=True)
+                download_manager.cancel(game_id, cleanup=True)
+                self.game['executable'] = str(found_exe)
+                self.game['working_dir'] = str(found_exe.parent)
+                self.game['installation'] = {'mode': 'installed', 'confirmed': True}
+                if not any(g['id'] == self.game['id'] for g in self.library.games()) and getattr(self, 'detail_item', None):
+                    self._save_detail_item_artwork(self.game)
+                self.library.save(self.game)
+                self.show_shared_detail(self.game, self.detail_item)
+                self.notify(f'{title} is extracted, installed, and ready to play!')
+                return
+
+        # Tier 2: Proton / UMU Silent unattended execution
+        silent_args = download_manager.get_silent_args(payload.installer_type, dest_dir)
+        self.game['installation'] = {
+            'mode': 'installer',
+            'installer': str(setup_exe),
+            'arguments': silent_args,
+            'confirmed': False,
         }
-        self.game['working_dir']=dest_dir
-        if not any(g['id']==self.game['id'] for g in self.library.games()) and getattr(self,'detail_item',None):
+        self.game['working_dir'] = dest_dir
+        if not any(g['id'] == self.game['id'] for g in self.library.games()) and getattr(self, 'detail_item', None):
             self._save_detail_item_artwork(self.game)
 
         try:
             self.installations.start(self.game)
             self.refresh_launch_state()
-            self.notify(f'{prov_name} installer started for {title}.')
+            self.notify(f'Silent background installer started for {title}.')
+            self.monitor_silent_installation(game_id, dest_dir, title, payload.crack_dir)
         except Exception as error:
             self.error(error)
 
+    def monitor_silent_installation(self, game_id, dest_dir, title, crack_dir=None):
+        def check_status():
+            game = next((g for g in self.library.games() if g['id'] == game_id), self.game)
+            status = self.installations.status(game)
+            state = status.get('state')
+            if state == 'Finished' and status.get('code') == 0:
+                if crack_dir and Path(crack_dir).is_dir():
+                    import shutil
+                    shutil.copytree(crack_dir, dest_dir, dirs_exist_ok=True)
+                found_exe = download_manager.detect_main_executable(dest_dir, title)
+                if found_exe:
+                    game['executable'] = str(found_exe)
+                    game['working_dir'] = str(found_exe.parent)
+                    game['installation']['confirmed'] = True
+                    self.library.save(game)
+                    download_manager.cancel(game_id, cleanup=True)
+                    self.show_shared_detail(game, self.detail_item)
+                    self.notify(f'{title} installation complete and ready to play!')
+                return False
+            elif state in ('Error', 'Stopped', 'Interrupted'):
+                self.notify(f'{title} installer stopped or failed.')
+                self.refresh_launch_state()
+                return False
+            return True
+        GLib.timeout_add(1000, check_status)
     def on_portable_release_complete(self,game_id,download_dir,dest_dir,prov_name):
         title=self.game.get('title','Game')
-        target_folder=Path(download_dir)
-        found_exe=None
-        if target_folder.is_dir():
-            exes=[p for p in target_folder.rglob('*.exe') if p.is_file() and p.name.lower() not in ('unins000.exe','uninstall.exe','dxsetup.exe','vcredist.exe','crashreporter.exe')]
-            if exes:
-                title_clean=''.join(c for c in title.lower() if c.isalnum())
-                best=next((p for p in exes if ''.join(c for c in p.stem.lower() if c.isalnum()) in title_clean or title_clean in ''.join(c for c in p.stem.lower() if c.isalnum())),None)
-                found_exe=best or exes[0]
+        staged_folder = download_manager.stage_portable(download_dir, dest_dir)
+        found_exe = download_manager.detect_main_executable(staged_folder, title)
 
         if not found_exe:
             self.notify(f'Downloaded {title}, but executable could not be auto-detected. Choose executable in Setup.')

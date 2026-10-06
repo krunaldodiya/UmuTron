@@ -9,7 +9,7 @@ from .installer_identity import is_installer_executable, matching_installer_atte
 
 
 def validate_installation(value):
-    if not isinstance(value,dict) or set(value)-{'mode','installer','session_id','prefix','proton','confirmed'}:
+    if not isinstance(value,dict) or set(value)-{'mode','installer','session_id','prefix','proton','confirmed','arguments'}:
         raise ValueError('Invalid installation settings.')
     # Legacy shortcut records remain readable; Manage Game maps them to Already installed.
     if value.get('mode','installed') not in ('installed','installer','shortcut'):raise ValueError('Unknown game installation mode.')
@@ -58,7 +58,8 @@ class Installations:
         if resume_policy and previous and previous not in AUTOMATIC and not parse_release(previous):
             context['proton']=previous
         context['prefix']=config.get('prefix') or context['prefix']
-        launch=deepcopy(candidate);launch.update(executable=str(setup),working_dir=str(setup.parent),launch={**context,'arguments':[]})
+        installer_args = list(config.get('arguments', [])) if isinstance(config.get('arguments'), (list, tuple)) else []
+        launch=deepcopy(candidate);launch.update(executable=str(setup),working_dir=str(setup.parent),launch={**context,'arguments':installer_args})
         config.update(mode='installer',installer=str(setup),prefix=context['prefix'],proton=context['proton'],confirmed=False)
         candidate['installation']=config
         def persist(state,env):

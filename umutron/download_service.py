@@ -11,6 +11,11 @@ from .sources import (
 )
 
 from .sources.model import parse_size_bytes
+from .payload_pipeline import (
+    InstallerType, PayloadInfo, PayloadKind, classify_payload,
+    extract_archive, get_silent_installer_arguments, rank_game_executables,
+    run_native_innoextract, stage_portable_game,
+)
 
 
 class InstallUnavailable(RuntimeError):
@@ -93,6 +98,60 @@ def ensure_downloader_binary():
     zip_path.unlink(missing_ok=True)
     local_bin.chmod(0o755)
     return str(local_bin)
+
+def ensure_7z_binary():
+    import shutil, io, tarfile
+    for name in ('7zz', '7z', '7za'):
+        system_bin = shutil.which(name)
+        if system_bin and os.access(system_bin, os.X_OK):
+            return system_bin
+    tools_dir = Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local/share')) / 'umutron' / 'tools'
+    local_bin = tools_dir / '7zz'
+    if local_bin.is_file() and os.access(local_bin, os.X_OK):
+        return str(local_bin)
+    tools_dir.mkdir(parents=True, exist_ok=True)
+    url = 'https://www.7-zip.org/a/7z2603-linux-x64.tar.xz'
+    try:
+        req = Request(url, headers={'User-Agent': 'UmuTron'})
+        with build_opener(ProxyHandler({})).open(req, timeout=30) as resp:
+            data = resp.read()
+        with tarfile.open(fileobj=io.BytesIO(data), mode='r:xz') as tar:
+            member = tar.extractfile('7zz')
+            if member:
+                local_bin.write_bytes(member.read())
+                local_bin.chmod(0o755)
+                return str(local_bin)
+    except Exception:
+        pass
+    return None
+
+
+def ensure_innoextract_binary():
+    import shutil, io, tarfile
+    system_bin = shutil.which('innoextract')
+    if system_bin and os.access(system_bin, os.X_OK):
+        return system_bin
+    tools_dir = Path(os.environ.get('XDG_DATA_HOME', Path.home() / '.local/share')) / 'umutron' / 'tools'
+    local_bin = tools_dir / 'innoextract'
+    if local_bin.is_file() and os.access(local_bin, os.X_OK):
+        return str(local_bin)
+    tools_dir.mkdir(parents=True, exist_ok=True)
+    url = 'https://constexpr.org/innoextract/files/innoextract-1.9-linux.tar.xz'
+    try:
+        req = Request(url, headers={'User-Agent': 'UmuTron'})
+        with build_opener(ProxyHandler({})).open(req, timeout=30) as resp:
+            data = resp.read()
+        with tarfile.open(fileobj=io.BytesIO(data), mode='r:xz') as tar:
+            for m in tar.getmembers():
+                if m.name.endswith('innoextract') and m.isfile():
+                    member = tar.extractfile(m)
+                    if member:
+                        local_bin.write_bytes(member.read())
+                        local_bin.chmod(0o755)
+                        return str(local_bin)
+    except Exception:
+        pass
+    return None
 
 
 class TorrentDownloadManager:
@@ -244,6 +303,25 @@ class TorrentDownloadManager:
         for cand in p.rglob('setup.exe'):
             if cand.is_file(): return cand
         return None
+
+    def inspect_payload(self, download_dir):
+        return classify_payload(Path(download_dir))
+
+    def detect_main_executable(self, folder, title=''):
+        ranked = rank_game_executables(Path(folder), title)
+        return ranked[0] if ranked else None
+
+    def stage_portable(self, source_dir, target_dir):
+        return stage_portable_game(Path(source_dir), Path(target_dir))
+
+    def get_silent_args(self, installer_type, target_dir):
+        return get_silent_installer_arguments(installer_type, Path(target_dir))
+
+    def run_innoextract(self, setup_exe, target_dir):
+        return run_native_innoextract(Path(setup_exe), Path(target_dir))
+
+    def extract_container(self, container_path, output_dir):
+        return extract_archive(Path(container_path), Path(output_dir))
 
 
 download_manager = TorrentDownloadManager()
