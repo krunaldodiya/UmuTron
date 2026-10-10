@@ -326,10 +326,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             empty=Adw.StatusPage(title='Your next adventure starts here',description='Browse Store to save a game, then connect its files in Setup. Your recent plays and completed setups will appear here.',icon_name=ICON_NAME);self.body.append(empty);(self.tv_home_tab if self.tv_mode else self.home_nav).grab_focus();return
         tv_content=box(spacing=0);tv_content.set_vexpand(True)
         self.tv_page=self.scrolled(tv_content)
-        self.home_backdrop=CoverPicture(content_fit=Gtk.ContentFit.COVER,can_shrink=True)
-        home_scene=Gtk.Overlay();home_scene.set_child(self.home_backdrop)
-        scrim=Gtk.Box();scrim.add_css_class('tv-scrim');home_scene.add_overlay(scrim)
-        home_scene.add_overlay(self.tv_page);home_scene.set_measure_overlay(self.tv_page,True);home_scene.set_vexpand(True);self.body.append(home_scene)
+        self.tv_page.set_vexpand(True);self.body.append(self.tv_page)
         self.home_stage=box(spacing=0);tv_content.append(self.home_stage)
         scale=self.ui_scale_factor()
         hero=box(spacing=0);hero.set_vexpand(True);hero.set_size_request(-1,max(180,int(180*scale)));self.home_stage.append(hero)
@@ -572,7 +569,6 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         name=game['artwork'].get('hero') or game['artwork'].get('landscape')
         set_art(self.backdrop,self.library.art_dir/name if name else None)
         self.backdrop.set_opacity(.38 if self.tv_section=='library' else 1)
-        if self.route=='home' and hasattr(self,'home_backdrop'):set_art(self.home_backdrop,self.library.art_dir/name if name else None)
         if self.tv_section=='library':return
         if self.route=='home':
             self.tv_eyebrow.set_text('RECENTLY PLAYED' if getattr(self,'home_focus_section','recent')=='recent' and self.tv_games else 'RECENTLY READY TO PLAY')
