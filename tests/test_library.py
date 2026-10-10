@@ -39,6 +39,19 @@ class LibraryTests(unittest.TestCase):
         self.lib.set_default_display_mode('desktop');self.lib.import_zip(archive,'replace')
         self.assertEqual(self.lib.data['settings']['default_display_mode'],'fullscreen')
         with self.assertRaises(ValueError):self.lib.set_default_display_mode('unexpected')
+    def test_ui_scale_and_gamemode_settings_persist_and_validate(self):
+        self.lib.set_ui_scale('150')
+        self.assertEqual(Library(self.root/'data').data['settings']['ui_scale'],'150')
+        self.lib.set_gamemode(True)
+        self.assertTrue(Library(self.root/'data').data['settings']['gamemode'])
+        archive=self.root/'extra.zip';self.lib.export_zip(archive)
+        self.lib.set_ui_scale('auto');self.lib.set_gamemode(False)
+        self.lib.import_zip(archive,'replace')
+        self.assertEqual(self.lib.data['settings']['ui_scale'],'150')
+        self.assertTrue(self.lib.data['settings']['gamemode'])
+        with self.assertRaises(ValueError):self.lib.set_ui_scale('300')
+        with self.assertRaises(ValueError):self.lib.set_gamemode('yes')
+
 
     def test_save_reload_and_relink_preserve_identity(self):
         game = self.lib.new_game()

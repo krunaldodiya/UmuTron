@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 from game_library.library import Library, digest
 from game_library.launcher import preparation_progress, Launcher, build_command, discover, defaults, validate_settings
 
@@ -33,6 +34,14 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(cwd,str(self.root/'games')); self.assertNotIn('SECRET_TOKEN',env)
         for key in ('GAMEID','STORE','SteamAppId'): self.assertNotIn(key,env)
         self.assertEqual(env['PROTONPATH'],str(self.proton)); self.assertFalse(Path(env['WINEPREFIX']).exists())
+
+    def test_gamemode_command_prefix_when_enabled_and_available(self):
+        with patch('game_library.launcher.gamemode_binary',return_value='/usr/games/gamemoderun'):
+            argv,_,_=build_command(self.game,self.lib.root,gamemode=True)
+            self.assertEqual(argv[0],'/usr/games/gamemoderun')
+            self.assertEqual(argv[1:], [str(self.runner),self.game['executable'],'a b','$(touch no)','--x'])
+            argv_off,_,_=build_command(self.game,self.lib.root,gamemode=False)
+            self.assertEqual(argv_off[0],str(self.runner))
 
     def test_dll_overrides_are_per_game_validated_and_not_inherited(self):
         self.game['launch']['dll_overrides']='winmm=n,b;dinput8=b,n'

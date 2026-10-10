@@ -57,6 +57,46 @@ CSS = b'''
 .tv-mode.tv-compact .home-setups { padding: 24px 32px 36px; }
 .tv-mode.tv-compact .home-setup-state { font-size: 13px; }
 .tv-mode.tv-compact .tv-hints { margin: 8px 28px 10px; font-size: 13px; }
+
+.scale-large { font-size: 21px; }
+.scale-large button { min-height: 48px; padding: 12px 24px; font-size: 19px; border-radius: 14px; }
+.scale-large .tv-controls { padding: 24px 50px; }
+.scale-large .tv-controls button { min-height: 42px; padding: 10px 22px; font-size: 19px; }
+.scale-large .tv-brand { font-size: 28px; margin-right: 40px; }
+.scale-large .tv-clock { font-size: 21px; }
+.scale-large .tv-title { font-size: 64px; }
+.scale-large .tv-eyebrow { font-size: 17px; }
+.scale-large .tv-description { font-size: 23px; line-height: 1.45; }
+.scale-large .tv-meta { font-size: 19px; }
+.scale-large .tv-play { min-width: 170px; min-height: 48px; font-size: 20px; }
+.scale-large .tv-secondary { font-size: 19px; }
+.scale-large .tv-section-heading { font-size: 28px; margin: 0 54px 6px; }
+.scale-large .tv-counter { font-size: 18px; margin-right: 54px; }
+.scale-large .tv-card { padding: 9px; border-radius: 14px; }
+.scale-large .tv-card-title { font-size: 20px; }
+.scale-large .tv-detail-panel { padding: 38px; border-radius: 24px; }
+.scale-large .tv-detail-panel .tv-title { font-size: 56px; }
+.scale-large .tv-hints { font-size: 17px; margin: 14px 48px 18px; }
+
+.scale-xlarge { font-size: 25px; }
+.scale-xlarge button { min-height: 56px; padding: 14px 30px; font-size: 22px; border-radius: 16px; }
+.scale-xlarge .tv-controls { padding: 30px 64px; }
+.scale-xlarge .tv-controls button { min-height: 48px; padding: 12px 26px; font-size: 22px; }
+.scale-xlarge .tv-brand { font-size: 34px; margin-right: 48px; }
+.scale-xlarge .tv-clock { font-size: 25px; }
+.scale-xlarge .tv-title { font-size: 78px; }
+.scale-xlarge .tv-eyebrow { font-size: 20px; }
+.scale-xlarge .tv-description { font-size: 27px; line-height: 1.45; }
+.scale-xlarge .tv-meta { font-size: 23px; }
+.scale-xlarge .tv-play { min-width: 210px; min-height: 56px; font-size: 24px; }
+.scale-xlarge .tv-secondary { font-size: 22px; }
+.scale-xlarge .tv-section-heading { font-size: 34px; margin: 0 64px 8px; }
+.scale-xlarge .tv-counter { font-size: 22px; margin-right: 64px; }
+.scale-xlarge .tv-card { padding: 12px; border-radius: 16px; }
+.scale-xlarge .tv-card-title { font-size: 24px; }
+.scale-xlarge .tv-detail-panel { padding: 48px; border-radius: 28px; }
+.scale-xlarge .tv-detail-panel .tv-title { font-size: 68px; }
+.scale-xlarge .tv-hints { font-size: 20px; margin: 18px 56px 24px; }
 '''
 
 

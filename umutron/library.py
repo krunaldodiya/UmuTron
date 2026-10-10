@@ -157,6 +157,8 @@ class Library:
         if not isinstance(data.get('settings'),dict) or data['settings'].get('theme','system') not in ('system','light','dark'):
             raise ValueError('Invalid appearance settings.')
         if data['settings'].get('default_display_mode','desktop') not in ('desktop','fullscreen'):raise ValueError('Invalid default display mode.')
+        if data['settings'].get('ui_scale','auto') not in ('auto','100','125','150','175','200'):raise ValueError('Invalid UI scale setting.')
+        if not isinstance(data['settings'].get('gamemode',True),bool):raise ValueError('Invalid GameMode setting.')
         runner=data['settings'].get('default_proton','')
         if not isinstance(runner,str) or len(runner)>4096 or '\x00' in runner:raise ValueError('Invalid default runner.')
 
@@ -208,6 +210,14 @@ class Library:
         if value==INHERIT:raise ValueError('Choose a concrete app default or automatic policy.')
         parse_release(value)
         self.data['settings']['default_proton']=value;self._write()
+    def set_ui_scale(self,scale):
+        if scale not in ('auto','100','125','150','175','200'):raise ValueError('Invalid UI scale setting.')
+        self.data['settings']['ui_scale']=scale;self._write()
+
+    def set_gamemode(self,enabled):
+        if not isinstance(enabled,bool):raise ValueError('Invalid GameMode setting.')
+        self.data['settings']['gamemode']=enabled;self._write()
+
 
     def mark_synced(self, game_id, account, shortcut_id):
         game = next(g for g in self.games() if g['id']==game_id)
@@ -236,7 +246,9 @@ class Library:
         manifest=deepcopy(self.data)
         manifest['settings']={'theme':self.data['settings'].get('theme','system'),
                               'default_proton':self.data['settings'].get('default_proton','UMU-Latest'),
-                              'default_display_mode':self.data['settings'].get('default_display_mode','desktop')}
+                              'default_display_mode':self.data['settings'].get('default_display_mode','desktop'),
+                              'ui_scale':self.data['settings'].get('ui_scale','auto'),
+                              'gamemode':self.data['settings'].get('gamemode',True)}
         for game in manifest['games']: game['sync']=None
         fd,temp=tempfile.mkstemp(suffix='.zip',dir=Path(destination).parent); os.close(fd)
         try:
@@ -293,6 +305,8 @@ class Library:
         self.data['settings']['default_display_mode']=data['settings'].get('default_display_mode','desktop')
         self.data['settings']['theme']=data['settings'].get('theme','system')
         self.data['settings']['default_proton']=data['settings'].get('default_proton','UMU-Latest')
+        self.data['settings']['ui_scale']=data['settings'].get('ui_scale','auto')
+        self.data['settings']['gamemode']=data['settings'].get('gamemode',True)
         try: self._write()
         except Exception:
             self.data=previous; raise

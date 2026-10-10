@@ -92,6 +92,8 @@ def main(request_path):
             state['diagnostics_dir']=str(folder)
             logs.append('Detailed Proton logs: '+str(folder))
         save()
+        if request.get('argv') and Path(request['argv'][0]).name=='gamemoderun':
+            logs.append('GameMode (Feral Interactive): Active for this launch')
         if stopping[0] or cancel_requested():
             state['state']='Stopped';logs.append('Operation cancelled before execution.');return
         with subprocess.Popen(request['argv'],cwd=request['cwd'],env=request['env'],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,start_new_session=True) as process:
@@ -134,9 +136,10 @@ def main(request_path):
                                     if 'waitforexitandrun' in lower:state['state']='Running'
                 if time.monotonic()-last_evidence>.5:
                     last_evidence=time.monotonic()
-                    evidence=not stopping[0] and running_game_evidence(os.getpid(),state['supervisor_start'],request['argv'][1])
+                    target_exe=request.get('executable') or (request['argv'][2] if len(request.get('argv',[]))>2 and Path(request['argv'][0]).name=='gamemoderun' else request['argv'][1] if len(request.get('argv',[]))>1 else '')
+                    evidence=not stopping[0] and running_game_evidence(os.getpid(),state['supervisor_start'],target_exe)
                     if evidence:state['state']='Running'
-                    history_evidence=selected_game_evidence(os.getpid(),state['supervisor_start'],request['argv'][1],prefix) if request.get('operation','play')=='play' and not stopping[0] else None
+                    history_evidence=selected_game_evidence(os.getpid(),state['supervisor_start'],target_exe,prefix) if request.get('operation','play')=='play' and not stopping[0] else None
                     if play_milestone.observe(request.get('operation','play'),history_evidence,stopping[0],last_evidence):
                         try:
                             record_play(Path(request['record']).parent,request['game_id'],request['session_id'],time.time())

@@ -179,11 +179,42 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         self.section_tab_focus=self.tv_games_tab if section=='games' else self.tv_library_tab
         self.tv_section=section;self.show_library();self.section_tab_focus=None
 
+    def ui_scale_factor(self):
+        setting=self.library.data.get('settings',{}).get('ui_scale','auto')
+        if setting=='100':return 1.0
+        if setting=='125':return 1.25
+        if setting=='150':return 1.5
+        if setting=='175':return 1.75
+        if setting=='200':return 2.0
+        w,h=self.get_width(),self.get_height()
+        if self.tv_mode:
+            if w>=2500 or h>=1400:return 1.85
+            if w>=1800 or h>=950:return 1.5
+            if w>=1200:return 1.35
+            return 1.0
+        if w>=2500 or h>=1400:return 1.6
+        if w>=1800 or h>=1000:return 1.3
+        return 1.0
+
+    def update_scale_classes(self):
+        scale=self.ui_scale_factor()
+        for cls in ('scale-compact','scale-normal','scale-large','scale-xlarge'):
+            self.remove_css_class(cls)
+        if scale<=0.9:self.add_css_class('scale-compact')
+        elif scale<=1.15:self.add_css_class('scale-normal')
+        elif scale<=1.55:self.add_css_class('scale-large')
+        else:self.add_css_class('scale-xlarge')
+
     def console_dimensions(self):
-        compact=self.get_width()<1400 or self.get_height()<850
-        return (80,120) if self.get_height()<650 else (96,144) if compact else (152,228)
+        scale=self.ui_scale_factor()
+        if self.get_height()<650 and scale<=1.0:return (80,120)
+        compact=(self.get_width()<1400 or self.get_height()<850) and scale<=1.0
+        if compact:return (96,144)
+        return (int(152*scale),int(228*scale))
 
     def resize_console(self,widget,clock):
+        self.update_scale_classes()
+        scale=self.ui_scale_factor()
         if self.route=='detail':
             resize=getattr(self,'detail_responsive',None)
             if resize:resize(widget,clock)
@@ -195,21 +226,21 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         size=self.console_dimensions()
         if size==self.console_size:return True
         self.console_size=size
-        if hasattr(self,'tv_scroll'):self.tv_scroll.set_min_content_height(size[1]+(42 if size[0]<152 else 48)+48)
-        if size[0]<152:self.add_css_class('tv-compact')
+        if hasattr(self,'tv_scroll'):self.tv_scroll.set_min_content_height(size[1]+int(48*scale)+48)
+        if size[0]<152 and scale<=1.0:self.add_css_class('tv-compact')
         else:self.remove_css_class('tv-compact')
         if self.game is None and hasattr(self,'tv_title'):
-            self.tv_title.set_size_request(-1,74 if size[0]<152 else 116)
-            self.tv_description.set_size_request(-1,44 if size[0]<152 else 56)
-            self.tv_description.set_visible(size[0]!=80);self.tv_eyebrow.set_visible(size[0]!=80)
+            self.tv_title.set_size_request(-1,int(74*scale) if (size[0]<152 and scale<=1.0) else int(116*scale))
+            self.tv_description.set_size_request(-1,int(44*scale) if (size[0]<152 and scale<=1.0) else int(56*scale))
+            self.tv_description.set_visible(size[0]!=80 or scale>1.0);self.tv_eyebrow.set_visible(size[0]!=80 or scale>1.0)
         if self.game is not None and hasattr(self,'cover') and self.cover.has_css_class('tv-cover'):
-            self.cover.set_size_request(144 if size[0]<152 else 180,216 if size[0]<152 else 270)
+            self.cover.set_size_request(int(144*scale) if (size[0]<152 and scale<=1.0) else int(180*scale),int(216*scale) if (size[0]<152 and scale<=1.0) else int(270*scale))
             play=self.play_buttons.get(self.game['id'])
-            if play:play.set_size_request(144 if size[0]<152 else 180,-1)
+            if play:play.set_size_request(int(144*scale) if (size[0]<152 and scale<=1.0) else int(180*scale),-1)
         for _,tile in [*self.tv_tiles,*getattr(self,'home_setup_tiles',[])]:
             tile.console_width=size[0];tile.queue_resize()
             tile.console_cover.set_size_request(*size)
-            tile.console_title.set_size_request(size[0],42 if size[0]<152 else 48)
+            tile.console_title.set_size_request(size[0],int(42*scale) if (size[0]<152 and scale<=1.0) else int(48*scale))
         return True
 
 
@@ -222,7 +253,8 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         width,height=self.console_dimensions()
         tile.console_width=width;tile.set_layout_manager(CoverLayout())
         artwork=console_cover(self.library.art_dir/name if name else None,width,height);content.append(artwork);tile.console_cover=artwork
-        title=label(game['title'],'tv-card-title',xalign=0,wrap=True,wrap_mode=Pango.WrapMode.WORD_CHAR,lines=2,ellipsize=Pango.EllipsizeMode.END,width_chars=1,max_width_chars=1);title.set_size_request(width,42 if width<152 else 48);content.append(title);tile.console_title=title
+        scale=self.ui_scale_factor()
+        title=label(game['title'],'tv-card-title',xalign=0,wrap=True,wrap_mode=Pango.WrapMode.WORD_CHAR,lines=2,ellipsize=Pango.EllipsizeMode.END,width_chars=1,max_width_chars=1);title.set_size_request(width,int(48*scale));content.append(title);tile.console_title=title
         focus=Gtk.EventControllerFocus();focus.connect('enter',lambda _,g=game,t=tile:self.select_home_tile(g,t));tile.add_controller(focus)
         return tile
 
@@ -295,8 +327,9 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         scrim=Gtk.Box();scrim.add_css_class('tv-scrim');home_scene.add_overlay(scrim)
         home_scene.add_overlay(self.tv_page);home_scene.set_measure_overlay(self.tv_page,True);home_scene.set_vexpand(True);self.body.append(home_scene)
         self.home_stage=box(spacing=0);tv_content.append(self.home_stage)
-        hero=box(spacing=0);hero.set_vexpand(True);hero.set_size_request(-1,180);self.home_stage.append(hero)
-        summary=box(spacing=8);summary.add_css_class('tv-summary');summary.set_valign(Gtk.Align.END);summary.set_vexpand(True);summary_limit=Adw.Clamp(maximum_size=790,tightening_threshold=790);summary_limit.set_halign(Gtk.Align.START);summary_limit.set_child(summary);hero.append(summary_limit)
+        scale=self.ui_scale_factor()
+        hero=box(spacing=0);hero.set_vexpand(True);hero.set_size_request(-1,max(180,int(180*scale)));self.home_stage.append(hero)
+        summary=box(spacing=max(8,int(8*scale)));summary.add_css_class('tv-summary');summary.set_valign(Gtk.Align.END);summary.set_vexpand(True);summary_limit=Adw.Clamp(maximum_size=min(int(790*scale),max(790,self.get_width()-48)),tightening_threshold=min(int(790*scale),max(790,self.get_width()-48)));summary_limit.set_halign(Gtk.Align.START);summary_limit.set_child(summary);hero.append(summary_limit)
         self.tv_eyebrow=label('RECENTLY PLAYED','tv-eyebrow',xalign=0);summary.append(self.tv_eyebrow)
         self.tv_title=label('','tv-title',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END,max_width_chars=25,halign=Gtk.Align.START);self.tv_title.set_size_request(-1,74 if self.console_dimensions()[0]<152 else 116);summary.append(self.tv_title)
         self.tv_related=label('','tv-meta',xalign=0,ellipsize=Pango.EllipsizeMode.END);self.tv_related.set_size_request(-1,24);summary.append(self.tv_related)
@@ -558,6 +591,20 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             dialog.close();self.open_settings('storage')
         content.append(button('Storage',open_storage))
         leave=button('Exit fullscreen',exit_fullscreen);content.append(leave);content.append(button('Exit',exit_launcher))
+        def change_scale():
+            dialog.close()
+            scales=['auto','100','125','150','175','200']
+            cur=self.library.data.get('settings',{}).get('ui_scale','auto')
+            idx=(scales.index(cur)+1)%len(scales)
+            self.library.set_ui_scale(scales[idx])
+            self.update_scale_classes()
+            labels=['Auto','100%','125%','150%','175%','200%']
+            self.notify(f'UI Scale set to {labels[idx]}')
+            if self.route=='detail' and self.game:self.show_shared_detail(self.game,self.detail_item)
+            elif self.route=='store':self.show_store(restore=True)
+            elif self.route=='home':self.show_home()
+            else:self.show_library()
+        content.append(button('Change UI scale',change_scale))
         keys=Gtk.EventControllerKey();keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE);keys.connect('key-pressed',self.on_key);dialog.add_controller(keys)
         dialog.connect('close-request',lambda _:(self.tv_menu.grab_focus(),False)[-1])
         dialog.present();leave.grab_focus()
@@ -1256,6 +1303,13 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         modes=Adw.PreferencesGroup(title='Display mode',description='Default mode applies on the next app start. Enter fullscreen from the mode button; leave through fullscreen options or the tray.');page.add(modes)
         mode_row=Adw.ActionRow(title='Default launch mode');self.default_mode_choice=Gtk.DropDown.new_from_strings(['Desktop','Fullscreen / TV']);self.default_mode_choice.set_selected(1 if self.library.data['settings'].get('default_display_mode')=='fullscreen' else 0);mode_row.add_suffix(self.default_mode_choice);modes.add(mode_row)
         self.default_mode_choice.connect('notify::selected',lambda choice,_:self.library.set_default_display_mode('fullscreen' if choice.get_selected()==1 else 'desktop'))
+        from .launcher import gamemode_binary
+        gm_available=gamemode_binary() is not None
+        gm_row=Adw.ActionRow(title='Feral GameMode',subtitle='Automatically optimize CPU governor, GPU performance, and process priorities while gaming, then revert on exit.' if gm_available else 'GameMode not installed (gamemoderun not found).')
+        gm_switch=Gtk.Switch(active=bool(self.library.data.get('settings',{}).get('gamemode',True) and gm_available),valign=Gtk.Align.CENTER)
+        gm_switch.set_sensitive(gm_available)
+        gm_switch.connect('notify::active',lambda switch,_:self.library.set_gamemode(switch.get_active()))
+        gm_row.add_suffix(gm_switch);modes.add(gm_row)
         page.add(Adw.PreferencesGroup(title=APP_NAME+' '+__version__,description='Standalone UMU/Proton game and installer library.'))
         appearance=Adw.PreferencesGroup(title='Appearance',description='Choose how the app looks.'); page.add(appearance)
         theme_row=Adw.ActionRow(title='Theme')
@@ -1263,6 +1317,22 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         theme.set_selected(self.theme.get_selected())
         theme.connect('notify::selected',lambda dropdown,_:self.theme.set_selected(dropdown.get_selected()))
         theme_row.add_suffix(theme); appearance.add(theme_row)
+        scale_row=Adw.ActionRow(title='UI Scale',subtitle='Adjust interface sizing for desktop monitors vs large 55\" 4K TVs.')
+        scale_labels=['Auto (Recommended)','100% (Standard Monitor)','125%','150% (55\" TV Recommended)','175%','200% (4K TV Large)']
+        scale_values=['auto','100','125','150','175','200']
+        scale_choice=Gtk.DropDown.new_from_strings(scale_labels);scale_choice.set_valign(Gtk.Align.CENTER)
+        cur_scale=self.library.data.get('settings',{}).get('ui_scale','auto')
+        scale_choice.set_selected(scale_values.index(cur_scale) if cur_scale in scale_values else 0)
+        def scale_selected(dropdown,_):
+            val=scale_values[dropdown.get_selected()]
+            self.library.set_ui_scale(val)
+            self.update_scale_classes()
+            if self.route=='detail' and self.game:self.show_shared_detail(self.game,self.detail_item)
+            elif self.route=='store':self.show_store(restore=True)
+            elif self.route=='home':self.show_home()
+            else:self.show_library()
+        scale_choice.connect('notify::selected',scale_selected)
+        scale_row.add_suffix(scale_choice);appearance.add(scale_row)
         diagnostics=Adw.PreferencesGroup(title='Diagnostic logs',description='One local folder per game. Completed logs: 8 MiB per file, 100 MiB total, 14-day retention. Cleanup runs before and after launches; active logs are never cleared.');page.add(diagnostics)
         settings_ref=dialog.weak_ref()
         def show_activity():

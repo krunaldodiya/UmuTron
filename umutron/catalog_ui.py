@@ -60,6 +60,28 @@ CSS = b'''
 .browse-choice popover button.suggested-action { background: #ceeae3; color: #155448; }
 .desktop-dark .browse-choice popover button.suggested-action,
 .tv-mode .browse-choice popover button.suggested-action { background: #243d44; color: #85efd4; }
+.scale-large .collection-page { padding: 32px 48px; }
+.scale-large .collection-heading { font-size: 42px; }
+.scale-large .collection-title { font-size: 22px; }
+.scale-large .collection-kind { font-size: 18px; }
+.scale-large .collection-badge { font-size: 15px; }
+.scale-large .shared-detail { padding: 38px; border-radius: 24px; }
+.scale-large .detail-title { font-size: 54px; }
+.scale-large .detail-copy { font-size: 22px; }
+.scale-large .detail-meta { font-size: 20px; }
+.scale-large .detail-primary { padding: 14px 30px; font-size: 21px; }
+
+.scale-xlarge .collection-page { padding: 40px 64px; }
+.scale-xlarge .collection-heading { font-size: 52px; }
+.scale-xlarge .collection-title { font-size: 26px; }
+.scale-xlarge .collection-kind { font-size: 21px; }
+.scale-xlarge .collection-badge { font-size: 18px; }
+.scale-xlarge .shared-detail { padding: 48px; border-radius: 28px; }
+.scale-xlarge .detail-title { font-size: 66px; }
+.scale-xlarge .detail-copy { font-size: 26px; }
+.scale-xlarge .detail-meta { font-size: 24px; }
+.scale-xlarge .detail-primary { padding: 18px 38px; font-size: 25px; }
+
 
 /* Desktop keeps native density and theme choice, with the console's identity. */
 .desktop-mode { background: #f3f6f8; color: #172b36; }
@@ -142,6 +164,11 @@ class CatalogUI:
         self.game_install_service=UnavailableInstallService()
         from .game_uninstall import GameUninstall
         self.game_uninstall=GameUninstall(self.library)
+
+    def collection_card_dimensions(self):
+        scale=getattr(self,'ui_scale_factor',lambda:1.0)()
+        if scale<=1.05:return 136,204
+        return int(136*scale),int(204*scale)
 
     def catalog_cancel(self):
         self.catalog_generation+=1
@@ -339,14 +366,16 @@ class CatalogUI:
 
     def make_card(self,title,identity,callback,path=None,badge=''):
         box,button,label,_,_=ui()
+        card_w,card_h=self.collection_card_dimensions()
+        scale=getattr(self,'ui_scale_factor',lambda:1.0)()
         tile=button(title,callback,'collection-card');tile.set_halign(Gtk.Align.CENTER);tile.set_valign(Gtk.Align.START)
-        tile.console_width=156;tile.set_layout_manager(CoverLayout())
+        tile.console_width=card_w+20;tile.set_layout_manager(CoverLayout())
         tile.set_tooltip_text('View '+title)
-        content=box(spacing=10);tile.set_child(content)
-        cover=console_cover(path,136,204);content.append(cover)
+        content=box(spacing=max(10,int(10*scale)));tile.set_child(content)
+        cover=console_cover(path,card_w,card_h);content.append(cover)
         caption=label(title,'collection-title',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END,width_chars=1,max_width_chars=1)
-        caption.set_size_request(136,48);content.append(caption)
-        tag=label(badge,'collection-badge',xalign=0);tag.set_size_request(-1,18);content.append(tag)
+        caption.set_size_request(card_w,int(48*scale));content.append(caption)
+        tag=label(badge,'collection-badge',xalign=0);tag.set_size_request(-1,int(18*scale));content.append(tag)
         focus=Gtk.EventControllerFocus()
         def focused(*_):
             if self.route in self.routes:self.routes[self.route]['focus']=identity
@@ -471,7 +500,8 @@ class CatalogUI:
         _,_,label,_,_=ui()
         tile.catalog_context=label('','collection-kind',xalign=0,wrap=True,lines=2,
                                    ellipsize=Pango.EllipsizeMode.END,width_chars=1,max_width_chars=1)
-        tile.catalog_context.set_size_request(-1,48)
+        scale=getattr(self,'ui_scale_factor',lambda:1.0)()
+        tile.catalog_context.set_size_request(-1,int(48*scale))
         tile.get_child().insert_child_after(tile.catalog_context,tile.console_title)
         return tile
 
@@ -572,12 +602,15 @@ class CatalogUI:
         back=button('Back',self.return_from_detail,icon='go-previous-symbolic');back.set_halign(Gtk.Align.START);back.set_visible(self.tv_mode);outer.append(back)
         outer.append(Gtk.Box(vexpand=True))
         panel=box(spacing=24);panel.add_css_class('shared-detail')
-        panel_limit=Adw.Clamp(maximum_size=1140,tightening_threshold=1140);panel_limit.set_halign(Gtk.Align.START);panel_limit.set_child(panel);outer.append(panel_limit)
-        row=box(False,28);panel.append(row);self.detail_row=row
-        cover_column=box(spacing=14);cover_column.set_valign(Gtk.Align.START);row.append(cover_column)
-        name=game['artwork'].get('portrait') or game['artwork'].get('landscape');self.cover=console_cover(self.library.art_dir/name if name else None,160,240);cover_column.append(self.cover)
-        info=box(spacing=16 if self.tv_mode else 14);info.set_hexpand(True)
-        summary=Adw.Clamp(maximum_size=960,tightening_threshold=960);summary.set_hexpand(True);summary.set_halign(Gtk.Align.START);summary.set_child(info);row.append(summary)
+        scale=getattr(self,'ui_scale_factor',lambda:1.0)()
+        max_panel=min(int(1140*scale),max(1140,self.get_width()-int(48*scale)))
+        panel_limit=Adw.Clamp(maximum_size=max_panel,tightening_threshold=max_panel);panel_limit.set_halign(Gtk.Align.START);panel_limit.set_child(panel);outer.append(panel_limit)
+        row=box(False,int(28*scale));panel.append(row);self.detail_row=row
+        cover_column=box(spacing=int(14*scale));cover_column.set_valign(Gtk.Align.START);row.append(cover_column)
+        name=game['artwork'].get('portrait') or game['artwork'].get('landscape');self.cover=console_cover(self.library.art_dir/name if name else None,int(160*scale),int(240*scale));cover_column.append(self.cover)
+        info=box(spacing=int(16*scale) if self.tv_mode else int(14*scale));info.set_hexpand(True)
+        max_sum=min(int(960*scale),max(960,self.get_width()-int(96*scale)))
+        summary=Adw.Clamp(maximum_size=max_sum,tightening_threshold=max_sum);summary.set_hexpand(True);summary.set_halign(Gtk.Align.START);summary.set_child(info);row.append(summary)
         info.append(label(game['title'],'detail-title',xalign=0,wrap=True,wrap_mode=Pango.WrapMode.WORD_CHAR,lines=2,ellipsize=Pango.EllipsizeMode.END))
         entity_text=entity_label(item) if item else ''
         self.detail_entity=label(entity_text,'detail-meta',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END)
@@ -669,21 +702,24 @@ class CatalogUI:
         def responsive(widget,clock):
             if generation!=self.catalog_generation:return False
             if self.get_width()<=0 or self.get_height()<=0:return True
-            compact=self.get_width()<700
+            scale=getattr(self,'ui_scale_factor',lambda:1.0)()
+            compact=self.get_width()<700 and scale<=1.0
             if self.tv_mode:
-                small=self.get_width()<1400 or self.get_height()<850
+                small=(self.get_width()<1400 or self.get_height()<850) and scale<=1.0
                 if small:self.add_css_class('tv-compact')
                 else:self.remove_css_class('tv-compact')
-                width=144 if small else 180
-                outer.set_margin_start(32 if small else 48);outer.set_margin_end(32 if small else 48)
-                outer.set_margin_top(12 if small else 20);outer.set_margin_bottom(20 if small else 28)
+                width=int(144*scale) if small else int(180*scale)
+                m_h=int(32*scale) if small else int(48*scale)
+                outer.set_margin_start(m_h);outer.set_margin_end(m_h)
+                outer.set_margin_top(int(12*scale) if small else int(20*scale));outer.set_margin_bottom(int(20*scale) if small else int(28*scale))
             else:
-                small=self.get_width()<1400 or self.get_height()<850
+                small=(self.get_width()<1400 or self.get_height()<850) and scale<=1.0
                 if small:scene.add_css_class('detail-compact')
                 else:scene.remove_css_class('detail-compact')
-                width=144 if small else 180
-                outer.set_margin_start(24 if small else 48);outer.set_margin_end(24 if small else 48)
-                outer.set_margin_top(12 if small else 20);outer.set_margin_bottom(24 if small else 28)
+                width=int(144*scale) if small else int(180*scale)
+                m_h=int(24*scale) if small else int(48*scale)
+                outer.set_margin_start(m_h);outer.set_margin_end(m_h)
+                outer.set_margin_top(int(12*scale) if small else int(20*scale));outer.set_margin_bottom(int(24*scale) if small else int(28*scale))
             self.cover.set_size_request(width,width*3//2)
             # One stable action row keeps primary/options/info aligned across metadata heights.
             primary.set_size_request(width if not compact else -1,-1)
