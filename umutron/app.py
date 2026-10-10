@@ -95,10 +95,12 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         self.theme.set_selected(['system','light','dark'].index(self.library.data['settings'].get('theme','system')))
         self.theme.connect('notify::selected',self.theme_changed)
         self.theme.set_visible(False)
-        self.exit_button=button('Exit '+APP_NAME,self.explicit_exit,icon='application-exit-symbolic');self.exit_button.set_visible(False)
-        self.settings_button=button('Settings',self.open_settings,icon='preferences-system-symbolic');self.settings_button.set_visible(False)
-        self.mode_button=button('Fullscreen',lambda:self.set_tv_mode(not self.tv_mode));self.mode_button.set_tooltip_text('Switch desktop / fullscreen mode (F11)');self.mode_button.set_visible(False)
         self.layout.append(self.header)
+        self.settings_button=button('',self.open_settings,icon='emblem-system-symbolic');self.settings_button.set_tooltip_text('Settings')
+        self.header.pack_end(self.settings_button)
+        self.desktop_toggle_btn = button('', lambda: self.set_tv_mode(True), icon='view-fullscreen-symbolic')
+        self.desktop_toggle_btn.set_tooltip_text('Switch to fullscreen mode (F11)')
+        self.header.pack_end(self.desktop_toggle_btn)
         self.tv_controls=box(False,16);self.tv_controls.add_css_class('tv-controls');margins(self.tv_controls,0);self.tv_controls.set_visible(False)
         brand=box(False,10);brand.set_valign(Gtk.Align.CENTER);brand.add_css_class('tv-brand')
         brand_icon=Gtk.Image.new_from_icon_name(ICON_NAME);brand_icon.set_pixel_size(34);brand.append(brand_icon);brand.append(label(APP_NAME));self.tv_controls.append(brand)
@@ -106,6 +108,9 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         self.tv_library_tab=button('Library',self.show_library);self.tv_library_tab.add_css_class('flat');self.tv_controls.append(self.tv_library_tab)
         self.tv_games_tab=button('Store',self.show_store);self.tv_games_tab.add_css_class('flat');self.tv_controls.append(self.tv_games_tab)
         spacer=Gtk.Box(hexpand=True);self.tv_controls.append(spacer)
+        self.tv_desktop_btn=button('', lambda: self.set_tv_mode(False), icon='view-restore-symbolic')
+        self.tv_desktop_btn.add_css_class('flat');self.tv_desktop_btn.set_tooltip_text('Switch to desktop mode (F11)')
+        self.tv_controls.append(self.tv_desktop_btn)
         self.tv_menu=button('Fullscreen options',self.open_tv_options,icon='emblem-system-symbolic');self.tv_menu.add_css_class('flat');self.tv_controls.append(self.tv_menu)
         self.tv_clock=label('','tv-clock');self.tv_controls.append(self.tv_clock);self.update_tv_clock();GLib.timeout_add_seconds(30,self.update_tv_clock)
         self.layout.append(self.tv_controls)
@@ -154,10 +159,9 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             self.scene.remove_overlay(self.layout);self.toast.set_child(self.layout)
         self.backdrop.set_opacity(.4 if enabled and self.tv_section=='games' else 0)
         self.set_decorated(not enabled);self.header.set_visible(not enabled);self.tv_controls.set_visible(enabled)
-        self.mode_button.set_label('Desktop mode' if enabled else 'Fullscreen')
-        self.theme.set_visible(False);self.settings_button.set_visible(False);self.log_button.set_visible(False)
+        self.theme.set_visible(False);self.log_button.set_visible(False)
         self.log_revealer.set_reveal_child(False)
-        self.exit_button.set_visible(False);self.header.set_show_end_title_buttons(not enabled);self.header.set_show_start_title_buttons(not enabled)
+        self.header.set_show_end_title_buttons(not enabled);self.header.set_show_start_title_buttons(not enabled)
         if enabled:
             self.remove_css_class('desktop-mode');self.add_css_class('tv-mode');self.fullscreen()
             Adw.StyleManager.get_default().set_color_scheme(Adw.ColorScheme.FORCE_DARK)
@@ -559,8 +563,11 @@ class Window(CatalogUI, Adw.ApplicationWindow):
     def select_tv_game(self,game):
         self.tv_selected_id=game['id']
         if self.route=='home':self.home_selected_id=game['id']
+        active_section=getattr(self,'home_focus_section','recent')
         for gid,tile in [*self.tv_tiles,*(self.home_setup_tiles if self.route=='home' else [])]:
-            if gid==game['id']:tile.add_css_class('selected-game')
+            tile_section=getattr(tile,'home_section','recent')
+            if gid==game['id'] and (self.route!='home' or tile_section==active_section):
+                tile.add_css_class('selected-game')
             else:tile.remove_css_class('selected-game')
         name=game['artwork'].get('hero') or game['artwork'].get('landscape')
         set_art(self.backdrop,self.library.art_dir/name if name else None)
@@ -583,28 +590,59 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         dialog=modal_window(self,'Fullscreen options',width=440,height=260)
         self.tv_options_dialog=dialog
         content=dialog_body(dialog)
+        import subprocess
+        def do_reboot():
+            dialog.close()
+            self.confirm('Reboot system?', 'Are you sure you want to restart your device?', 'Restart', lambda: subprocess.Popen(['systemctl', 'reboot']), destructive=True)
+        def do_shutdown():
+            dialog.close()
+            self.confirm('Shutdown system?', 'Are you sure you want to turn off your device?', 'Shutdown', lambda: subprocess.Popen(['systemctl', 'poweroff']), destructive=True)
+            
+        content.append(button('Reboot', do_reboot))
+        content.append(button('Shutdown', do_shutdown))
+        
         def exit_fullscreen():
             dialog.close();self.set_tv_mode(False)
         def exit_launcher():
             dialog.close();self.explicit_exit()
-        def open_storage():
-            dialog.close();self.open_settings('storage')
-        content.append(button('Storage',open_storage))
+            
         leave=button('Exit fullscreen',exit_fullscreen);content.append(leave);content.append(button('Exit',exit_launcher))
-        def change_scale():
-            dialog.close()
+        
+        def step_scale(direction):
             scales=['auto','100','125','150','175','200']
             cur=self.library.data.get('settings',{}).get('ui_scale','auto')
-            idx=(scales.index(cur)+1)%len(scales)
+            idx = scales.index(cur) if cur in scales else 0
+            idx = (idx + direction) % len(scales)
             self.library.set_ui_scale(scales[idx])
             self.update_scale_classes()
             labels=['Auto','100%','125%','150%','175%','200%']
-            self.notify(f'UI Scale set to {labels[idx]}')
+            scale_label.set_text(f'UI Scale: {labels[idx]}')
             if self.route=='detail' and self.game:self.show_shared_detail(self.game,self.detail_item)
             elif self.route=='store':self.show_store(restore=True)
             elif self.route=='home':self.show_home()
             else:self.show_library()
-        content.append(button('Change UI scale',change_scale))
+            
+        scale_row = box(False, 12)
+        scale_row.set_halign(Gtk.Align.CENTER)
+        btn_minus = button('–', lambda: step_scale(-1))
+        btn_minus.set_size_request(60, -1)
+        btn_plus = button('+', lambda: step_scale(1))
+        btn_plus.set_size_request(60, -1)
+        
+        cur_scale = self.library.data.get('settings',{}).get('ui_scale','auto')
+        scales=['auto','100','125','150','175','200']
+        labels=['Auto','100%','125%','150%','175%','200%']
+        cur_label = labels[scales.index(cur_scale)] if cur_scale in scales else 'Auto'
+        
+        scale_label = label(f'UI Scale: {cur_label}')
+        scale_label.set_size_request(160, -1)
+        scale_label.set_halign(Gtk.Align.CENTER)
+        
+        scale_row.append(btn_minus)
+        scale_row.append(scale_label)
+        scale_row.append(btn_plus)
+        
+        content.append(scale_row)
         keys=Gtk.EventControllerKey();keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE);keys.connect('key-pressed',self.on_key);dialog.add_controller(keys)
         dialog.connect('close-request',lambda _:(self.tv_menu.grab_focus(),False)[-1])
         dialog.present();leave.grab_focus()

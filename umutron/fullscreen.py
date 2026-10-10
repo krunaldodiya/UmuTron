@@ -59,7 +59,7 @@ CSS = b'''
 .tv-mode.tv-compact .tv-hints { margin: 8px 28px 10px; font-size: 13px; }
 
 .scale-large { font-size: 21px; }
-.scale-large button { min-height: 48px; padding: 12px 24px; font-size: 19px; border-radius: 14px; }
+.tv-mode.scale-large button { min-height: 48px; padding: 12px 24px; font-size: 19px; border-radius: 14px; }
 .scale-large .tv-controls { padding: 24px 50px; }
 .scale-large .tv-controls button { min-height: 42px; padding: 10px 22px; font-size: 19px; }
 .scale-large .tv-brand { font-size: 28px; margin-right: 40px; }
@@ -79,7 +79,7 @@ CSS = b'''
 .scale-large .tv-hints { font-size: 17px; margin: 14px 48px 18px; }
 
 .scale-xlarge { font-size: 25px; }
-.scale-xlarge button { min-height: 56px; padding: 14px 30px; font-size: 22px; border-radius: 16px; }
+.tv-mode.scale-xlarge button { min-height: 56px; padding: 14px 30px; font-size: 22px; border-radius: 16px; }
 .scale-xlarge .tv-controls { padding: 30px 64px; }
 .scale-xlarge .tv-controls button { min-height: 48px; padding: 12px 26px; font-size: 22px; }
 .scale-xlarge .tv-brand { font-size: 34px; margin-right: 48px; }

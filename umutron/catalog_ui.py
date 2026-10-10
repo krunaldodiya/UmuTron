@@ -166,6 +166,8 @@ class CatalogUI:
         self.game_uninstall=GameUninstall(self.library)
 
     def collection_card_dimensions(self):
+        if getattr(self, 'tv_mode', False) and hasattr(self, 'console_dimensions'):
+            return self.console_dimensions()
         scale=getattr(self,'ui_scale_factor',lambda:1.0)()
         if scale<=1.05:return 136,204
         return int(136*scale),int(204*scale)
@@ -263,9 +265,10 @@ class CatalogUI:
             return True
         toolbar.add_tick_callback(resize_toolbar)
         self.collection_status=label('','dim-label',xalign=0,wrap=True);page.append(self.collection_status)
-        self.collection_flow=Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE,homogeneous=True,min_children_per_line=1,max_children_per_line=10,column_spacing=16,row_spacing=20)
+        is_tv = getattr(self, 'tv_mode', False)
+        self.collection_flow=Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE,homogeneous=True,min_children_per_line=1,max_children_per_line=10,column_spacing=22 if is_tv else 16,row_spacing=28 if is_tv else 20)
         self.collection_flow.set_valign(Gtk.Align.START)
-        self.collection_flow.set_margin_start(24);self.collection_flow.set_margin_end(24)
+        self.collection_flow.set_margin_start(42 if is_tv else 24);self.collection_flow.set_margin_end(42 if is_tv else 24)
         # Let the heading/search scroll with the cards. A fixed toolbar can
         # otherwise leave less room than one complete card in a short window.
         content=box(spacing=0);content.append(page);content.append(self.collection_flow)
