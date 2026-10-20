@@ -1096,7 +1096,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         cancelling={'value':False}
         def request_cancel(*_):
             active=getattr(self,'archive_future',None) and not self.archive_future.done()
-            if not active:dialog.close();return True
+            if not active:return False
             if cancelling['value']:return True
             cancelling['value']=True
             def confirmed():

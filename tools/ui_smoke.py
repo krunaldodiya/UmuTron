@@ -110,6 +110,10 @@ with tempfile.TemporaryDirectory() as temp:
     w.detail_gear.emit('clicked');settings=next(window for window in Gtk.Window.get_toplevels() if isinstance(window,Gtk.Window) and window.get_title().startswith('Game Settings'))
     managed_actions={button.get_label() for button in buttons(settings)}
     assert 'Back up game files…' in managed_actions and 'Restore game backup…' not in managed_actions
+    click(settings,'Back up game files…');settle()
+    backup=next(window for window in Gtk.Window.get_toplevels() if isinstance(window,Gtk.Window) and window.get_title()=='Back Up Game')
+    assert {'Cancel','Back up game'} <= {button.get_label() for button in buttons(backup)}
+    backup.destroy()
     settings.close();pump_until(lambda:not settings.get_visible())
     # Active operation controls and navigation use an inert injected service.
     class FakeLaunch:

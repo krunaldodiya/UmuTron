@@ -199,7 +199,8 @@ def modal_window(parent, title, *, width=640, height=560, subtitle='', attached=
     dialog.bind_property('title', heading, 'title', GObject.BindingFlags.SYNC_CREATE)
     header.set_title_widget(heading)
     if close_only:
-        dialog.set_decorated(False);dialog.set_resizable(False);header.set_show_title_buttons(False)
+        dialog.set_decorated(False);dialog.set_resizable(False)
+        header.set_show_start_title_buttons(False);header.set_show_end_title_buttons(False)
         close = Gtk.Button(icon_name='window-close-symbolic',tooltip_text='Cancel backup')
         close.connect('clicked',lambda *_:dialog.close());header.pack_end(close)
     dialog.set_titlebar(header)
