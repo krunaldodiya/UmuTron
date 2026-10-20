@@ -14,7 +14,7 @@ from .catalog_work import CatalogWork
 from .download_service import (
     UnavailableInstallService, configured_game, search_game_releases,
     download_manager, parse_size_bytes, format_size, estimate_space_requirements,
-    source_registry, DownloadRelease, PayloadKind, InstallerType,
+    DownloadRelease, PayloadKind, InstallerType,
 )
 from .sources.base import is_multipart_release
 from .sources.model import source_link_kind
@@ -883,7 +883,6 @@ class CatalogUI:
                     and self.catalog_generation==generation)
         def releases_loaded(releases):
             if not current_detail():return
-            source_registry.apply_disabled_sources(self.library.data.get('settings',{}).get('disabled_sources',[]))
             self.set_detail_releases(releases)
             self.detail_availability_checking=False
             self.refresh_launch_state()
@@ -916,9 +915,7 @@ class CatalogUI:
             self.detail_refresh.set_visible(False)
             return
         self.detail_all_releases=list(releases or [])
-        enabled={provider.id for provider in source_registry.providers(only_enabled=True)}
-        self.detail_releases=[release for release in self.detail_all_releases
-                              if release.provider_id in enabled]
+        self.detail_releases=self.detail_all_releases
         if self.detail_release not in self.detail_releases:
             self.detail_release=self.detail_releases[0] if self.detail_releases else False
         self.detail_size.set_label('Search links')

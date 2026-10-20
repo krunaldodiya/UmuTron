@@ -46,47 +46,26 @@ def resolve_id_to_title(query_id: str, base_url: str = 'http://127.0.0.1:8000') 
     return None
 
 class SourcesPage(Adw.PreferencesPage):
-    """View and toggle all API-configured download sources."""
+    """View the download sources enabled by the FastAPI service."""
 
     def __init__(self, library, window=None):
         super().__init__(title='Sources', icon_name='network-server-symbolic')
         self.library = library
         self.window = window
         self._rows = []
-        self._switches = {}
         self._request_generation = 0
 
         self.group = Adw.PreferencesGroup(
             title='Download sources',
-            description='Sources are loaded from the local FastAPI backend. '
-                        'Toggle sources on or off to include or exclude them from link searches.',
+            description='Source availability is configured by the FastAPI service.',
         )
         self.add(self.group)
 
-        # Header controls
-        controls_row = Adw.ActionRow(title='Source controls')
-        btn_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6, valign=Gtk.Align.CENTER)
-        
-        self.enable_all_btn = Gtk.Button(label='Enable all', valign=Gtk.Align.CENTER)
-        self.enable_all_btn.connect('clicked', lambda *_: self._set_all_enabled(True))
-        btn_box.append(self.enable_all_btn)
-
-        self.disable_all_btn = Gtk.Button(label='Disable all', valign=Gtk.Align.CENTER)
-        self.disable_all_btn.connect('clicked', lambda *_: self._set_all_enabled(False))
-        btn_box.append(self.disable_all_btn)
-
-        self.refresh_btn = Gtk.Button(icon_name='view-refresh-symbolic', valign=Gtk.Align.CENTER)
-        self.refresh_btn.set_tooltip_text('Refresh sources from API')
-        self.refresh_btn.connect('clicked', lambda *_: self.load_sources())
-        btn_box.append(self.refresh_btn)
-
-        self.sync_cache_btn = Gtk.Button(label='Sync Cache', valign=Gtk.Align.CENTER)
-        self.sync_cache_btn.add_css_class('suggested-action')
-        self.sync_cache_btn.set_tooltip_text('Trigger background upstream fetch and database cache sync')
-        self.sync_cache_btn.connect('clicked', lambda *_: self.trigger_backend_sync())
-        btn_box.append(self.sync_cache_btn)
-
-        controls_row.add_suffix(btn_box)
+        controls_row = Adw.ActionRow(title='Configured sources')
+        refresh_btn = Gtk.Button(icon_name='view-refresh-symbolic', valign=Gtk.Align.CENTER)
+        refresh_btn.set_tooltip_text('Refresh sources from API')
+        refresh_btn.connect('clicked', lambda *_: self.load_sources())
+        controls_row.add_suffix(refresh_btn)
         self.group.add(controls_row)
 
         self._set_status('Loading configured sources…')
@@ -95,14 +74,12 @@ class SourcesPage(Adw.PreferencesPage):
     def _base_url(self):
         catalog = getattr(self.window, 'catalog', None)
         provider = getattr(catalog, 'provider', None)
-        base = getattr(provider, 'base', None)
-        return base or os.environ.get('APP_BASE_URL') or 'http://127.0.0.1:8000'
+        return getattr(provider, 'base', None) or os.environ.get('APP_BASE_URL', '')
 
     def _clear_group(self):
         for row in self._rows:
             self.group.remove(row)
         self._rows.clear()
-        self._switches.clear()
 
     def _set_status(self, title, retry=False):
         self._clear_group()
@@ -152,80 +129,13 @@ class SourcesPage(Adw.PreferencesPage):
         if not sources:
             self._set_status('No sources are configured in the API.', retry=True)
             return False
-        self.library.data.setdefault('settings', {})
-        source_registry.apply_disabled_sources(
-            self.library.data['settings'].get('disabled_sources', []))
         for source in sorted(sources, key=lambda s: s.name.lower()):
-            escaped_name = GLib.markup_escape_text(source.name)
-            row = Adw.ActionRow(title=escaped_name, subtitle=f'ID: {source.id}')
+            row = Adw.ActionRow(title=source.name, subtitle=f'ID: {source.id}')
             row.set_use_markup(False)
-            switch = Gtk.Switch(valign=Gtk.Align.CENTER)
-            switch.set_active(source_registry.is_enabled(source.id))
-
-            def on_toggled(control, _, source_id=source.id):
-                enabled = control.get_active()
-                source_registry.set_enabled(source_id, enabled)
-                disabled = set(self.library.data.get('settings', {}).get('disabled_sources', []))
-                if enabled:
-                    disabled.discard(source_id)
-                else:
-                    disabled.add(source_id)
-                self.library.data.setdefault('settings', {})['disabled_sources'] = sorted(disabled)
-                try:
-                    self.library._write()
-                except (OSError, ValueError):
-                    pass
-
-            switch.connect('notify::active', on_toggled)
-            row.add_suffix(switch)
-            row.set_activatable_widget(switch)
             self.group.add(row)
             self._rows.append(row)
-            self._switches[source.id] = switch
         return False
 
-    def _set_all_enabled(self, enabled: bool):
-        for switch in self._switches.values():
-            switch.set_active(enabled)
-
-    def trigger_backend_sync(self):
-        base_url = self._base_url()
-        key = os.environ.get('INTERNAL_API_KEY') or os.environ.get('UMUTRON_API_KEY') or ''
-        if not key:
-            server = getattr(self.window, 'server', None)
-            if server and hasattr(server, 'read_environment'):
-                key = server.read_environment().internal_api_key
-        if self.window and hasattr(self.window, 'notify'):
-            self.window.notify('Triggering source feed fetch & cache sync in background…')
-        self.sync_cache_btn.set_sensitive(False)
-
-        def do_sync():
-            try:
-                url = f"{base_url.rstrip('/')}/api/fetcher/refresh"
-                headers = {'Content-Type': 'application/json', 'Accept': 'application/json'}
-                if key:
-                    headers['x-api-key'] = key
-                data = json.dumps({'sync': True, 'wait': False}).encode()
-                req = Request(url, data=data, headers=headers, method='POST')
-                with build_opener(ProxyHandler({})).open(req, timeout=10) as resp:
-                    return json.loads(resp.read().decode('utf-8'))
-            except Exception as e:
-                return {'error': str(e)}
-
-        def on_done(future):
-            self.sync_cache_btn.set_sensitive(True)
-            res = future.result()
-            if 'error' in res:
-                if self.window and hasattr(self.window, 'notify'):
-                    self.window.notify(f'Source cache sync failed: {res["error"]}')
-            else:
-                if self.window and hasattr(self.window, 'notify'):
-                    self.window.notify('Source cache sync started in background!')
-                GLib.idle_add(self.load_sources)
-
-        executor = ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(do_sync)
-        future.add_done_callback(lambda done: GLib.idle_add(on_done, done))
 
 
 class LinksPage(Adw.PreferencesPage):
@@ -272,8 +182,7 @@ class LinksPage(Adw.PreferencesPage):
     def _base_url(self):
         catalog = getattr(self.window, 'catalog', None)
         provider = getattr(catalog, 'provider', None)
-        base = getattr(provider, 'base', None)
-        return base or os.environ.get('APP_BASE_URL') or 'http://127.0.0.1:8000'
+        return getattr(provider, 'base', None) or os.environ.get('APP_BASE_URL', '')
 
     def set_search_query(self, query: str):
         if hasattr(self, 'search_entry'):
@@ -301,9 +210,9 @@ class LinksPage(Adw.PreferencesPage):
         self._search_generation += 1
         gen = self._search_generation
         if raw_query.isdecimal():
-            self._set_results_status(f'Resolving ID {raw_query} and searching enabled sources…', spinning=True)
+            self._set_results_status(f'Resolving ID {raw_query} and searching configured sources…', spinning=True)
         else:
-            self._set_results_status(f'Searching enabled sources for "{raw_query}"…', spinning=True)
+            self._set_results_status(f'Searching configured sources for "{raw_query}"…', spinning=True)
         base_url = self._base_url()
 
         future = self._pool.submit(self._execute_search, base_url, raw_query)
@@ -345,7 +254,7 @@ class LinksPage(Adw.PreferencesPage):
         if not releases:
             self._set_results_status(
                 f'No download links found for "{display_title}". '
-                'Verify the title or Steam/IGDB ID, or ensure sources are enabled in the Sources tab.'
+                'Verify the title or update enabled sources in the FastAPI service.'
             )
             return False
         sources_map = {}

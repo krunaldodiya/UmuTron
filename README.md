@@ -50,42 +50,19 @@ These are isolated GTK test renders with fictional games and seeded play history
 
 ## Catalog service and safe removal
 
-UmuTron 0.4.24 provides separate Home, Library and live Store routes with a shared game detail page. Home reflects observed recent play; Library stays local and works offline; Store searches the configured metadata backend. Explicit Add saves metadata first. Setup configures existing game files or a local installer; automatic game downloads remain unavailable. Storage experiments and download-source prototypes are not included.
+UmuTron provides separate Home, Library and Store routes with a shared game detail page. Home reflects observed recent play; Library stays local and works offline; Store and download-link search use the managed UmuTron FastAPI service. Explicit Add saves metadata first. Setup configures existing game files or a local installer; automatic game downloads remain unavailable. Storage experiments and download-source prototypes are not included.
 
-Configure `APP_BASE_URL` with the approved HTTPS UmuTron-API origin only (scheme, host and optional port), without an API path, query, credentials or fragment. For desktop-menu launches, save this nonsecret setting in `~/.config/game-library-launcher/catalog.json` (or `$XDG_CONFIG_HOME/game-library-launcher/catalog.json`):
+The installer configures the managed HTTPS API origin in `~/.config/umutron/catalog.json`. The desktop holds no backend credentials, source-fetch controls, Docker configuration, or catalog-provider credentials. Configure those only as Vercel environment variables and FastAPI internal endpoints.
+
+To target another approved HTTPS deployment, set its origin without an API path, query, credentials, or fragment:
 
 ```json
 {"APP_BASE_URL": "https://your-catalog-service.example"}
 ```
 
-Restart UmuTron normally after changing it. An environment `APP_BASE_URL` overrides that file. The file is separate from credentials, library metadata and portable backups. The desktop never needs a Twitch client secret or token and no remote host is hardcoded. Without a backend, saved games and Setup remain available; Store explains that it is not connected. Production backend deployment and credentials are managed separately.
+Save it in `~/.config/umutron/catalog.json` (or `$XDG_CONFIG_HOME/umutron/catalog.json`) and restart UmuTron. An environment `APP_BASE_URL` overrides the file. The client appends `/v1/genres`, `/v1/games`, or `/v1/games/<id>` itself. Do not append `/api/v1/catalog` or another route to `APP_BASE_URL`.
 
-For local integration, start the FastAPI stack with Docker, then use the helper
-from the UmuTron repository root:
-
-```sh
-# Run these from the UmuTron repository root.
-(cd ../UmuTron-FastAPI && docker compose up -d --build)
-tools/run-with-local-api.sh
-```
-
-The helper exports `APP_BASE_URL=http://127.0.0.1:8000`,
-`UMUTRON_ALLOW_LOOPBACK_HTTP=1`, and the `INTERNAL_API_KEY` used by the local
-Docker stack (read from the environment or `UmuTron-FastAPI/.env`). The key is
-process-only and is not saved in `catalog.json`. The equivalent manual setup is:
-
-```sh
-export APP_BASE_URL=http://127.0.0.1:8000
-export UMUTRON_ALLOW_LOOPBACK_HTTP=1
-export INTERNAL_API_KEY="$(grep '^INTERNAL_API_KEY=' ../UmuTron-FastAPI/.env | cut -d= -f2-)"
-python3 run.py
-```
-
-The client appends `/v1/genres`, `/v1/games`, or `/v1/games/<id>` itself. Do not append `/api/v1/catalog` or another route to `APP_BASE_URL`. UmuTron does not load the backend's `.env`; `IGDB_API_BASE_URL` is the backend's separate upstream setting.
-
-Production requires the verified HTTPS backend origin and no HTTP opt-in. The default client rejects all HTTP. With the exact development switch `1`, only literal loopback hosts or `localhost` are accepted; `localhost` is pinned to `127.0.0.1`, environment proxies are bypassed, and redirects are refused. LAN addresses and nonloopback HTTP remain rejected. Requests contain only public catalog queries, with no library records, local file paths, cookies or credentials.
-
-`UMUTRON_CATALOG_URL` remains a legacy environment alias **only when `APP_BASE_URL` is unset in both the environment and the config file**, subject to the same origin-only validation. An explicitly empty/invalid primary or malformed config disables the connection; it does not silently fall back to the old setting or a remote default.
+Production requires a verified HTTPS backend origin. The desktop sends only public catalog queries and download-link searches: no library records, local file paths, cookies, or credentials. Without a backend, saved games and Setup remain available; Store explains that it is not connected.
 
 Remove from library keeps game files, saves, prefixes and runners. Uninstall is a distinct action: first verify the dedicated installation folder in Setup, then confirm its exact path and file inventory. Ambiguous/shared folders, known save data, links, nested mounts and unclassified files are rejected. Interrupted uninstall retains local recovery information. Saves, prefixes and Proton are separate; no game or installer runs during verification. See [the ownership and recovery contract](docs/DESIGN.md#guarded-game-removal-and-recovery).
 

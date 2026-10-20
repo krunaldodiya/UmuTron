@@ -2,8 +2,6 @@
 """Install the desktop app for the current user; no root or game execution."""
 from pathlib import Path
 import json
-import os
-import shlex
 import shutil
 import subprocess
 import sys
@@ -11,11 +9,11 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from game_library.library import atomic_write
 from game_library import APP_ID, APP_NAME, ICON_NAME
 
+API_ORIGIN='https://umutron-fastapi.vercel.app'
 source=Path(__file__).resolve().parents[1]
 target=Path.home()/'.local/opt/umutron'
 legacy_target=Path.home()/'.local/opt/game-library-launcher'
 source_pkg=source/'umutron' if (source/'umutron').is_dir() else source/'game_library'
-api_dir=source.parent/'UmuTron-FastAPI'
 
 def install_package(destination):
     for item in source_pkg.iterdir():
@@ -74,32 +72,13 @@ def quoted(path):
     text=str(path).replace('\\','\\\\').replace('"','\\"').replace('`','\\`').replace('$','\\$').replace('%','%%')
     return '"'+text+'"'
 launch='/usr/bin/python3 '+quoted(target/'run.py')
-if (api_dir/'docker-compose.yml').is_file():
-    # Keep the installed launcher pointed at the local-only FastAPI stack when
-    # this install is made from the workspace containing both projects.
-    wrapper=target/'run-local-api.sh'
-    script=f'''#!/bin/sh
-set -eu
-API_DIR="${{UMUTRON_API_DIR:-}}"
-if [ -z "$API_DIR" ]; then API_DIR={shlex.quote(str(api_dir))}; fi
-export UMUTRON_API_DIR="$API_DIR"
-export APP_BASE_URL="${{APP_BASE_URL:-http://127.0.0.1:8000}}"
-export UMUTRON_ALLOW_LOOPBACK_HTTP=1
-if [ -z "${{INTERNAL_API_KEY:-}}" ] && [ -f "$API_DIR/.env" ]; then
-    INTERNAL_API_KEY="$(awk -F= '$1 == "INTERNAL_API_KEY" {{ sub(/^[^=]*=/, ""); sub(/\\r$/, ""); print; exit }}' "$API_DIR/.env")"
-    export INTERNAL_API_KEY
-fi
-if [ -n "${{INTERNAL_API_KEY:-}}" ]; then
-    export UMUTRON_API_KEY="${{UMUTRON_API_KEY:-$INTERNAL_API_KEY}}"
-fi
-exec /usr/bin/python3 "$HOME/.local/opt/umutron/run.py" "$@"
-'''
-    atomic_write(wrapper,script.encode())
-    try: wrapper.chmod(0o755)
-    except OSError: pass
-    config_dir=Path(os.environ.get('XDG_CONFIG_HOME',Path.home()/'.config'))/'umutron'
-    atomic_write(config_dir/'server.json',(json.dumps({'repo_dir':str(api_dir)})+'\n').encode())
-    launch=quoted(wrapper)
+for obsolete in (target/'run-local-api.sh', Path.home()/'.config'/'umutron'/'server.json'):
+    try:
+        obsolete.unlink()
+    except FileNotFoundError:
+        pass
+config_dir=Path.home()/'.config'/'umutron'
+atomic_write(config_dir/'catalog.json',(json.dumps({'APP_BASE_URL':API_ORIGIN})+'\n').encode())
 entry=f'''[Desktop Entry]
 Type=Application
 Name={APP_NAME}

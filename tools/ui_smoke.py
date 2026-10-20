@@ -102,8 +102,6 @@ with tempfile.TemporaryDirectory() as temp:
         DownloadSource('source-a','Source A'),DownloadSource('source-b','Source B'),
         DownloadSource('source-c','Source C'),DownloadSource('source-d','Source D'),
         DownloadSource('source-e','Source E')])
-    library.data.setdefault('settings',{})['disabled_sources']=['source-c']
-    source_registry.apply_disabled_sources(['source-c'])
     source_a=DownloadRelease('source-a','Source A','Game installer','42 GB','magnet:?xt=urn:btih:fixture-a',
                              uris=['magnet:?xt=urn:btih:fixture-a','https://example.test/game.torrent','https://example.test/game.zip'])
     source_b=DownloadRelease('source-b','Source B','Game edition','68 GB','magnet:?xt=urn:btih:fixture-b')
@@ -148,7 +146,6 @@ with tempfile.TemporaryDirectory() as temp:
     assert source_dialog.get_visible()
     screenshot('source-selection-dark.png',source_dialog)
     source_dialog.close();pump_until(lambda:not source_dialog.get_visible())
-    source_registry.set_enabled('source-c',True)
     class FixtureStorage:
         def snapshot(self):
             return {'registrations':[{'id':'fixture-drive','roles':['install'],'path':temp,'label':'Fixture'}],

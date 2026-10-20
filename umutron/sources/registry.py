@@ -12,9 +12,9 @@ class DownloadSource:
 
 
 class SourceProviderRegistry:
+    """Active download sources selected by the FastAPI service."""
     def __init__(self, sources=()):
         self._sources = {}
-        self._disabled = set()
         self._lock = RLock()
         self.replace_sources(sources)
 
@@ -41,7 +41,6 @@ class SourceProviderRegistry:
             values[source.id] = source
         with self._lock:
             self._sources = values
-            self._disabled.intersection_update(values)
         return self.providers()
 
     def load_sources(self, base_url, transport=None):
@@ -76,27 +75,9 @@ class SourceProviderRegistry:
         with self._lock:
             return self._sources.get(source_id)
 
-    def set_enabled(self, source_id, enabled):
+    def providers(self):
         with self._lock:
-            if source_id not in self._sources:
-                return
-            if enabled:
-                self._disabled.discard(source_id)
-            else:
-                self._disabled.add(source_id)
-
-    def is_enabled(self, source_id):
-        with self._lock:
-            return source_id in self._sources and source_id not in self._disabled
-
-    def apply_disabled_sources(self, disabled):
-        with self._lock:
-            self._disabled = set(disabled) & set(self._sources)
-
-    def providers(self, only_enabled=False):
-        with self._lock:
-            return [source for source in self._sources.values()
-                    if not only_enabled or source.id not in self._disabled]
+            return list(self._sources.values())
 
 
 source_registry = SourceProviderRegistry()

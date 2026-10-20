@@ -58,18 +58,13 @@ class PublicLinkFilterTests(unittest.TestCase):
 
 
 class SourceDiscoveryTests(unittest.TestCase):
-    def test_registry_replaces_sources_from_api_and_keeps_only_valid_local_disables(self):
+    def test_registry_replaces_sources_from_api(self):
         registry = SourceProviderRegistry((DownloadSource('old', 'Old source'),))
-        registry.set_enabled('old', False)
         payload = {'sources': SOURCES}
         self.assertEqual(registry.load_sources('https://api.example', transport=lambda _: payload),
                          [DownloadSource(source['id'], source['name']) for source in SOURCES])
-        self.assertEqual([source.id for source in registry.providers(only_enabled=True)],
+        self.assertEqual([source.id for source in registry.providers()],
                          [source['id'] for source in SOURCES])
-        registry.set_enabled('source-c', False)
-        registry.load_sources('https://api.example', transport=lambda _: payload)
-        self.assertFalse(registry.is_enabled('source-c'))
-        self.assertEqual(len(registry.providers()), 5)
 
 
     def test_api_disabled_sources_are_excluded_from_registry(self):
@@ -90,7 +85,7 @@ class SourceDiscoveryTests(unittest.TestCase):
         ]}
         self.assertEqual(registry.load_sources('https://api.example', transport=lambda _: payload),
                          [DownloadSource('source-a', 'Source A')])
-    def test_search_queries_every_api_source_even_when_locally_disabled(self):
+    def test_search_queries_every_api_enabled_source(self):
         registry = SourceProviderRegistry()
         releases = [release(source['id'], 'Game Edition') for source in SOURCES]
         calls = []
@@ -107,12 +102,9 @@ class SourceDiscoveryTests(unittest.TestCase):
             cache = DownloadSourceCache(Path(temp) / 'releases.json')
             with patch('umutron.sources.cache.source_registry', registry), \
                     patch('umutron.sources.cache.source_cache', cache):
-                registry.load_sources('https://api.example', transport=lambda _: {'sources': SOURCES})
-                registry.set_enabled('source-c', False)
                 found = search_game_releases('https://api.example', 'Game', transport=transport)
                 self.assertEqual([item.provider_id for item in found],
                                  [source['id'] for source in SOURCES])
-                self.assertFalse(registry.is_enabled('source-c'))
                 self.assertTrue(any('/api/sources' in url for url in calls))
                 self.assertTrue(any('/api/downloads' in url for url in calls))
                 repeated = search_game_releases('https://api.example', 'Game', transport=transport)
