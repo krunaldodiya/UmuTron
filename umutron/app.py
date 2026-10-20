@@ -57,6 +57,17 @@ def margins(widget,n=24):
 def clear(container):
     while container.get_first_child(): container.remove(container.get_first_child())
 
+def raise_window(window):
+    """Bring an existing native window to the foreground on X11 and Wayland."""
+    if window and window.get_visible():
+        window.set_visible(False)
+        window.set_visible(True)
+        window.present()
+        surface = window.get_surface()
+        if surface and hasattr(surface, 'focus'):
+            try:surface.focus(Gdk.CURRENT_TIME)
+            except Exception:pass
+
 
 class Window(CatalogUI, Adw.ApplicationWindow):
     def __init__(self, app, library, demo=False, catalog_provider=None, storage_service=None):
@@ -1037,11 +1048,17 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             self.notify('Install a Proton version in Settings → Proton Manager first.')
             return
         owner=getattr(self,'game_settings_dialog',None) or self
+        existing=getattr(self,'add_installed_dialog',None)
+        if existing and existing.get_visible():
+            raise_window(existing)
+            return
         dialog=modal_window(owner,'Add Installed Game',width=700,height=580,
                             subtitle='Select the installed game folder and main launcher.',
                             attached=owner is not self)
         root=dialog_body(dialog);content=box(spacing=14);root.append(content);footer=dialog_footer();root.append(footer)
         content.append(label('Installed game folder','heading',xalign=0))
+        self.add_installed_dialog=dialog
+        dialog.connect('destroy',lambda *_:setattr(self,'add_installed_dialog',None))
         game_root=Gtk.Entry(hexpand=True,placeholder_text='Folder containing the installed game');content.append(game_root)
         content.append(button('Choose game folder…',lambda:self.choose_file('Choose installed game folder',lambda path:game_root.set_text(str(path)),folder=True,parent=dialog)))
         content.append(label('Main game launcher','heading',xalign=0))
@@ -1083,7 +1100,10 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         dialog.present()
     def backup_current_game(self, parent=None):
         if not self.game:return
-        if getattr(self,'archive_future',None) and not self.archive_future.done():self.archive_dialog.present();return
+        if getattr(self,'archive_future',None) and not self.archive_future.done():
+            if getattr(self,'game_settings_dialog',None):raise_window(self.game_settings_dialog)
+            if getattr(self,'archive_dialog',None):raise_window(self.archive_dialog)
+            return
         owner=parent or getattr(self,'game_settings_dialog',None) or self
         dialog=modal_window(owner,'Back Up Game',width=640,height=340,subtitle='Create a portable content backup.',attached=True,close_only=True)
         root=dialog_body(dialog);content=box(spacing=12);root.append(content);footer=dialog_footer();root.append(footer)
@@ -1182,9 +1202,12 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         existing=getattr(self,'game_settings_dialog',None)
         if existing and existing.get_visible():
             if getattr(self,'game_settings_game_id',None)==self.game.get('id'):
-                existing.present()
-                if getattr(self,'archive_dialog',None) and self.archive_dialog.get_visible():
-                    self.archive_dialog.present()
+                raise_window(existing)
+                for sub in (getattr(self,'archive_dialog',None),
+                            getattr(self,'move_dialog',None),
+                            getattr(self,'add_installed_dialog',None)):
+                    if sub and sub.get_visible():
+                        raise_window(sub)
                 return
             existing.close()
         dialog=modal_window(self,'Game Settings · '+self.game['title'],width=760,height=520,attached=False)
@@ -1250,8 +1273,8 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             move_btn=button('Move install folder…',lambda:self.move_install_folder(parent=dialog))
             move_card.append(move_btn);files.append(move_card)
             remove_card=box(spacing=4)
-            remove_card.append(label('Remove this game from your library without deleting its installation files.','dim-label',xalign=0,wrap=True))
-            remove_btn=button('Remove from library…',self.remove_detail)
+            remove_card.append(label('Unlink this game’s installation folder without deleting any files on disk. The game stays in your library.','dim-label',xalign=0,wrap=True))
+            remove_btn=button('Remove installed game…',self.remove_installed_game)
             remove_card.append(remove_btn);files.append(remove_card)
             uninstall_card=box(spacing=4)
             uninstall_card.append(label('Permanently delete this game’s installation folder from disk.','dim-label',xalign=0,wrap=True))
@@ -1263,6 +1286,25 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             files.append(button('Restore game backup…',lambda:self.restore_current_game_backup(parent=dialog)))
         stack.add_titled(files,'files','Installed Files');dialog.present()
 
+
+    def remove_installed_game(self):
+        if not self.game:return
+        game=deepcopy(self.game)
+        def unlink():
+            from .game_assets import unlink_game
+            unlink_game(game)
+            unlinked=deepcopy(game)
+            unlinked.update(executable='',working_dir='',installation={})
+            unlinked['launch']={**unlinked.get('launch',{}),'prefix':'','proton':''}
+            self.library.save(unlinked)
+            self.game=unlinked
+            self.show_game(unlinked)
+            if getattr(self,'game_settings_dialog',None):
+                self.game_settings_dialog.close()
+            self.notify(f"Unlinked installed files for {game['title']}. Game was kept in your library.")
+        self.confirm('Remove installed game?',
+                     f'Unlink "{game["title"]}" from its installed folder?\n\nNo files will be deleted from disk. The game remains in your library so you can link or restore it again later.',
+                     'Remove installed game',unlink,destructive=True)
     def move_install_folder(self, parent=None):
         if not self.game:return
         if getattr(self,'archive_future',None) and not self.archive_future.done():
@@ -1277,8 +1319,14 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             self.error(ValueError('Installation folder is unavailable.'));return
         current_path=Path(root_path).resolve()
         owner=parent or getattr(self,'game_settings_dialog',None) or self
+        existing=getattr(self,'move_dialog',None)
+        if existing and existing.get_visible():
+            raise_window(existing)
+            return
         dialog=modal_window(owner,'Move Install Folder',width=620,height=340,
                             subtitle=f"Move {self.game['title']} to another drive.",attached=True)
+        self.move_dialog=dialog
+        dialog.connect('destroy',lambda *_:setattr(self,'move_dialog',None))
         root=dialog_body(dialog);content=box(spacing=14);root.append(content);footer=dialog_footer();root.append(footer)
         content.append(label('Current location','heading',xalign=0))
         content.append(label(str(current_path),'dim-label',xalign=0,wrap=True))
@@ -1312,7 +1360,10 @@ class Window(CatalogUI, Adw.ApplicationWindow):
 
     def restore_current_game_backup(self, parent=None):
         if not self.game:return
-        if getattr(self,'archive_future',None) and not self.archive_future.done():self.archive_dialog.present();return
+        if getattr(self,'archive_future',None) and not self.archive_future.done():
+            if getattr(self,'game_settings_dialog',None):raise_window(self.game_settings_dialog)
+            if getattr(self,'archive_dialog',None):raise_window(self.archive_dialog)
+            return
         owner=parent or getattr(self,'game_settings_dialog',None) or self
         def selected(archive):
             try:drives=self._managed_drives()

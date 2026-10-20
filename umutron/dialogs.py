@@ -193,6 +193,9 @@ def modal_window(parent, title, *, width=640, height=560, subtitle='', attached=
     if parent.get_height() > 0:
         height = min(height, max(240, parent.get_height() - 48))
     dialog = Gtk.Window(title=title, modal=attached, default_width=width, default_height=height)
+    app = parent.get_application() if hasattr(parent, 'get_application') else None
+    if app:
+        dialog.set_application(app)
     style_surface(dialog, parent if attached else None)
     header = Adw.HeaderBar()
     heading = Adw.WindowTitle(title=title, subtitle=subtitle)
