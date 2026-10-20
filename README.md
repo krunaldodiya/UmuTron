@@ -60,14 +60,28 @@ Configure `APP_BASE_URL` with the approved HTTPS UmuTron-API origin only (scheme
 
 Restart UmuTron normally after changing it. An environment `APP_BASE_URL` overrides that file. The file is separate from credentials, library metadata and portable backups. The desktop never needs a Twitch client secret or token and no remote host is hardcoded. Without a backend, saved games and Setup remain available; Store explains that it is not connected. Production backend deployment and credentials are managed separately.
 
-For local integration, export these into the environment that starts the **native desktop app**:
+For local integration, start the FastAPI stack with Docker, then use the helper
+from the UmuTron repository root:
 
 ```sh
-export APP_BASE_URL=http://localhost:3000
-export UMUTRON_ALLOW_LOOPBACK_HTTP=1
+# Run these from the UmuTron repository root.
+(cd ../UmuTron-FastAPI && docker compose up -d --build)
+tools/run-with-local-api.sh
 ```
 
-The client appends `/v1/genres`, `/v1/games`, or `/v1/games/<id>` itself. Do not append `/api/v1/catalog` or another route to `APP_BASE_URL`. UmuTron does not load the backend's `.env.local`; `IGDB_API_BASE_URL` is the backend's separate upstream setting.
+The helper exports `APP_BASE_URL=http://127.0.0.1:8000`,
+`UMUTRON_ALLOW_LOOPBACK_HTTP=1`, and the `INTERNAL_API_KEY` used by the local
+Docker stack (read from the environment or `UmuTron-FastAPI/.env`). The key is
+process-only and is not saved in `catalog.json`. The equivalent manual setup is:
+
+```sh
+export APP_BASE_URL=http://127.0.0.1:8000
+export UMUTRON_ALLOW_LOOPBACK_HTTP=1
+export INTERNAL_API_KEY="$(grep '^INTERNAL_API_KEY=' ../UmuTron-FastAPI/.env | cut -d= -f2-)"
+python3 run.py
+```
+
+The client appends `/v1/genres`, `/v1/games`, or `/v1/games/<id>` itself. Do not append `/api/v1/catalog` or another route to `APP_BASE_URL`. UmuTron does not load the backend's `.env`; `IGDB_API_BASE_URL` is the backend's separate upstream setting.
 
 Production requires the verified HTTPS backend origin and no HTTP opt-in. The default client rejects all HTTP. With the exact development switch `1`, only literal loopback hosts or `localhost` are accepted; `localhost` is pinned to `127.0.0.1`, environment proxies are bypassed, and redirects are refused. LAN addresses and nonloopback HTTP remain rejected. Requests contain only public catalog queries, with no library records, local file paths, cookies or credentials.
 
