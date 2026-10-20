@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
+import shlex
 import sys
 import gi
 
@@ -1105,15 +1106,14 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         stack=Gtk.Stack(vexpand=True,hexpand=True);sidebar=Gtk.StackSidebar(stack=stack);sidebar.set_size_request(170,-1);row.append(sidebar);row.append(stack)
         general=box(spacing=12);general.append(label('General','title-2',xalign=0))
         general.append(label('Launch options','heading',xalign=0))
-        general.append(label('Pass direct arguments to this game. Enter one argument per line; shell commands are not evaluated.','dim-label',xalign=0,wrap=True))
-        launch_args=Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR)
-        launch_args.get_buffer().set_text('\n'.join(self.game.get('launch',{}).get('arguments',[])))
-        launch_args.set_vexpand(True)
-        args_scroll=Gtk.ScrolledWindow(min_content_height=100);args_scroll.set_child(launch_args);general.append(args_scroll)
+        general.append(label('Pass arguments to this game. Use quotes around an argument containing spaces; shell commands are not evaluated.','dim-label',xalign=0,wrap=True))
+        launch_args=Gtk.Entry(hexpand=True,placeholder_text='--nolauncher')
+        launch_args.set_text(shlex.join(self.game.get('launch',{}).get('arguments',[])))
+        general.append(launch_args)
         save_args=button('Save launch options',lambda:None,'suggested-action');general.append(save_args)
         def apply_args(*_):
-            buffer=launch_args.get_buffer();text=buffer.get_text(buffer.get_start_iter(),buffer.get_end_iter(),False)
-            arguments=[argument for argument in text.splitlines() if argument]
+            try:arguments=shlex.split(launch_args.get_text())
+            except ValueError as error:self.error(ValueError('Launch options have unmatched quotes.'));return
             updated=deepcopy(self.game);updated['launch']={**updated.get('launch',{}),'arguments':arguments}
             self.library.save(updated);self.game=updated;self.notify('Launch options updated.')
         save_args.connect('clicked',apply_args)
