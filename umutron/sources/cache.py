@@ -80,7 +80,7 @@ def _request(base_url, path, params, transport):
     return transport(endpoint) if transport is not None else api_request(endpoint)
 
 
-def _releases_from_response(payload, source_ids, provider_id=None):
+def _releases_from_response(payload, source_ids=None, provider_id=None):
     if (not isinstance(payload, dict) or not isinstance(payload.get('data'), list)
             or type(payload.get('has_more')) is not bool):
         raise ValueError('The download source API returned an invalid response.')
@@ -89,8 +89,16 @@ def _releases_from_response(payload, source_ids, provider_id=None):
         if not isinstance(item, dict):
             continue
         source_id = item.get('source_id')
-        if not isinstance(source_id, str) or source_id not in source_ids:
+        if not isinstance(source_id, str) or not source_id.strip():
             continue
+        if source_ids is None:
+            source_name = item.get('source_name')
+            if not isinstance(source_name, str) or not source_name.strip():
+                continue
+        else:
+            source_name = source_ids.get(source_id)
+            if source_name is None:
+                continue
         if provider_id is not None and source_id != provider_id:
             continue
         title = item.get('title')
@@ -102,7 +110,6 @@ def _releases_from_response(payload, source_ids, provider_id=None):
         links = [uri for uri in uris if source_link_kind(uri)]
         if not links:
             continue
-        source_name = source_ids[source_id]
         file_size = item.get('file_size')
         upload_date = item.get('upload_date')
         release_id = item.get('id')
@@ -133,10 +140,7 @@ def search_game_releases(base_url, title, transport=None, provider_id=None, forc
     if not isinstance(title, str) or not title.strip():
         return []
     title = title.strip()
-    sources = source_registry.load_sources(base_url, transport=transport)
-    source_ids = {source.id: source.name for source in sources}
-    if not sources or (provider_id is not None and provider_id not in source_ids):
-        return []
+    sources = source_registry.providers()
     source_identity = tuple((source.id, source.name) for source in sources)
     use_cache = provider_id is None
     cached = None if force_refresh or not use_cache else source_cache.get(
@@ -151,21 +155,14 @@ def search_game_releases(base_url, title, transport=None, provider_id=None, forc
         query = candidate.strip()[:120]
         if len(query) >= 2 and query not in queries:
             queries.append(query)
-    wanted = {provider_id} if provider_id is not None else set(source_ids)
     found = {}
     for query in queries:
-        for page in range(1, MAX_SEARCH_PAGES + 1):
-            payload = _request(base_url, '/api/downloads',
-                               {'q': query, 'page': page}, transport)
-            results, has_more = _releases_from_response(payload, source_ids, provider_id)
-            for release in results:
-                identity = (release.provider_id, release.get('id'), release.title, tuple(release.uris))
-                found.setdefault(identity, release)
-            if not has_more:
-                break
-            if page == MAX_SEARCH_PAGES:
-                break
-        if {release.provider_id for release in found.values()} >= wanted:
+        payload = _request(base_url, '/api/downloads', {'q': query, 'page': 1}, transport)
+        results, _has_more = _releases_from_response(payload, None, provider_id)
+        for release in results:
+            identity = (release.provider_id, release.get('id'), release.title, tuple(release.uris))
+            found.setdefault(identity, release)
+        if found:
             break
 
     releases = list(found.values())

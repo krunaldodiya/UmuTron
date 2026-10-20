@@ -85,7 +85,7 @@ class SourceDiscoveryTests(unittest.TestCase):
         ]}
         self.assertEqual(registry.load_sources('https://api.example', transport=lambda _: payload),
                          [DownloadSource('source-a', 'Source A')])
-    def test_search_queries_every_api_enabled_source(self):
+    def test_search_uses_one_bounded_backend_request_and_caches_result(self):
         registry = SourceProviderRegistry()
         releases = [release(source['id'], 'Game Edition') for source in SOURCES]
         calls = []
@@ -93,10 +93,9 @@ class SourceDiscoveryTests(unittest.TestCase):
         def transport(url):
             parsed = urlparse(url)
             calls.append(url)
-            if parsed.path.endswith('/api/sources'):
-                return {'sources': SOURCES}
             self.assertEqual(parsed.path, '/api/downloads')
-            return {'data': releases, 'has_more': False}
+            self.assertEqual(parse_qs(parsed.query)['page'], ['1'])
+            return {'data': releases, 'has_more': True}
 
         with tempfile.TemporaryDirectory() as temp:
             cache = DownloadSourceCache(Path(temp) / 'releases.json')
@@ -105,34 +104,31 @@ class SourceDiscoveryTests(unittest.TestCase):
                 found = search_game_releases('https://api.example', 'Game', transport=transport)
                 self.assertEqual([item.provider_id for item in found],
                                  [source['id'] for source in SOURCES])
-                self.assertTrue(any('/api/sources' in url for url in calls))
-                self.assertTrue(any('/api/downloads' in url for url in calls))
                 repeated = search_game_releases('https://api.example', 'Game', transport=transport)
                 self.assertEqual([item.provider_id for item in repeated],
                                  [source['id'] for source in SOURCES])
-                self.assertEqual(sum('/api/downloads' in url for url in calls), 1)
+        self.assertEqual(len(calls), 1)
 
-    def test_search_reads_bounded_pages_until_all_sources_are_found(self):
+    def test_search_uses_title_variant_only_when_exact_query_has_no_results(self):
         registry = SourceProviderRegistry()
-        page_calls = []
-        page_one = [release(source['id'], 'Game Edition') for source in SOURCES[:3]]
-        page_two = [release(source['id'], 'Game Alternate') for source in SOURCES[3:]]
+        queries = []
 
         def transport(url):
             parsed = urlparse(url)
-            if parsed.path.endswith('/api/sources'):
-                return {'sources': SOURCES}
-            page = int(parse_qs(parsed.query)['page'][0])
-            page_calls.append(page)
-            return {'data': page_one if page == 1 else page_two, 'has_more': page == 1}
+            query = parse_qs(parsed.query)['q'][0]
+            queries.append(query)
+            return {
+                'data': [] if query == 'Grand Theft Auto V' else [release('source-a', 'GTA 5')],
+                'has_more': False,
+            }
 
         with tempfile.TemporaryDirectory() as temp:
             cache = DownloadSourceCache(Path(temp) / 'releases.json')
             with patch('umutron.sources.cache.source_registry', registry), \
                     patch('umutron.sources.cache.source_cache', cache):
-                found = search_game_releases('https://api.example', 'Game', transport=transport)
-        self.assertEqual(page_calls, [1, 2])
-        self.assertEqual({item.provider_id for item in found}, {source['id'] for source in SOURCES})
+                found = search_game_releases('https://api.example', 'Grand Theft Auto V', transport=transport)
+        self.assertEqual(queries, ['Grand Theft Auto V', 'Grand Theft Auto 5'])
+        self.assertEqual([item.title for item in found], ['GTA 5'])
 
     def test_force_refresh_bypasses_release_cache_and_uses_updated_api_data(self):
         registry = SourceProviderRegistry()
