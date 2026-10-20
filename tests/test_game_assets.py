@@ -103,5 +103,16 @@ class ManagedGameAssetsTests(unittest.TestCase):
         restored = restore_game(self.game, archive=backup, drive_root=restored_drive)
         self.assertEqual(restored['arguments'], linked_game['launch']['arguments'])
 
+    def test_restore_rejects_backup_without_manifest(self):
+        linked_game = self._linked_game()
+        backup_parent = self.root / 'backups'
+        backup_parent.mkdir()
+        backup = backup_game(linked_game, backup_parent)
+        (backup / 'appmanifest_292030.json').unlink()
+        restored_drive = self.root / 'restored-drive'
+        restored_drive.mkdir()
+        with self.assertRaisesRegex(ValueError, 'no valid game manifest'):
+            restore_game(self.game, archive=backup, drive_root=restored_drive)
+
 if __name__ == '__main__':
     unittest.main()
