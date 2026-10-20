@@ -29,7 +29,7 @@ class DesktopIntegrationTests(unittest.TestCase):
         self.assertIn(APP_ID + '.desktop', self.entries)
         entry = self.entries[APP_ID + '.desktop']['Desktop Entry']
         self.assertEqual(entry['Name'], 'UmuTron')
-        self.assertEqual(entry['Icon'], 'game-library-launcher')
+        self.assertEqual(entry['Icon'], str(Path.home()/'.local/share/icons/hicolor/scalable/apps/game-library-launcher.svg'))
         self.assertEqual(entry['StartupWMClass'], APP_ID)
         visible = [name for name, parser in self.entries.items()
                    if not parser['Desktop Entry'].getboolean('NoDisplay', fallback=False)

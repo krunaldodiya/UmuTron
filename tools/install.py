@@ -38,6 +38,7 @@ for name in (ICON_NAME,'umutron',APP_ID):
     atomic_write(p,svg_data)
     try: p.chmod(0o644)
     except OSError: pass
+desktop_icon=Path.home()/f'.local/share/icons/hicolor/scalable/apps/{ICON_NAME}.svg'
 try:
     import gi
     gi.require_version('GdkPixbuf','2.0')
@@ -84,7 +85,7 @@ Type=Application
 Name={APP_NAME}
 Comment=Organize and play installed games with UMU and Proton
 Exec={launch}
-Icon={ICON_NAME}
+Icon={desktop_icon}
 Terminal=false
 Categories=Game;
 Keywords=UmuTron;UMU;Proton;Games;
