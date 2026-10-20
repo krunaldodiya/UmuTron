@@ -872,8 +872,8 @@ class Window(CatalogUI, Adw.ApplicationWindow):
 
     def archive_job(self, dialog, message, work, done):
         if getattr(self,'archive_future',None) and not self.archive_future.done():
-            self.error(ValueError('A backup or restore is already running.'));return
-        self.archive_future=self.pool.submit(work)
+            self.archive_dialog.present();self.error(ValueError('A backup or restore is already running.'));return
+        self.archive_dialog=dialog;self.archive_future=self.pool.submit(work)
         def finish():
             try:done(self.archive_future.result())
             except Exception as error:self.error(error)
@@ -1074,6 +1074,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         dialog.present()
     def backup_current_game(self):
         if not self.game:return
+        if getattr(self,'archive_future',None) and not self.archive_future.done():self.archive_dialog.present();return
         dialog=modal_window(self,'Back Up Game',width=640,height=300,subtitle='Create a portable content backup.');dialog.set_modal(False)
         root=dialog_body(dialog);content=box(spacing=12);root.append(content);footer=dialog_footer();root.append(footer)
         content.append(label('Backup location','heading',xalign=0))
@@ -1082,6 +1083,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         status=label('Creates <game>/appmanifest.json and content.tar. compatdata is excluded.','dim-label',xalign=0,wrap=True);content.append(status)
         progress=Gtk.ProgressBar(show_text=True);progress.set_visible(False);content.append(progress)
         footer.append(button('Close',dialog.close));start=button('Back up game',lambda:None,'suggested-action');footer.append(start)
+        dialog.connect('close-request',lambda *_:(dialog.set_visible(False),True)[1] if getattr(self,'archive_future',None) and not self.archive_future.done() else False)
         def begin(*_,replace=False):
             if not location.get_text():self.error(ValueError('Choose a backup location.'));return
             target=Path(location.get_text())/self.game['title']
@@ -1125,6 +1127,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
 
     def restore_current_game_backup(self):
         if not self.game:return
+        if getattr(self,'archive_future',None) and not self.archive_future.done():self.archive_dialog.present();return
         def selected(archive):
             try:drives=self._managed_drives()
             except Exception as error:self.error(error);return
