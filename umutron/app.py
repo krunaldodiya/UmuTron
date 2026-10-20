@@ -76,7 +76,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         self.add_css_class('desktop-mode')
         self.sync_desktop_palette()
         css=Gtk.CssProvider()
-        css.load_from_data(DIALOG_CSS + FULLSCREEN_CSS + CATALOG_CSS + b'.control-focused, button:focus { outline: 3px solid #82bcff; outline-offset: 2px; } .art-frame { background: alpha(@window_fg_color, 0.055); border-radius: 12px; padding: 8px; } .game-card { padding: 10px; } .game-card:hover { background: alpha(@accent_color, 0.09); }')
+        css.load_from_data(DIALOG_CSS + FULLSCREEN_CSS + CATALOG_CSS + b'.control-focused, button:focus { outline: 3px solid #82bcff; outline-offset: 2px; } .collection-card, .collection-card:focus, .collection-card.control-focused, .tv-card, .tv-card:focus, .tv-card.control-focused { outline: none; outline-offset: 0; } .art-frame { background: alpha(@window_fg_color, 0.055); border-radius: 12px; padding: 8px; } .game-card { padding: 10px; } .game-card:hover { background: alpha(@accent_color, 0.09); }')
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(),css,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self.demo=demo;self.tv_mode=False;self.tv_selected_id=None;self.tv_tiles=[];self.tv_section='library'
         self.library=library; self.launcher=Launcher(library.root); self.proton_manager=ProtonManager(library.root/'proton-manager',umu_root=library.root/'demo-umu-runners' if demo else None); self.launch_fields={}; self.play_buttons={}; self.installations=Installations(library,self.launcher);self.editor=None;self.editor_kind=None;self.exiting=False

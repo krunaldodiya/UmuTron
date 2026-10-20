@@ -19,14 +19,13 @@ from .library import description_excerpt
 CSS = b'''
 .collection-page { padding: 24px 32px; }
 .collection-heading { font-size: 30px; font-weight: 800; }
-.collection-card { padding: 10px; border-radius: 14px; background: alpha(@window_fg_color,.045); border: 2px solid transparent; }
+.collection-card { padding: 10px; border-radius: 14px; background: alpha(@window_fg_color,.045); border: 2px solid transparent; outline: none; }
 .collection-card:hover { background: alpha(@accent_color,.12); }
+.collection-card:focus, .collection-card.control-focused { outline: none; }
 .collection-card.game-ready { border: 2px solid #58c9a8; }
-.collection-card.game-ready:hover { border-color: #85efd4; }
-.collection-card.game-ready:focus { border-color: #85efd4; outline: 3px solid #85efd4; outline-offset: 1px; }
+.collection-card.game-ready:hover, .collection-card.game-ready:focus, .collection-card.game-ready.control-focused { border-color: #85efd4; outline: none; }
 .collection-card.game-not-ready { border: 2px solid #d99b26; }
-.collection-card.game-not-ready:hover { border-color: #f0b74d; }
-.collection-card.game-not-ready:focus { border-color: #f0b74d; outline: 3px solid #f0b74d; outline-offset: 1px; }
+.collection-card.game-not-ready:hover, .collection-card.game-not-ready:focus, .collection-card.game-not-ready.control-focused { border-color: #f0b74d; outline: none; }
 .collection-page .browse-search.control-focused { outline: 3px solid #7de8d3; outline-offset: 2px; }
 .collection-title { font-size: 16px; font-weight: 700; }
 .collection-badge { font-size: 12px; color: #70cebb; }
@@ -97,10 +96,10 @@ CSS = b'''
 .desktop-mode.desktop-dark .collection-card:hover { background: #243749; }
 .desktop-mode .collection-badge { color: #23675b; }
 .desktop-mode.desktop-dark .collection-badge { color: #85d9c7; }
-.desktop-mode .control-focused, .desktop-mode button:focus-visible, .desktop-mode .collection-card:focus,
+.desktop-mode .control-focused, .desktop-mode button:focus-visible,
 .desktop-mode .collection-page .browse-search.control-focused { outline: 3px solid #267c6c; outline-offset: 2px; }
 .desktop-mode.desktop-dark .control-focused, .desktop-mode.desktop-dark button:focus-visible,
-.desktop-mode.desktop-dark .collection-card:focus, .desktop-mode.desktop-dark .collection-page .browse-search.control-focused { outline-color: #a6f5df; }
+.desktop-mode.desktop-dark .collection-page .browse-search.control-focused { outline-color: #a6f5df; }
 .desktop-mode .home-surface .control-focused, .desktop-mode .home-surface button:focus-visible { outline-color: #b3ffe9; }
 .desktop-mode .shared-detail { background: alpha(#f5f8fa,.96); border: 1px solid alpha(#29465b,.12); }
 .desktop-mode.desktop-dark .shared-detail { background: alpha(#101b29,.94); border-color: alpha(#b4c7e5,.12); }
@@ -527,21 +526,13 @@ class CatalogUI:
             if self.route=='store' and self.collection_tiles.get(item['id']) is tile:self.open_catalog_item(tile.catalog_item)
         self.make_card(item['name'],item['id'],opened)
         tile=self.collection_tiles[item['id']];tile.catalog_item=item;tile.catalog_image_url=None
-        # Classification stays visible in short windows, unlike the optional
-        # membership badge. Reserve equal space so async detail cannot jump rows.
-        _,_,label,_,_=ui()
-        tile.catalog_context=label('','collection-kind',xalign=0,wrap=True,lines=2,
-                                   ellipsize=Pango.EllipsizeMode.END,width_chars=1,max_width_chars=1)
-        scale=getattr(self,'ui_scale_factor',lambda:1.0)()
-        tile.catalog_context.set_size_request(-1,int(48*scale))
-        tile.get_child().insert_child_after(tile.catalog_context,tile.console_title)
         return tile
 
     def update_store_identity(self,tile,item):
-        tile.catalog_context.set_text(entity_label(item,compact=True))
         badge='In library' if members(self.library,item) else 'Related saved entry' if related_members(self.library,item) else ''
         tile.collection_badge.set_text(badge)
-        tile.set_tooltip_text('\n'.join(filter(None,('View '+item['name'],entity_label(item),badge+' · shared Steam link' if badge=='Related saved entry' else badge))))
+        tile.collection_badge.set_visible(bool(badge))
+        tile.set_tooltip_text('\n'.join(filter(None,('View '+item['name'],badge+' · shared Steam link' if badge=='Related saved entry' else badge))))
 
     def store_card_jobs(self,tile,item,revision):
         def current():return self.store_render_revision==revision and self.collection_tiles.get(item['id']) is tile
