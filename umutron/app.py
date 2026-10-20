@@ -1087,12 +1087,26 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             except ValueError:
                 self.error(ValueError('The launcher executable must be inside the selected game folder.'));return
             selected_proton=protons[proton_choice.get_selected()]
-            prefix=Path(self.library.root)/'prefixes'/self.game['id']
+            drives=self._managed_drives()
+            target_drive=None
+            if drives:
+                for d in drives:
+                    d_root=Path(d['root']).resolve()
+                    if source_root==d_root or source_root.is_relative_to(d_root):
+                        target_drive=d;break
+                if not target_drive:
+                    target_drive=drives[0]
+            from .game_assets import layout_root, _safe_folder
+            folder_name=_safe_folder(self.game['title'])
+            if target_drive:
+                prefix=layout_root(target_drive['root'])/'compatdata'/folder_name
+            else:
+                prefix=Path(self.library.root)/'prefixes'/folder_name
             prefix.mkdir(parents=True,exist_ok=True,mode=0o700)
             updated=deepcopy(self.ensure_saved_game())
             updated.update(executable=str(launcher_path),working_dir=str(launcher_path.parent))
             updated['launch']={**updated.get('launch',{}),'prefix':str(prefix),'proton':selected_proton}
-            updated['installation']={'mode':'installed','root':str(source_root),'confirmed':True}
+            updated['installation']={'mode':'installed','root':str(source_root),'prefix':str(prefix),'confirmed':True}
             saved=self.library.save_setup(updated)
             self.game=saved
             self.show_game(saved)
