@@ -210,13 +210,8 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         if setting=='175':return 1.75
         if setting=='200':return 2.0
         w,h=self.get_width(),self.get_height()
-        if self.tv_mode:
-            if w>=2500 or h>=1400:return 1.85
-            if w>=1800 or h>=950:return 1.5
-            if w>=1200:return 1.35
-            return 1.0
-        if w>=2500 or h>=1400:return 1.6
-        if w>=1800 or h>=1000:return 1.3
+        if w>=3200 or h>=1800:return 1.75
+        if w>=2400 or h>=1350:return 1.35
         return 1.0
 
     def update_scale_classes(self):
@@ -230,15 +225,10 @@ class Window(CatalogUI, Adw.ApplicationWindow):
 
     def console_dimensions(self):
         scale=self.ui_scale_factor()
-        w=self.get_width() if self.get_width()>0 else 1200
-        h=self.get_height() if self.get_height()>0 else 800
-        if w>=2100:base_w=180
-        elif w>=1600:base_w=160
-        elif w>=1300:base_w=152
-        elif w>=950:base_w=140
-        else:base_w=124
-        if h<700 and base_w>136:base_w=136
-        elif h<600 and base_w>120:base_w=120
+        w=self.get_width() if self.get_width()>0 else 1920
+        if w>=2400:base_w=180
+        elif w<1200:base_w=136
+        else:base_w=152
         return (int(base_w*scale),int(base_w*1.5*scale))
 
     def resize_console(self,widget,clock):

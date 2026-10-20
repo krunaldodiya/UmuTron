@@ -20,11 +20,11 @@ CSS = b'''
 .collection-page { padding: 24px 32px; }
 .collection-heading { font-size: 30px; font-weight: 800; }
 .collection-card { padding: 10px; border-radius: 14px; background: alpha(@window_fg_color,.045); border: 2px solid transparent; outline: none; }
-.collection-card:hover { background: alpha(@accent_color,.12); }
-.collection-card:focus, .collection-card.control-focused { outline: none; }
-.collection-card.game-ready { border: 2px solid #58c9a8; }
+.collection-card:hover { background: alpha(@accent_color,.12); border-color: alpha(#85efd4,.5); }
+.collection-card:focus, .collection-card.control-focused { border-color: #85efd4; outline: none; }
+.collection-card.game-ready { border: 2px solid transparent; }
 .collection-card.game-ready:hover, .collection-card.game-ready:focus, .collection-card.game-ready.control-focused { border-color: #85efd4; outline: none; }
-.collection-card.game-not-ready { border: 2px solid #d99b26; }
+.collection-card.game-not-ready { border: 2px solid transparent; }
 .collection-card.game-not-ready:hover, .collection-card.game-not-ready:focus, .collection-card.game-not-ready.control-focused { border-color: #f0b74d; outline: none; }
 .collection-page .browse-search.control-focused { outline: 3px solid #7de8d3; outline-offset: 2px; }
 .collection-title { font-size: 16px; font-weight: 700; }
@@ -177,12 +177,10 @@ class CatalogUI:
         if hasattr(self, 'console_dimensions'):
             return self.console_dimensions()
         scale=getattr(self,'ui_scale_factor',lambda:1.0)()
-        w=self.get_width() if hasattr(self,'get_width') and self.get_width()>0 else 1200
-        if w>=2100:base_w=180
-        elif w>=1600:base_w=160
-        elif w>=1300:base_w=152
-        elif w>=950:base_w=140
-        else:base_w=124
+        w=self.get_width() if hasattr(self,'get_width') and self.get_width()>0 else 1920
+        if w>=2400:base_w=180
+        elif w<1200:base_w=136
+        else:base_w=152
         return (int(base_w*scale),int(base_w*1.5*scale))
 
     def catalog_cancel(self):
