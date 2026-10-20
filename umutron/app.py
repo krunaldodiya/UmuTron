@@ -870,6 +870,17 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             return False
         future.add_done_callback(lambda _:GLib.idle_add(finish))
 
+    def archive_job(self, dialog, message, work, done):
+        if getattr(self,'archive_future',None) and not self.archive_future.done():
+            self.error(ValueError('A backup or restore is already running.'));return
+        self.archive_future=self.pool.submit(work)
+        def finish():
+            try:done(self.archive_future.result())
+            except Exception as error:self.error(error)
+            finally:self.archive_future=None
+            return False
+        self.archive_future.add_done_callback(lambda _:GLib.idle_add(finish))
+
     def confirm(self,title,body,action,callback,destructive=False):
         dialog=message_dialog(getattr(self,'installer_dialog',None) or self.editor or self,title,body,
             responses=(('cancel','Cancel'),('confirm',action)),default='cancel',close='cancel',
@@ -1063,12 +1074,46 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         dialog.present()
     def backup_current_game(self):
         if not self.game:return
-        title='-'.join(part for part in self.game['title'].split() if part) or 'game'
-        def selected(path):
+        dialog=modal_window(self,'Back Up Game',width=640,height=300,subtitle='Create a portable content backup.');dialog.set_modal(False)
+        root=dialog_body(dialog);content=box(spacing=12);root.append(content);footer=dialog_footer();root.append(footer)
+        content.append(label('Backup location','heading',xalign=0))
+        location=Gtk.Entry(editable=False,hexpand=True,placeholder_text='Choose a destination directory')
+        row=box(False,8);row.append(location);browse=button('Browse…',lambda:self.choose_file('Choose backup location',lambda path:location.set_text(str(path)),folder=True,parent=dialog));row.append(browse);content.append(row)
+        status=label('Creates <game>/appmanifest.json and content.tar. compatdata is excluded.','dim-label',xalign=0,wrap=True);content.append(status)
+        footer.append(button('Close',dialog.close));start=button('Back up game',lambda:None,'suggested-action');footer.append(start)
+        def begin(*_,replace=False):
+            if not location.get_text():self.error(ValueError('Choose a backup location.'));return
+            target=Path(location.get_text())/self.game['title']
+            if target.exists() and not replace:
+                self.confirm('Replace existing backup?',str(target)+' already exists. Its backup files will be replaced after the new backup is ready.','Replace backup',lambda:begin(replace=True),True);return
+            start.set_sensitive(False);browse.set_sensitive(False);status.set_text('Creating backup… You can keep using UmuTron.')
             from .game_assets import backup_game
-            self.async_job('Creating game backup…',lambda:backup_game(deepcopy(self.game),path),
-                           lambda _:self.notify('Game backup created.'))
-        self.choose_file('Save game backup',selected,save=True,filename=title+'.tar.gz')
+            self.archive_job(dialog,'Creating game backup…',lambda:backup_game(deepcopy(self.game),location.get_text(),replace=replace),
+                             lambda path:(status.set_text('Backup complete: '+str(path)),start.set_visible(False)))
+        start.connect('clicked',begin);dialog.present()
+
+    def open_game_settings(self):
+        if not self.game:return
+        dialog=modal_window(self,'Game Settings · '+self.game['title'],width=760,height=520);dialog.set_modal(False)
+        root=dialog_body(dialog);row=box(False,18);root.append(row)
+        stack=Gtk.Stack(vexpand=True,hexpand=True);sidebar=Gtk.StackSidebar(stack=stack);sidebar.set_size_request(170,-1);row.append(sidebar);row.append(stack)
+        general=box(spacing=12);general.append(label('General','title-2',xalign=0));general.append(label('Game actions are managed from this window. Remove from library remains separate and never deletes game files.','dim-label',xalign=0,wrap=True));stack.add_titled(general,'general','General')
+        compatibility=box(spacing=12);compatibility.append(label('Compatibility','title-2',xalign=0))
+        protons=[path for path in self.proton_manager.installed() if (Path(path)/'proton').is_file()]
+        if protons:
+            choice=Gtk.DropDown.new_from_strings([Path(path).name for path in protons]);current=self.game.get('launch',{}).get('proton','');choice.set_selected(protons.index(current) if current in protons else 0);compatibility.append(choice)
+            save=button('Save Proton',lambda:None,'suggested-action');compatibility.append(save)
+            def apply(*_):
+                from .game_assets import set_game_proton
+                selected=set_game_proton(self.game,protons[choice.get_selected()]);updated=deepcopy(self.game);updated['launch']={**updated.get('launch',{}),'proton':selected};self.library.save(updated);self.game=updated;self.notify('Proton compatibility layer updated.')
+            save.connect('clicked',apply)
+        else:compatibility.append(label('Install a Proton version in Settings → Proton Manager first.','dim-label',xalign=0,wrap=True))
+        stack.add_titled(compatibility,'compatibility','Compatibility')
+        files=box(spacing=12);files.append(label('Installed Files','title-2',xalign=0))
+        managed=self.game.get('installation',{}).get('mode')=='linked'
+        if managed:files.append(button('Back up game files…',self.backup_current_game));files.append(button('Uninstall game files…',self.review_uninstall,'destructive-action'))
+        else:files.append(button('Restore game backup…',self.restore_current_game_backup));files.append(button('Add Installed Game…',self.open_add_installed_game))
+        stack.add_titled(files,'files','Installed Files');dialog.present()
 
     def restore_current_game_backup(self):
         if not self.game:return
@@ -1079,10 +1124,11 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                 self.notify('Add a game drive in Settings → Storage first.')
                 return
             dialog=modal_window(self,'Restore Game Backup',width=620,height=360,
-                                subtitle='Restore this backup into the selected UmuLibrary common directory.')
+                                subtitle='Restore this backup into the selected UmuLibrary common directory.');dialog.set_modal(False)
             root=dialog_body(dialog);content=box(spacing=14);root.append(content);footer=dialog_footer();root.append(footer)
             content.append(label('Library drive','heading',xalign=0))
             content.append(label('The backup restores game content under common/. A fresh per-game prefix is created under compatdata/; existing managed files are never overwritten.','dim-label',xalign=0,wrap=True))
+            choices=[row['label']+' · '+row['root'] for row in drives]
             choice=Gtk.DropDown.new_from_strings(choices);choice.set_selected(0);content.append(choice)
             footer.append(button('Cancel',dialog.close))
             restore=button('Restore game',lambda:None,'suggested-action');footer.append(restore)
@@ -1090,12 +1136,12 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                 restore.set_sensitive(False)
                 from .game_assets import restore_game
                 draft=deepcopy(self.game);drive=drives[choice.get_selected()]
-                self.async_job('Restoring game backup…',
+                self.archive_job(dialog,'Restoring game backup…',
                     lambda:restore_game(draft,archive=archive,drive_root=drive['root']),
                     lambda linked:(dialog.close(),self._save_managed_game(linked)))
             restore.connect('clicked',begin)
             dialog.present()
-        self.choose_file('Choose game backup',selected)
+        self.choose_file('Choose game backup folder',selected,folder=True)
 
 
     def add_game(self):
@@ -1616,6 +1662,8 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         page.append(label('Spaces within one line remain part of that argument. Shell expressions are never evaluated.','caption',wrap=True,xalign=0))
     def play_game(self,game):
         try:
+            if getattr(self,'archive_future',None) and not self.archive_future.done():
+                raise RuntimeError('Wait for the active backup or restore to finish before playing.')
             current=self.launcher.current()
             if self.launcher.active():
                 if current.get('game_id')==game['id']:

@@ -67,18 +67,19 @@ class ManagedGameAssetsTests(unittest.TestCase):
                           launcher=self.launcher, proton=self.proton, move=False)
         self.assertTrue(Path(fresh['executable']).is_file())
 
-    def test_backup_has_manifest_and_content_archive_then_restores(self):
+    def test_backup_directory_has_manifest_and_content_archive_then_restores(self):
         linked_game = self._linked_game()
-        backup = self.root / 'Fixture Game.tar.gz'
-        backup_game(linked_game, backup)
-        with tarfile.open(backup, 'r:*') as archive:
-            names = archive.getnames()
-        self.assertIn('Fixture Game/appmanifest_292030.json', names)
-        self.assertIn('Fixture Game/content.tar.gz', names)
+        backup_parent = self.root / 'backups'
+        backup_parent.mkdir()
+        backup = backup_game(linked_game, backup_parent)
+        self.assertEqual(backup, backup_parent / 'Fixture Game')
+        self.assertTrue((backup / 'appmanifest_292030.json').is_file())
+        self.assertTrue((backup / 'content.tar').is_file())
+        with tarfile.open(backup / 'content.tar', 'r:') as archive:
+            self.assertIn('common/Fixture Game/bin/Fixture.exe', archive.getnames())
         restored_drive = self.root / 'restored-drive'
         restored_drive.mkdir()
         restored = restore_game(self.game, archive=backup, drive_root=restored_drive)
-        self.assertNotIn('Fixture Game/compatdata.tar.gz', names)
         self.assertTrue(Path(restored['prefix']).is_dir())
 
 

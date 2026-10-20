@@ -650,18 +650,7 @@ class CatalogUI:
             lib_btn=button('Add to library',self.detail_action);lib_btn.add_css_class('detail-primary')
         lib_btn.set_valign(Gtk.Align.CENTER);actions.append(lib_btn)
         self.detail_lib_btn = lib_btn
-        self.detail_gear=Gtk.MenuButton(icon_name='emblem-system-symbolic');self.detail_gear.add_css_class('circular');self.detail_gear.set_tooltip_text('Game options');self.detail_gear.set_valign(Gtk.Align.CENTER);actions.append(self.detail_gear)
-        popover=style_surface(Gtk.Popover());menu=box(spacing=6);margins(menu,8);popover.set_child(menu);self.detail_gear.set_popover(popover)
-        def menu_action(callback):self.detail_gear.popdown();callback()
-        managed=game.get('installation',{}).get('mode')=='linked'
-        if installed:menu.append(button('Uninstall…',lambda:menu_action(self.review_uninstall)))
-        if managed:
-            menu.append(button('Back up game…',lambda:menu_action(self.backup_current_game)))
-        elif saved:
-            if not installed:menu.append(button('Add Installed Game…',lambda:menu_action(self.open_add_installed_game)))
-            menu.append(button('Restore game backup…',lambda:menu_action(self.restore_current_game_backup)))
-        menu.append(button('Game Info',lambda:menu_action(lambda:self.show_game_info(self.game))))
-        menu.append(button('Search links',lambda:menu_action(self.open_detail_links)))
+        self.detail_gear=Gtk.Button(icon_name='emblem-system-symbolic');self.detail_gear.add_css_class('circular');self.detail_gear.set_tooltip_text('Game settings');self.detail_gear.set_valign(Gtk.Align.CENTER);self.detail_gear.connect('clicked',lambda *_:self.open_game_settings());actions.append(self.detail_gear)
         self.detail_related=None
         related=related_members(self.library,item) if item and not saved else []
         if related:

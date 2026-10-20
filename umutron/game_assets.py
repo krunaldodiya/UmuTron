@@ -137,6 +137,16 @@ def unlink_game(game: dict[str, Any]) -> None:
         raise ValueError("Only a matching managed game manifest can be removed.")
     manifest.unlink()
 
+def set_game_proton(game: dict[str, Any], proton: str | Path) -> str:
+    """Persist an installed Proton choice in the managed manifest."""
+    _root, _prefix, manifest = _linked_paths(game)
+    selected = _validate_proton(proton)
+    try:data=json.loads(manifest.read_bytes())
+    except (UnicodeDecodeError,json.JSONDecodeError) as error:raise ValueError("Managed game manifest is invalid.") from error
+    data["proton"]=selected
+    _write_manifest(manifest,data)
+    return selected
+
 
 def _linked_paths(game: dict[str, Any]) -> tuple[Path, Path, Path]:
     installation = game.get("installation", {})
@@ -152,45 +162,46 @@ def _linked_paths(game: dict[str, Any]) -> tuple[Path, Path, Path]:
 
 
 def _archive_component(source: Path, destination: Path, directory: str) -> None:
-    with tarfile.open(destination, "w:gz", format=tarfile.PAX_FORMAT) as tar:
+    with tarfile.open(destination, "w", format=tarfile.PAX_FORMAT) as tar:
         tar.add(source, arcname=directory + "/" + source.name, recursive=True)
 
 
-def backup_game(game: dict[str, Any], destination: str | Path) -> None:
-    """Write an outer game archive with a manifest and common/ game content."""
-    root, prefix, manifest = _linked_paths(game)
-    archive = Path(destination).expanduser()
-    if archive.suffixes[-2:] != [".tar", ".gz"]:
-        archive = archive.with_suffix(archive.suffix + ".tar.gz") if archive.suffix else archive.with_suffix(".tar.gz")
-    archive.parent.mkdir(parents=True, exist_ok=True)
+def backup_game(game: dict[str, Any], destination: str | Path, *, replace: bool = False) -> Path:
+    """Write one portable game directory with a manifest and uncompressed content tar."""
+    root, _prefix, manifest = _linked_paths(game)
+    parent = Path(destination).expanduser().resolve(strict=True)
+    if not parent.is_dir():
+        raise ValueError("Choose an existing backup directory.")
     package_name = _safe_folder(game["title"])
-    with tempfile.TemporaryDirectory(prefix=".umutron-backup-", dir=archive.parent) as staging:
+    final = parent / package_name
+    if final.exists() and not replace:
+        raise ValueError("A backup folder with this game name already exists there.")
+    with tempfile.TemporaryDirectory(prefix=".umutron-backup-", dir=parent) as staging:
         package = Path(staging) / package_name
         package.mkdir()
         shutil.copy2(manifest, package / manifest.name)
-        _archive_component(root, package / "content.tar.gz", "common")
-        with tarfile.open(archive, "w:gz", format=tarfile.PAX_FORMAT) as tar:
-            tar.add(package, arcname=package_name, recursive=True)
+        _archive_component(root, package / "content.tar", "common")
+        if final.exists():
+            shutil.rmtree(final)
+        package.rename(final)
+    return final
 
 
-def _backup_manifest(archive: str | Path) -> tuple[dict[str, Any], str]:
-    with tarfile.open(archive, "r:*") as tar:
-        members = [member for member in tar.getmembers() if member.isfile() and member.name.rsplit("/", 1)[-1].startswith(_MANIFEST_PREFIX)]
-        if len(members) != 1 or members[0].size > _MAX_MANIFEST:
-            raise ValueError("Backup has no valid game manifest.")
-        stream = tar.extractfile(members[0])
-        if stream is None:
-            raise ValueError("Backup has no readable game manifest.")
-        try:
-            value = json.loads(stream.read(_MAX_MANIFEST + 1))
-        except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise ValueError("Backup game manifest is invalid.") from error
-    required = {"format", "game_id", "title", "steam_app_id", "content_directory", "launcher_relative_path", "compatdata_directory", "proton"}
-    if not isinstance(value, dict) or set(value) != required or value.get("format") != 1:
+def _backup_manifest(backup: str | Path) -> tuple[dict[str, Any], Path]:
+    folder = Path(backup).expanduser().resolve(strict=True)
+    if not folder.is_dir():
+        raise ValueError("Choose a game backup folder.")
+    manifests = list(folder.glob(_MANIFEST_PREFIX + "*.json"))
+    if len(manifests) != 1 or manifests[0].stat().st_size > _MAX_MANIFEST:
+        raise ValueError("Backup has no valid game manifest.")
+    try:value=json.loads(manifests[0].read_bytes())
+    except (UnicodeDecodeError,json.JSONDecodeError) as error:raise ValueError("Backup game manifest is invalid.") from error
+    required={"format","game_id","title","steam_app_id","content_directory","launcher_relative_path","compatdata_directory","proton"}
+    if not isinstance(value,dict) or set(value)!=required or value.get("format")!=1:
         raise ValueError("Backup game manifest is unsupported.")
-    if not isinstance(value["title"], str) or not isinstance(value["launcher_relative_path"], str) or not isinstance(value["proton"], str):
+    if not isinstance(value["title"],str) or not isinstance(value["launcher_relative_path"],str) or not isinstance(value["proton"],str):
         raise ValueError("Backup game manifest is invalid.")
-    return value, str(PurePosixPath(members[0].name).parent)
+    return value, folder
 
 
 def _safe_members(tar: tarfile.TarFile, allowed: tuple[str, ...]) -> list[tarfile.TarInfo]:
@@ -206,9 +217,8 @@ def _safe_members(tar: tarfile.TarFile, allowed: tuple[str, ...]) -> list[tarfil
 
 
 def restore_game(game: dict[str, Any], *, archive: str | Path, drive_root: str | Path) -> dict[str, Any]:
-    """Restore one backed-up game into common/ and compatdata/ on a selected drive."""
-    source = Path(archive).expanduser().resolve(strict=True)
-    manifest, package = _backup_manifest(source)
+    """Restore one game backup directory into common/ and compatdata/."""
+    manifest, folder = _backup_manifest(archive)
     if manifest["game_id"] != game["id"]:
         raise ValueError("This backup belongs to another game library entry.")
     base, destination, prefix, destination_manifest = _managed_paths(drive_root, game)
@@ -225,14 +235,10 @@ def restore_game(game: dict[str, Any], *, archive: str | Path, drive_root: str |
     if staging.exists():
         raise RuntimeError("A previous restore operation is still present. Review the managed library folder.")
     try:
-        with tarfile.open(source, "r:*") as tar:
-            members = _safe_members(tar, (package + "/",))
-            required = {package + "/content.tar.gz"}
-            if not required.issubset({member.name for member in members}):
-                raise ValueError("Backup does not contain the game content archive.")
-            tar.extractall(staging, members=members, filter="data")
-        content_archive = staging / package / "content.tar.gz"
-        with tarfile.open(content_archive, "r:*") as tar:
+        content_archive = folder / "content.tar"
+        if not content_archive.is_file():
+            raise ValueError("Backup does not contain content.tar.")
+        with tarfile.open(content_archive, "r:") as tar:
             tar.extractall(staging, members=_safe_members(tar, ("common/",)), filter="data")
         staged_content = staging / backed_content.parts[0] / backed_content.parts[1]
         if not staged_content.is_dir():
