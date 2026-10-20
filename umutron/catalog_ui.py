@@ -19,7 +19,7 @@ from .library import description_excerpt
 CSS = b'''
 .collection-page { padding: 24px 32px; }
 .collection-heading { font-size: 30px; font-weight: 800; }
-.collection-card { padding: 10px; border-radius: 14px; background: alpha(@window_fg_color,.045); border: 2px solid transparent; outline: none; }
+.collection-card { padding: 7px; border-radius: 12px; background: alpha(@window_fg_color,.045); border: 2px solid transparent; outline: none; }
 .collection-card:hover { background: alpha(@accent_color,.12); border-color: alpha(#85efd4,.5); }
 .collection-card:focus, .collection-card.control-focused { border-color: #85efd4; outline: none; }
 .collection-card.game-ready { border: 2px solid transparent; }
@@ -48,12 +48,12 @@ CSS = b'''
 .tv-mode.tv-compact .shared-detail { padding: 22px; }
 .tv-mode.tv-compact .shared-detail .detail-title { font-size: 34px; }
 .tv-mode.tv-compact .shared-detail .detail-copy { font-size: 17px; }
-.tv-mode .collection-card { background: alpha(#26334d,.4); }
+.tv-mode .collection-card { background: #141d2b; padding: 7px; border-radius: 12px; }
 .collection-page.collection-compact { padding-top: 14px; padding-bottom: 14px; }
 .collection-pager button { min-width: 20px; padding: 8px 12px; }
 .tv-mode .collection-pager button { min-height: 32px; }
 .collection-pager .current-page { background: #82e9d0; color: #102a29; opacity: 1; }
-.collection-short .collection-card { padding: 8px; }
+.collection-short .collection-card { padding: 7px; }
 .browse-choice { border-radius: 10px; }
 .browse-choice.control-focused > button:focus { outline: none; }
 .browse-choice popover button.suggested-action { background: #ceeae3; color: #155448; }
@@ -265,7 +265,7 @@ class CatalogUI:
             for _,tile in self.tv_tiles:
                 if getattr(tile,'collection_card_state',None)==card_key:continue
                 tile.collection_card_state=card_key
-                tile.console_width=card_w+20
+                tile.console_width=card_w
                 tile.queue_resize()
                 tile.console_cover.set_size_request(card_w,card_h)
                 tile.console_cover.set_halign(Gtk.Align.CENTER)
@@ -389,7 +389,7 @@ class CatalogUI:
         card_w,card_h=self.collection_card_dimensions()
         scale=getattr(self,'ui_scale_factor',lambda:1.0)()
         tile=button(title,callback,'collection-card');tile.set_halign(Gtk.Align.START);tile.set_valign(Gtk.Align.START)
-        tile.console_width=card_w+20;tile.set_layout_manager(CoverLayout())
+        tile.console_width=card_w;tile.set_layout_manager(CoverLayout())
         if is_ready is True:
             tile.add_css_class('game-ready')
             tile.set_tooltip_text(f"{title}\nReady to play")

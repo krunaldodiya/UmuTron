@@ -243,7 +243,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             if size!=getattr(self,'collection_card_size',None):
                 self.collection_card_size=size
                 for tile in getattr(self,'collection_tiles',{}).values():
-                    tile.console_width=size[0]+20
+                    tile.console_width=size[0]
                     tile.queue_resize()
                     if hasattr(tile,'console_cover'):
                         tile.console_cover.set_size_request(*size)
