@@ -63,7 +63,7 @@ class AsyncView:
 class VolumePicker(AsyncView,Adw.Window):
     """Explicit metadata registration; the selected mount is revalidated."""
     def __init__(self,parent,service,role,saved):
-        super().__init__(title='Choose cache drive' if role=='cache' else 'Add install drive',
+        super().__init__(title='Add game drive',
                          transient_for=parent,modal=True,default_width=580,default_height=480)
         style_surface(self,parent)
         self.init_async();self.service=service;self.role=role;self.saved=saved
@@ -75,7 +75,6 @@ class VolumePicker(AsyncView,Adw.Window):
         self.content=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=16,margin_top=20,margin_bottom=24,margin_start=24,margin_end=24);scroll.set_child(self.content)
         self.content.append(caption('Choose a mounted partition.', 'heading'))
         self.content.append(caption('Registration keeps existing game locations unchanged. No partition, folder or game file is created.'))
-        if role=='cache':self.content.append(caption('Cache is for future archive downloads. Manual Setup and local installers do not require it.'))
         self.error=caption('Checking connected drives…');self.content.append(self.error)
         self.listing=Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE);self.listing.add_css_class('boxed-list');self.content.append(self.listing)
         self.content.append(action('Refresh drives',self.refresh))
@@ -123,7 +122,7 @@ class StoragePage(AsyncView,Adw.PreferencesPage):
         super().__init__(title='Storage',icon_name='drive-harddisk-symbolic')
         self.init_async();self.service=service;self.parent=parent;self.changed=changed
         self.picker=None;self.removal_dialog=None;self.rows={};self.groups=[];self.state=None
-        intro=Adw.PreferencesGroup(title='Your game drives',description='Automatic downloads and installs are not available yet. Manual Setup and Windows installers keep their own paths.')
+        intro=Adw.PreferencesGroup(title='Your game drives',description='Added drives are the only destinations for managed games. UmuTron stores linked content in UmuLibrary/umuapps/common and prefixes in compatdata.')
         self.add(intro);self.notice=caption(service.reason);self.notice.set_visible(bool(service.reason));self.notice.set_margin_bottom(12);intro.add(self.notice)
         self.error=caption('Checking storage…');intro.add(self.error)
         self.refresh_control=action('Refresh drives',self.refresh);self.refresh_control.set_sensitive(service.enabled);self.refresh_control.set_margin_top(12);self.refresh_control.set_margin_bottom(6);intro.add(self.refresh_control)
@@ -170,32 +169,24 @@ class StoragePage(AsyncView,Adw.PreferencesPage):
         card=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=10,margin_top=10,margin_bottom=12,margin_start=14,margin_end=14)
         heading=Gtk.Box(spacing=12);icon=Gtk.Image.new_from_icon_name('drive-harddisk-symbolic');icon.set_pixel_size(28);heading.append(icon)
         names=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=4,hexpand=True)
-        names.append(caption(row['label'],'heading'));roles=('Default install drive' if row['default'] else 'Install drive') if 'install' in row['roles'] else ''
-        if 'cache' in row['roles']:roles+=(' · ' if roles else '')+'Download cache'
-        names.append(caption(roles));heading.append(names)
+        names.append(caption('Default game drive' if row['default'] else 'Game drive'));heading.append(names)
         menu=Gtk.MenuButton(icon_name='view-more-symbolic',valign=Gtk.Align.CENTER,tooltip_text='Drive options')
         popover=style_surface(Gtk.Popover());popover.browse_owner=menu;choices=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,spacing=4,margin_top=6,margin_bottom=6,margin_start=6,margin_end=6)
         def apply(callback):popover.popdown();callback()
-        if 'install' in row['roles'] and not row['default']:choices.append(action('Make default',lambda:apply(lambda:self.change(lambda:self.service.set_default(row['id'])))))
+        if 'install' in row['roles'] and not row['default']:
+            choices.append(action('Make default',lambda:apply(lambda:self.change(lambda:self.service.set_default(row['id'])))))
         if 'install' not in row['roles']:
-            choices.append(action('Use for installations',lambda:apply(lambda:self.change(lambda:self.service.add_role(row['id'],'install')))))
-        if 'cache' in row['roles'] and len(row['roles'])>1:
-            cache=action('Remove cache role',lambda:apply(lambda:self.change(lambda:self.service.remove_role(row['id'],'cache'))))
-            cache.set_sensitive(not row['busy']);choices.append(cache)
-        elif not any('cache' in r['roles'] for r in self.state['registrations']):
-            cache=action('Also use for download cache',lambda:apply(lambda:self.change(lambda:self.service.add_role(row['id'],'cache'))))
-            cache.set_sensitive(row['status']=='ready' and not row.get('managed_reason'));choices.append(cache)
+            choices.append(action('Use for games',lambda:apply(lambda:self.change(lambda:self.service.add_role(row['id'],'install')))))
         remove=action('Remove registration',lambda:apply(lambda:self.request_remove(row)));remove.set_sensitive(not row['busy'])
         choices.append(remove);popover.set_child(choices);menu.set_popover(popover);heading.append(menu);card.append(heading)
         path=caption(row['root']);path.set_selectable(True);card.append(path)
         if row['status']=='ready':
             card.append(Gtk.ProgressBar(fraction=1-row['free']/row['total'] if row['total'] else 0))
             card.append(caption(f"{size_text(row['free'])} available of {size_text(row['total'])}"))
-            if 'install' in row['roles']:card.append(caption('Connected · '+('Managed writes unavailable' if row.get('managed_reason') else 'Writable for managed installation')))
+            if 'install' in row['roles']:card.append(caption('Connected · '+('Managed writes unavailable' if row.get('managed_reason') else 'Writable for managed games')))
         else:card.append(caption(('Offline · last known location\n' if row['status']=='offline' else '')+row['reason'],'warning'))
-        if 'cache' in row['roles']:card.append(caption('Cache: '+row['paths']['cache']))
-        if row.get('managed_reason'):card.append(caption('Managed cache/archive use unavailable: '+row['managed_reason']))
-        if row['busy']:card.append(caption('A job has reserved space on this drive.'))
+        if row.get('managed_reason'):card.append(caption('Managed game storage unavailable: '+row['managed_reason']))
+        if row['busy']:card.append(caption('A legacy operation has reserved space on this drive.'))
         frame=Gtk.Box(orientation=Gtk.Orientation.VERTICAL,margin_bottom=8);frame.add_css_class('card');frame.append(card);group.add(frame)
         self.rows[row['id']]={'data':row,'card':frame,'remove':remove,'menu':menu}
 
@@ -207,12 +198,12 @@ class StoragePage(AsyncView,Adw.PreferencesPage):
         self.state=state;self.error.set_visible(False)
         for group in self.groups:self.remove_group(group)
         self.groups=[];self.rows={}
-        group=Adw.PreferencesGroup(title='Registered partitions',description='Choose a partition once. Its install and cache roles share the same capacity.');self.add(group);self.groups.append(group)
+        group=Adw.PreferencesGroup(title='Registered game drives',description='Select one of these mounted roots when adding or restoring a game.');self.add(group);self.groups.append(group)
         for row in state['registrations']:self.drive_card(row,group)
         if not state['registrations']:
-            group.add(Adw.ActionRow(title='Add your first installation drive',subtitle='Only verified internal partitions are available. Their mounted root paths cannot be edited.'))
+            group.add(Adw.ActionRow(title='Add your first game drive',subtitle='Only verified internal partitions are available. Their mounted root paths cannot be edited.'))
         control=action('Add drive…',lambda:self.open_picker('install'));control.set_sensitive(self.service.enabled);group.add(control)
-        note=Adw.PreferencesGroup(description='Registration never moves game files or verifies them for uninstall.')
+        note=Adw.PreferencesGroup(description='Registration never moves existing game files. Add Installed Game controls the explicit copy or move.')
         self.add(note);self.groups.append(note)
         if self.changed:self.changed(state)
 

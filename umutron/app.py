@@ -104,9 +104,6 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         self.sources_links_btn = button('', lambda: self.open_sources_links_dialog('sources'), icon='folder-download-symbolic')
         self.sources_links_btn.set_tooltip_text('Download Sources & Links')
         self.header.pack_end(self.sources_links_btn)
-        self.add_installer_btn = button('', self.pick_and_run_global_installer, icon='list-add-symbolic')
-        self.add_installer_btn.set_tooltip_text('Install game (.exe) using shared prefix')
-        self.header.pack_end(self.add_installer_btn)
         self.tv_controls=box(False,16);self.tv_controls.add_css_class('tv-controls');margins(self.tv_controls,0);self.tv_controls.set_visible(False)
         brand=box(False,10);brand.set_valign(Gtk.Align.CENTER);brand.add_css_class('tv-brand')
         brand_icon=Gtk.Image.new_from_icon_name(ICON_NAME);brand_icon.set_pixel_size(34);brand.append(brand_icon);brand.append(label(APP_NAME));self.tv_controls.append(brand)
@@ -977,6 +974,121 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         if not getattr(self,'rebuilding_desktop',False):
             for tile in self.desktop_tiles.values():tile.set_focusable(True)
 
+    def _managed_drives(self):
+        state=self.storage_service.snapshot()
+        return [row for row in state.get('registrations',[])
+                if 'install' in row.get('roles',[]) and row.get('status')=='ready' and row.get('root')]
+
+    def _save_managed_game(self, linked):
+        game=deepcopy(self.ensure_saved_game())
+        game.update(executable=linked['executable'],working_dir=linked['working_dir'])
+        game['launch']={**game.get('launch',{}),'prefix':linked['prefix'],'proton':linked['proton']}
+        game['installation']={'mode':'linked','root':linked['root'],'prefix':linked['prefix'],
+                              'proton':linked['proton'],'manifest':linked['manifest'],
+                              'link_mode':linked['mode'],'confirmed':True}
+        saved=self.library.save_setup(game)
+        self.show_game(saved)
+        self.notify('Added installed game to the managed library.')
+
+    def open_add_installed_game(self):
+        if self.tv_mode:
+            self.notify('Switch to desktop mode to add an installed game.')
+            return
+        try:drives=self._managed_drives()
+        except Exception as error:self.error(error);return
+        if not drives:
+            self.notify('Add a game drive in Settings → Storage first.')
+            return
+        protons=[path for path in self.proton_manager.installed() if (Path(path)/'proton').is_file()]
+        if not protons:
+            self.notify('Install a Proton version in Settings → Proton Manager first.')
+            return
+        dialog=modal_window(self,'Add Installed Game',width=720,height=620,
+                            subtitle='Choose a pre-installed game to copy or move into your UmuLibrary.')
+        root=dialog_body(dialog);content=box(spacing=14);root.append(self.scrolled(content));footer=dialog_footer();root.append(footer)
+        content.append(label('Library drive','heading',xalign=0))
+        drive_labels=[row['label']+' · '+row['root']+(' · Default' if row.get('default') else '') for row in drives]
+        drive_choice=Gtk.DropDown.new_from_strings(drive_labels);drive_choice.set_selected(0);content.append(drive_choice)
+        content.append(label('Installed game root','heading',xalign=0))
+        game_root=Gtk.Entry(hexpand=True,placeholder_text='Folder containing the installed game');content.append(game_root)
+        content.append(button('Choose game root…',lambda:self.choose_file('Choose installed game root',lambda path:game_root.set_text(str(path)),folder=True,parent=dialog)))
+        content.append(label('Main game launcher','heading',xalign=0))
+        launcher=Gtk.Entry(hexpand=True,placeholder_text='Main .exe used to launch the game');content.append(launcher)
+        content.append(button('Choose launcher executable…',lambda:self.choose_file('Choose main game launcher',lambda path:launcher.set_text(str(path)),start_folder=Path(game_root.get_text()) if game_root.get_text() else None,parent=dialog)))
+        content.append(label('Installed Proton compatibility layer','heading',xalign=0))
+        proton_choice=Gtk.DropDown.new_from_strings([Path(path).name for path in protons]);proton_choice.set_selected(0);content.append(proton_choice)
+        move_row=box(False,12)
+        move_text=box(spacing=2);move_text.set_hexpand(True)
+        move_title=label('Copy game files','heading',xalign=0)
+        move_subtitle=label('Keep the original game folder unchanged. Turn off to move it into the selected UmuLibrary.','dim-label',xalign=0,wrap=True)
+        move_text.append(move_title);move_text.append(move_subtitle);move_row.append(move_text)
+        move_switch=Gtk.Switch(active=True,valign=Gtk.Align.CENTER);move_row.append(move_switch);content.append(move_row)
+        def copy_mode_changed(widget,*_):
+            copying=widget.get_active()
+            move_title.set_text('Copy game files' if copying else 'Move game files')
+            move_subtitle.set_text('Keep the original game folder unchanged.' if copying else 'The original folder will be removed after it is moved into the selected UmuLibrary.')
+        move_switch.connect('notify::active',copy_mode_changed)
+        footer.append(button('Cancel',dialog.close))
+        submit=button('Add game',lambda:None,'suggested-action');footer.append(submit)
+        def submit_link(*_):
+            root_path=game_root.get_text().strip();launcher_path=launcher.get_text().strip()
+            if not root_path or not launcher_path:
+                self.error(ValueError('Choose both the installed game root and its main launcher executable.'));return
+            drive=drives[drive_choice.get_selected()]
+            move=not move_switch.get_active()
+            selected_proton=protons[proton_choice.get_selected()]
+            draft=deepcopy(self.game)
+            def start():
+                submit.set_sensitive(False)
+                from .game_assets import link_game
+                self.async_job('Adding installed game…',
+                    lambda:link_game(draft,drive_root=drive['root'],source_root=root_path,launcher=launcher_path,proton=selected_proton,move=move),
+                    lambda linked:(dialog.close(),self._save_managed_game(linked)))
+            if move:
+                self.confirm('Move installed game?',
+                    'This moves the selected game from:\n'+root_path+'\n\nto:\n'+str(Path(drive['root'])/'UmuLibrary/umuapps/common')+
+                    '\n\nThe original game folder will be removed after the move completes.',
+                    'Move game',start,True)
+            else:start()
+        submit.connect('clicked',submit_link)
+        dialog.present()
+    def backup_current_game(self):
+        if not self.game:return
+        title='-'.join(part for part in self.game['title'].split() if part) or 'game'
+        def selected(path):
+            from .game_assets import backup_game
+            self.async_job('Creating game backup…',lambda:backup_game(deepcopy(self.game),path),
+                           lambda _:self.notify('Game backup created.'))
+        self.choose_file('Save game backup',selected,save=True,filename=title+'.tar.gz')
+
+    def restore_current_game_backup(self):
+        if not self.game:return
+        def selected(archive):
+            try:drives=self._managed_drives()
+            except Exception as error:self.error(error);return
+            if not drives:
+                self.notify('Add a game drive in Settings → Storage first.')
+                return
+            dialog=modal_window(self,'Restore Game Backup',width=620,height=360,
+                                subtitle='Restore this backup into the selected UmuLibrary common directory.')
+            root=dialog_body(dialog);content=box(spacing=14);root.append(content);footer=dialog_footer();root.append(footer)
+            content.append(label('Library drive','heading',xalign=0))
+            content.append(label('The backup restores game content under common/. A fresh per-game prefix is created under compatdata/; existing managed files are never overwritten.','dim-label',xalign=0,wrap=True))
+            choice=Gtk.DropDown.new_from_strings(choices);choice.set_selected(0);content.append(choice)
+            footer.append(button('Cancel',dialog.close))
+            restore=button('Restore game',lambda:None,'suggested-action');footer.append(restore)
+            def begin(*_):
+                restore.set_sensitive(False)
+                from .game_assets import restore_game
+                draft=deepcopy(self.game);drive=drives[choice.get_selected()]
+                self.async_job('Restoring game backup…',
+                    lambda:restore_game(draft,archive=archive,drive_root=drive['root']),
+                    lambda linked:(dialog.close(),self._save_managed_game(linked)))
+            restore.connect('clicked',begin)
+            dialog.present()
+        self.choose_file('Choose game backup',selected)
+
+
     def add_game(self):
         self.show_store()
 
@@ -1445,16 +1557,6 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             self.log_revealer.set_reveal_child(True)
         diagnostics.add(button('Activity',show_activity))
         diagnostics.add(button('Clear all diagnostic logs',self.clear_diagnostic_logs,'destructive-action'))
-        backup=Adw.PreferencesGroup(title='Backup and restore',description='Portable metadata, artwork and appearance. Game files, saves and provider credentials are not included.'); page.add(backup)
-        def leave_then(callback):
-            owner=settings_ref()
-            if owner is not None and owner.get_visible():owner.close();callback()
-        for title,subtitle,action,callback in (
-            ('Export library','Create a ZIP backup of the saved library.','Export ZIP',self.export_backup),
-            ('Import library','Preview new entries and conflicts before restoring.','Import ZIP',self.import_backup)):
-            row=Adw.ActionRow(title=title,subtitle=subtitle)
-            control=button(action,lambda c=callback:leave_then(c)); control.set_valign(Gtk.Align.CENTER)
-            row.add_suffix(control); backup.add(row)
         self.storage_settings_page=StoragePage(self.storage_service,dialog);dialog.add(self.storage_settings_page)
         self.build_proton_manager_tab(dialog)
         target_page=self.storage_settings_page if section=='storage' else page
@@ -1512,8 +1614,8 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                     return
                 raise RuntimeError(current.get('title','Another game')+' is active. Stop or finish it first.')
             if not configured_game(game):
-                if self.tv_mode:self.notify('Set up this game in desktop mode before playing.');return
-                self.show_game(game);self.open_manage();return
+                if self.tv_mode:self.notify('Add this installed game in desktop mode before playing.');return
+                self.show_game(game);self.open_add_installed_game();return
             if self.demo:raise ValueError('Play is disabled in the demo. Synthetic game files are inert.')
             settings=defaults(game,self.library.root)
             game=deepcopy(game);game['launch']=settings
@@ -1565,19 +1667,14 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             else:control.remove_css_class('destructive-action')
             detail=getattr(self,'route',None)=='detail' and self.game and self.game['id']==game_id
             setup_needed=detail and not configured and not own
-            control.set_label('Preparing…' if preparing else 'Stopping…' if stopping else ('Stop installer' if installer else 'Stop' if own else 'Play' if configured else 'Open desktop Setup' if self.tv_mode and detail else 'Setup'))
-            checking=getattr(self,'detail_availability_checking',False) if detail else False
-            control.set_sensitive(not checking and not self.demo and not stopping and not preparing and (not active or own) and (not self.tv_mode or configured or own or setup_needed))
-            control.set_tooltip_text(('Active: '+current.get('title','game')+'. Finish it before starting another.') if active and not own else 'Stop this game' if own else 'Play through UMU' if configured else 'Switch to desktop mode to set up this game' if self.tv_mode else 'Set up existing game files or a local installer')
+            control.set_label('Preparing…' if preparing else 'Stopping…' if stopping else ('Stop installer' if installer else 'Stop' if own else 'Play' if configured else 'Add Installed Game'))
+            control.set_sensitive(not self.demo and not stopping and not preparing and (not active or own) and (not self.tv_mode or configured or own or setup_needed))
+            control.set_tooltip_text(('Active: '+current.get('title','game')+'. Finish it before starting another.') if active and not own else 'Stop this game' if own else 'Play through UMU' if configured else 'Add a pre-installed game to a selected library drive.')
             if setup_needed and not active:
-                self.detail_status.set_text('Open desktop Setup to choose your game files or a local installer.' if self.tv_mode else 'Set up your existing game files or choose a local installer.')
-        if (getattr(self,'route',None)=='detail' and self.game and hasattr(self,'detail_primary')
-                and not configured_game(self.game)
-                and not (hasattr(self,'detail_download_box') and self.detail_download_box.get_visible())):
-            checking=getattr(self,'detail_availability_checking',False)
+                self.detail_status.set_text('Add a pre-installed game to a selected library drive.')
+        if getattr(self,'route',None)=='detail' and self.game and hasattr(self,'detail_primary') and not configured_game(self.game):
             adding=getattr(self,'detail_adding',False)
-            self.detail_primary.set_sensitive(
-                not checking and not adding and not self.demo and not active)
+            self.detail_primary.set_sensitive(not adding and not self.demo and not active)
         if self.tv_mode and self.game is None and hasattr(self,'tv_hints'):
             status=' · '+self.controller.name if hasattr(self,'controller') and self.controller.name else ''
             self.tv_hints.set_text('← ↑ ↓ → / D-pad  Browse     Enter / A  View game     Esc / B  Back     X  Focus Play / Stop     F11 / Start  Options'+status)
@@ -1589,24 +1686,6 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         if self.editor_kind=='manage':self.update_install_stage()
         return True
 
-    def export_backup(self):
-        def selected(path):
-            if path.suffix.lower()!='.zip': raise ValueError('Use a filename ending in .zip.')
-            self.async_job('Exporting metadata and artwork backup…',lambda:self.library.export_zip(path),lambda _:self.notify('ZIP backup exported. Game files, prefixes and credentials are not included.'))
-        self.choose_file('Export library backup',selected,save=True,filename='game-library-backup.zip')
-
-    def import_backup(self):
-        def selected(path):
-            def preview(result):
-                dialog=message_dialog(self,'Import backup?',f"{result['new']} new games and {result['conflicts']} existing games.\n\n"+'\n'.join(result['titles'][:12])+'\n\nChoose how to handle conflicts. Import never starts a game.',
-                    responses=(('cancel','Cancel'),('keep','Keep existing'),('replace','Replace conflicts')),
-                    default='cancel',close='cancel',destructive='replace')
-                def response(_,choice):
-                    if choice in ('keep','replace'):
-                        self.async_job('Restoring local library…',lambda:self.library.import_zip(path,choice),lambda _:(self.show_library(),self.notify('Backup imported locally. Review paths before playing.')))
-                dialog.connect('response',response); dialog.present()
-            self.async_job('Validating backup…',lambda:self.library.preview_import(path),preview)
-        self.choose_file('Import library backup',selected)
 
 
 

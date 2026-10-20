@@ -188,22 +188,6 @@ with tempfile.TemporaryDirectory(prefix='umutron-dialog-fixture-') as temp:
             check(not dialog.has_css_class('umu-dark'), 'An open dialog follows theme changes')
             respond(dialog, 'confirm')
             check(callback.call_count == 1, 'Explicit response invokes callback once')
-            # Import keeps all three choices, with cancel as the safe default.
-            with patch.object(window, 'choose_file', side_effect=lambda _, callback: callback(Path('/fixture.zip'))), \
-                 patch.object(window, 'async_job', side_effect=lambda _, work, done: done(work())), \
-                 patch.object(library, 'preview_import', return_value={'new': 2, 'conflicts': 2, 'titles': ['Nebula Drift', 'Crimson Circuit']}), \
-                 patch.object(library, 'import_zip') as import_zip:
-                window.import_backup()
-                dialog = visible_message()
-                check(dialog.get_default_response() == 'cancel' and dialog.get_response_appearance('replace') == Adw.ResponseAppearance.DESTRUCTIVE,
-                      'Three-choice conflict prompt retains safe default and destructive replacement')
-                capture(dialog, 'desktop-light-import-native-fixture.png')
-                respond(dialog, 'cancel')
-                import_zip.assert_not_called()
-                for response in ('keep', 'replace'):
-                    window.import_backup()
-                    respond(visible_message(), response)
-                    check(import_zip.call_args.args == (Path('/fixture.zip'), response), 'Import passes the selected conflict policy unchanged')
             window.error(ValueError('A long fixture failure message. ' * 30))
             error = visible_message()
             check(error.get_default_response() == error.get_close_response() == 'ok', 'Error acknowledges with OK')

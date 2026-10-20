@@ -20,15 +20,15 @@ The app now appears as **UmuTron** in its window, Settings information, applicat
 
 ## Features
 
-- Separate **Home**, **Library** and **Store**: observed recent plays, the complete saved collection, and IGDB discovery with genre filtering and pagination. Preview a Store title, then explicitly **Add to library**; executable/runtime setup is optional.
-- Persistent installation status/logs; cancel/retry keeps installed files. Select and confirm the game executable after setup. Setup exit alone never means the game is ready.
-- Reuse the installer prefix, registry/runtimes and resolved Proton version for Play. Play never reruns setup.
-- One read-only detail page from all routes, with artwork and contextual **Add / Setup / Play / Stop**. Unsaved Store Add saves metadata only. Saved unconfigured games have primary Setup in desktop; fullscreen offers Open desktop Setup, which explicitly switches mode and opens the same game’s existing form. No editing or installer execution happens in fullscreen. The gear retains desktop Setup for configured games, metadata-only Remove for saved entries, and guarded Uninstall for installed games. Existing metadata and artwork are preserved; manual metadata/artwork authoring is removed from the normal flow.
-- Optional overrides in collapsed **Advanced launch settings**, including Reset to defaults and custom paths. Normal Proton selection is visible in Setup.
+- Separate **Home**, **Library** and **Store**: observed recent plays, the saved collection, and IGDB discovery with genre filtering and pagination. Store entries are metadata until a user adds an already installed game.
+- A saved game's detail page uses **Add Installed Game** or **Play**. Add Installed Game selects a registered game drive, the installed game root, launcher executable, and an installed Proton version; it copies by default or confirms a destructive move.
+- Managed game content lives at `<drive>/UmuLibrary/umuapps/common/<game>` with a fresh prefix at `compatdata/<game>` and `appmanifest_<steam-id-or-game-id>.json`. The manifest records the title, Steam app ID when known, launcher-relative path, content/prefix paths, and Proton choice.
+- The detail gear offers Relink, Backup, and Restore. Backup writes a portable outer `tar.gz` containing the JSON manifest and `content.tar.gz`; it excludes `compatdata`. Restore accepts that backup only for the selected registered game drive, restores `common`, and creates a fresh empty compatdata directory.
+- Storage Settings registers game drives only. Global library backup/restore and automatic game download/install controls are not exposed.
 - Close to tray; **Show UmuTron** and explicit **Exit**. Without a supported tray host, close minimizes instead of making the app inaccessible. Reopening activates the existing instance.
 - One app-owned game or installer at a time. Stop targets only that launch's verified owned processes. Active operations continue under their supervisor if you explicitly Exit; reopening reconnects.
 - Two-tab Proton Manager: a protected **UMU-Proton** baseline and optional **GE-Proton** releases. Both catalogs update in the background and load older releases while scrolling; verified downloads support cancellation, retry and guarded uninstall of managed runners.
-- Local ZIP import/export, responsive cover grids, title search/sort, light/dark/system themes, offline catalog snapshots and preserved custom artwork.
+- Responsive cover grids, title search/sort, light/dark/system themes, offline catalog snapshots, and preserved custom artwork.
 
 ## Desktop and fullscreen
 
@@ -50,7 +50,7 @@ These are isolated GTK test renders with fictional games and seeded play history
 
 ## Catalog service and safe removal
 
-UmuTron provides separate Home, Library and Store routes with a shared game detail page. Home reflects observed recent play; Library stays local and works offline; Store and download-link search use the managed UmuTron FastAPI service. Explicit Add saves metadata first. Setup configures existing game files or a local installer; automatic game downloads remain unavailable. Storage experiments and download-source prototypes are not included.
+UmuTron provides separate Home, Library and Store routes with a shared game detail page. Home reflects observed recent play; Library stays local and works offline; Store uses the managed UmuTron FastAPI catalog service. Add to library saves metadata. **Add Installed Game** brings user-installed content into a registered game drive; automatic download, staging, and installer workflows are not exposed.
 
 The installer configures the managed HTTPS API origin in `~/.config/umutron/catalog.json`. The desktop holds no backend credentials, source-fetch controls, Docker configuration, or catalog-provider credentials. Configure those only as Vercel environment variables and FastAPI internal endpoints.
 
@@ -62,9 +62,9 @@ To target another approved HTTPS deployment, set its origin without an API path,
 
 Save it in `~/.config/umutron/catalog.json` (or `$XDG_CONFIG_HOME/umutron/catalog.json`) and restart UmuTron. An environment `APP_BASE_URL` overrides the file. The client appends `/v1/genres`, `/v1/games`, or `/v1/games/<id>` itself. Do not append `/api/v1/catalog` or another route to `APP_BASE_URL`.
 
-Production requires a verified HTTPS backend origin. The desktop sends only public catalog queries and download-link searches: no library records, local file paths, cookies, or credentials. Without a backend, saved games and Setup remain available; Store explains that it is not connected.
+Production requires a verified HTTPS backend origin. The desktop sends only public catalog queries: no library records, local file paths, cookies, or credentials. Without a backend, saved games and their managed add/relink flow remain available; Store explains that it is not connected.
 
-Remove from library keeps game files, saves, prefixes and runners. Uninstall is a distinct action: first verify the dedicated installation folder in Setup, then confirm its exact path and file inventory. Ambiguous/shared folders, known save data, links, nested mounts and unclassified files are rejected. Interrupted uninstall retains local recovery information. Saves, prefixes and Proton are separate; no game or installer runs during verification. See [the ownership and recovery contract](docs/DESIGN.md#guarded-game-removal-and-recovery).
+Remove from library keeps managed game files, prefixes, and runners. Uninstall is distinct and guarded by ownership checks on the managed game root. Saves, prefixes, and Proton are separate; no game files are changed during verification. See [the ownership and recovery contract](docs/DESIGN.md#guarded-game-removal-and-recovery).
 
 ## Install
 

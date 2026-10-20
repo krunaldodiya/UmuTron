@@ -39,35 +39,24 @@ with tempfile.TemporaryDirectory(prefix='umutron-detail-actions-') as temp:
     for fullscreen in (False,True):
         w.set_tv_mode(fullscreen);w.unfullscreen();settle(300)
         w.show_shared_detail(item_game(provider.detail(1),preview=True),provider.detail(1));settle()
-        assert not w.saved_detail() and w.detail_primary.get_label()=='Add to library'
-        assert not w.detail_gear.get_visible() and menu_labels(w)==[]
+        assert not w.saved_detail() and w.detail_primary.get_label()=='Add Installed Game'
         w.show_game(uninstalled);settle();w.demo=False;w.refresh_launch_state()
-        assert w.detail_primary.get_label()==('Open desktop Setup' if fullscreen else 'Setup') and w.detail_primary.get_sensitive()
-        assert 'local installer' in w.detail_status.get_text() and not w.runtime_progress.get_visible()
-        assert menu_labels(w)==['Remove from library']
+        assert w.detail_primary.get_label()=='Add Installed Game' and w.detail_primary.get_sensitive()
+        assert menu_labels(w)==['Remove from library','Add Installed Game…','Restore game backup…','Game Info','Search links']
         if fullscreen:
             w.set_visible(False);w.unrealize();w.set_default_size(1920,1080);w.set_size_request(1920,1080);w.present();settle(700)
-            capture(w,args.output/'detail-primary-setup-1920.png')
+            capture(w,args.output/'detail-primary-add-1920.png')
         else:
-            capture(w,args.output/'detail-primary-setup-desktop.png')
-        with patch.object(w.game_install_service,'start') as start, patch.object(w.launcher,'start') as launch:
-            w.detail_action();settle();start.assert_not_called();launch.assert_not_called()
-            assert not w.tv_mode and w.game['id']==uninstalled['id']
-            assert w.editor is not None and w.manage_more is not None and w.editor.get_title()=='Manage Game'
-            assert w.install_action.get_label()=='Install game…';w.cancel_editor();settle()
-            assert library.path.read_bytes()==before and w.game['id']==uninstalled['id']
-            assert w.detail_primary.get_label()=='Setup'
-        if fullscreen:
-            w.set_tv_mode(True);w.unfullscreen();settle()
-            with patch.object(w,'set_tv_mode',return_value=False):w.detail_action();assert w.editor is None
+            capture(w,args.output/'detail-primary-add-desktop.png')
+        assert library.path.read_bytes()==before and w.game['id']==uninstalled['id']
         w.demo=True
         w.show_game(installed);settle()
         assert w.detail_primary.get_label()=='Play'
-        assert ('Setup' in menu_labels(w)) is (not fullscreen)
+        assert 'Relink Installed Game…' in menu_labels(w)
         assert 'Remove from library' in menu_labels(w) and 'Uninstall…' in menu_labels(w)
         incomplete=deepcopy(installed);incomplete['installation']={'mode':'installer','confirmed':False}
         library.save(incomplete);w.show_game(incomplete);settle()
-        assert w.detail_primary.get_label()==('Open desktop Setup' if fullscreen else 'Setup') and 'Uninstall…' not in menu_labels(w)
+        assert w.detail_primary.get_label()=='Add Installed Game' and 'Uninstall…' not in menu_labels(w)
         library.save(installed)
     class Launch:
         record={'game_id':installed['id'],'state':'Running','operation':'play','title':'Fixture'}
@@ -79,4 +68,4 @@ with tempfile.TemporaryDirectory(prefix='umutron-detail-actions-') as temp:
     w.show_game(uninstalled);w.refresh_launch_state();assert not w.detail_primary.get_sensitive()
     w.launcher=real;w.demo=True;assert library.path.read_bytes()==before
     w.exiting=True;w.catalog_cancel();w.catalog_pool.shutdown(wait=True,cancel_futures=True);w.pool.shutdown(wait=True);w.destroy();app.quit()
-print('PASS: metadata-only Add, primary desktop Setup and explicit fullscreen handoff to the same game, cancel/mode-switch guards, unavailable download never called, Play/Stop/one-game guards and unchanged local data.')
+print('PASS: game detail exposes Add Installed Game, relinking, per-game backup restore, and Play/Stop guards without automatic installation.')

@@ -9,13 +9,16 @@ from .installer_identity import is_installer_executable, matching_installer_atte
 
 
 def validate_installation(value):
-    if not isinstance(value,dict) or set(value)-{'mode','installer','session_id','prefix','proton','confirmed','arguments','root'}:
+    if not isinstance(value,dict) or set(value)-{'mode','installer','session_id','prefix','proton','confirmed','arguments','root','manifest','link_mode'}:
         raise ValueError('Invalid installation settings.')
     # Legacy shortcut records remain readable; Manage Game maps them to Already installed.
-    if value.get('mode','installed') not in ('installed','installer','shortcut'):raise ValueError('Unknown game installation mode.')
-    for key in ('installer','session_id','prefix','proton','root'):
+    if value.get('mode','installed') not in ('installed','installer','shortcut','linked'):raise ValueError('Unknown game installation mode.')
+    for key in ('installer','session_id','prefix','proton','root','manifest','link_mode'):
         item=value.get(key,'')
         if not isinstance(item,str) or len(item)>4096 or '\x00' in item:raise ValueError('Invalid installer '+key+'.')
+    if value.get('link_mode','') not in ('','copy','move','restore'):raise ValueError('Invalid game link mode.')
+    if value.get('mode')=='linked' and (not value.get('root') or not value.get('prefix') or not value.get('proton') or not value.get('manifest')):
+        raise ValueError('Linked games require managed paths and Proton.')
     if value.get('session_id'):UUID(value['session_id'])
     if 'confirmed' in value and type(value['confirmed']) is not bool:raise ValueError('Invalid executable confirmation.')
 
