@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -82,6 +83,10 @@ def _manifest(game: dict[str, Any], content: Path, prefix: Path, executable_rela
 
 def _write_manifest(path: Path, data: dict[str, Any]) -> None:
     atomic_write(path, json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8"))
+
+def _digest(path: Path) -> str:
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream,"sha256").hexdigest()
 
 
 def link_game(
@@ -180,7 +185,11 @@ def backup_game(game: dict[str, Any], destination: str | Path, *, replace: bool 
         package = Path(staging) / package_name
         package.mkdir()
         shutil.copy2(manifest, package / manifest.name)
+        manifest_data=json.loads(manifest.read_bytes())
         _archive_component(root, package / "content.tar", "common")
+        digest=_digest(package / "content.tar")
+        manifest_data["content_archive"]={"name":"content.tar","sha256":digest}
+        _write_manifest(package / manifest.name,manifest_data)
         if final.exists():
             shutil.rmtree(final)
         package.rename(final)
@@ -197,7 +206,7 @@ def _backup_manifest(backup: str | Path) -> tuple[dict[str, Any], Path]:
     try:value=json.loads(manifests[0].read_bytes())
     except (UnicodeDecodeError,json.JSONDecodeError) as error:raise ValueError("Backup game manifest is invalid.") from error
     required={"format","game_id","title","steam_app_id","content_directory","launcher_relative_path","compatdata_directory","proton"}
-    if not isinstance(value,dict) or set(value)!=required or value.get("format")!=1:
+    if not isinstance(value,dict) or not required.issubset(value) or value.get("format")!=1:
         raise ValueError("Backup game manifest is unsupported.")
     if not isinstance(value["title"],str) or not isinstance(value["launcher_relative_path"],str) or not isinstance(value["proton"],str):
         raise ValueError("Backup game manifest is invalid.")
@@ -238,6 +247,9 @@ def restore_game(game: dict[str, Any], *, archive: str | Path, drive_root: str |
         content_archive = folder / "content.tar"
         if not content_archive.is_file():
             raise ValueError("Backup does not contain content.tar.")
+        expected=manifest.get("content_archive",{})
+        if expected and (expected.get("name")!="content.tar" or expected.get("sha256")!=_digest(content_archive)):
+            raise ValueError("Backup content checksum does not match its manifest.")
         with tarfile.open(content_archive, "r:") as tar:
             tar.extractall(staging, members=_safe_members(tar, ("common/",)), filter="data")
         staged_content = staging / backed_content.parts[0] / backed_content.parts[1]
