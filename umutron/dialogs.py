@@ -186,15 +186,14 @@ def _close_on_escape(controller, key, *_):
     return False
 
 
-def modal_window(parent, title, *, width=640, height=560, subtitle=''):
-    """Shared native header. Window title stays in sync with progress updates."""
-    # Keep Gtk.Window content semantics used by the editor and existing tests.
+def modal_window(parent, title, *, width=640, height=560, subtitle='', attached=True):
+    """Create a native window; attached windows follow their parent."""
     if parent.get_width() > 0:
         width = min(width, max(320, parent.get_width() - 48))
     if parent.get_height() > 0:
         height = min(height, max(240, parent.get_height() - 48))
-    dialog = Gtk.Window(title=title, modal=True, default_width=width, default_height=height)
-    style_surface(dialog, parent)
+    dialog = Gtk.Window(title=title, modal=attached, default_width=width, default_height=height)
+    style_surface(dialog, parent if attached else None)
     header = Adw.HeaderBar()
     heading = Adw.WindowTitle(title=title, subtitle=subtitle)
     dialog.bind_property('title', heading, 'title', GObject.BindingFlags.SYNC_CREATE)

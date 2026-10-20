@@ -1075,7 +1075,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
     def backup_current_game(self):
         if not self.game:return
         if getattr(self,'archive_future',None) and not self.archive_future.done():self.archive_dialog.present();return
-        dialog=modal_window(self,'Back Up Game',width=640,height=300,subtitle='Create a portable content backup.');dialog.set_modal(False)
+        dialog=modal_window(self,'Back Up Game',width=640,height=300,subtitle='Create a portable content backup.',attached=False)
         root=dialog_body(dialog);content=box(spacing=12);root.append(content);footer=dialog_footer();root.append(footer)
         content.append(label('Backup location','heading',xalign=0))
         location=Gtk.Entry(editable=False,hexpand=True,placeholder_text='Choose a destination directory')
@@ -1100,10 +1100,24 @@ class Window(CatalogUI, Adw.ApplicationWindow):
 
     def open_game_settings(self):
         if not self.game:return
-        dialog=modal_window(self,'Game Settings · '+self.game['title'],width=760,height=520);dialog.set_modal(False)
+        dialog=modal_window(self,'Game Settings · '+self.game['title'],width=760,height=520,attached=False)
         root=dialog_body(dialog);row=box(False,18);root.append(row)
         stack=Gtk.Stack(vexpand=True,hexpand=True);sidebar=Gtk.StackSidebar(stack=stack);sidebar.set_size_request(170,-1);row.append(sidebar);row.append(stack)
-        general=box(spacing=12);general.append(label('General','title-2',xalign=0));general.append(label('Game actions are managed from this window. Remove from library remains separate and never deletes game files.','dim-label',xalign=0,wrap=True));stack.add_titled(general,'general','General')
+        general=box(spacing=12);general.append(label('General','title-2',xalign=0))
+        general.append(label('Launch options','heading',xalign=0))
+        general.append(label('Pass direct arguments to this game. Enter one argument per line; shell commands are not evaluated.','dim-label',xalign=0,wrap=True))
+        launch_args=Gtk.TextView(wrap_mode=Gtk.WrapMode.WORD_CHAR)
+        launch_args.get_buffer().set_text('\n'.join(self.game.get('launch',{}).get('arguments',[])))
+        launch_args.set_vexpand(True)
+        args_scroll=Gtk.ScrolledWindow(min_content_height=100);args_scroll.set_child(launch_args);general.append(args_scroll)
+        save_args=button('Save launch options',lambda:None,'suggested-action');general.append(save_args)
+        def apply_args(*_):
+            buffer=launch_args.get_buffer();text=buffer.get_text(buffer.get_start_iter(),buffer.get_end_iter(),False)
+            arguments=[argument for argument in text.splitlines() if argument]
+            updated=deepcopy(self.game);updated['launch']={**updated.get('launch',{}),'arguments':arguments}
+            self.library.save(updated);self.game=updated;self.notify('Launch options updated.')
+        save_args.connect('clicked',apply_args)
+        stack.add_titled(general,'general','General')
         compatibility=box(spacing=12);compatibility.append(label('Compatibility','title-2',xalign=0))
         protons=[path for path in self.proton_manager.installed() if (Path(path)/'proton').is_file()]
         if protons:
@@ -1119,8 +1133,11 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         managed=self.game.get('installation',{}).get('mode')=='linked'
         if managed:
             from .game_uninstall import folder_summary
-            try:_count,_bytes,size=folder_summary(Path(self.game['installation']['root']));files.append(label('Installed content: '+size,'dim-label',xalign=0))
-            except OSError:files.append(label('Installed content size unavailable.','dim-label',xalign=0))
+            root_path=self.game['installation'].get('root')
+            if root_path:
+                try:_count,_bytes,size=folder_summary(Path(root_path));files.append(label('Installed content: '+size,'dim-label',xalign=0))
+                except OSError:files.append(label('Installed content size unavailable.','dim-label',xalign=0))
+            else:files.append(label('Installed content size unavailable.','dim-label',xalign=0))
             files.append(button('Back up game files…',self.backup_current_game));files.append(button('Uninstall game files…',self.review_uninstall,'destructive-action'))
         else:files.append(button('Restore game backup…',self.restore_current_game_backup));files.append(button('Add Installed Game…',self.open_add_installed_game))
         stack.add_titled(files,'files','Installed Files');dialog.present()
@@ -1135,7 +1152,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                 self.notify('Add a game drive in Settings → Storage first.')
                 return
             dialog=modal_window(self,'Restore Game Backup',width=620,height=360,
-                                subtitle='Restore this backup into the selected UmuLibrary common directory.');dialog.set_modal(False)
+                                subtitle='Restore this backup into the selected UmuLibrary common directory.',attached=False)
             root=dialog_body(dialog);content=box(spacing=14);root.append(content);footer=dialog_footer();root.append(footer)
             content.append(label('Library drive','heading',xalign=0))
             content.append(label('The backup restores game content under common/. A fresh per-game prefix is created under compatdata/; existing managed files are never overwritten.','dim-label',xalign=0,wrap=True))
