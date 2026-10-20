@@ -170,11 +170,16 @@ class CatalogUI:
         self.show_collection()
 
     def collection_card_dimensions(self):
-        if getattr(self, 'tv_mode', False) and hasattr(self, 'console_dimensions'):
+        if hasattr(self, 'console_dimensions'):
             return self.console_dimensions()
         scale=getattr(self,'ui_scale_factor',lambda:1.0)()
-        if scale<=1.05:return 136,204
-        return int(136*scale),int(204*scale)
+        w=self.get_width() if hasattr(self,'get_width') and self.get_width()>0 else 1200
+        if w>=2100:base_w=180
+        elif w>=1600:base_w=160
+        elif w>=1300:base_w=152
+        elif w>=950:base_w=140
+        else:base_w=124
+        return (int(base_w*scale),int(base_w*1.5*scale))
 
     def catalog_cancel(self):
         self.catalog_generation+=1
@@ -252,13 +257,17 @@ class CatalogUI:
                 else:self.remove_css_class('tv-compact')
             if short:self.collection_flow.add_css_class('collection-short')
             else:self.collection_flow.remove_css_class('collection-short')
+            card_w,card_h=self.collection_card_dimensions()
+            scale=getattr(self,'ui_scale_factor',lambda:1.0)()
+            card_key=(card_w,card_h,short)
             for _,tile in self.tv_tiles:
-                compact_card=(short,compact)
-                if getattr(tile,'collection_compact',None)==compact_card:continue
-                tile.collection_compact=compact_card;tile.console_width=136 if short else 156;tile.queue_resize()
-                tile.console_cover.set_size_request((80 if compact else 96) if short else 136,(120 if compact else 144) if short else 204)
-                tile.console_cover.set_halign(Gtk.Align.CENTER if short else Gtk.Align.FILL)
-                tile.console_title.set_size_request(116 if short else 136,42 if short else 48)
+                if getattr(tile,'collection_card_state',None)==card_key:continue
+                tile.collection_card_state=card_key
+                tile.console_width=card_w+20
+                tile.queue_resize()
+                tile.console_cover.set_size_request(card_w,card_h)
+                tile.console_cover.set_halign(Gtk.Align.CENTER)
+                tile.console_title.set_size_request(card_w,int(48*scale))
                 tile.collection_badge.set_visible(not short)
             size=(self.get_width(),self.get_height())
             if getattr(toolbar,'browse_size',None)!=size:

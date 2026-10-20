@@ -230,10 +230,16 @@ class Window(CatalogUI, Adw.ApplicationWindow):
 
     def console_dimensions(self):
         scale=self.ui_scale_factor()
-        if self.get_height()<650 and scale<=1.0:return (80,120)
-        compact=(self.get_width()<1400 or self.get_height()<850) and scale<=1.0
-        if compact:return (96,144)
-        return (int(152*scale),int(228*scale))
+        w=self.get_width() if self.get_width()>0 else 1200
+        h=self.get_height() if self.get_height()>0 else 800
+        if w>=2100:base_w=180
+        elif w>=1600:base_w=160
+        elif w>=1300:base_w=152
+        elif w>=950:base_w=140
+        else:base_w=124
+        if h<700 and base_w>136:base_w=136
+        elif h<600 and base_w>120:base_w=120
+        return (int(base_w*scale),int(base_w*1.5*scale))
 
     def resize_console(self,widget,clock):
         self.update_scale_classes()
@@ -242,12 +248,19 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             resize=getattr(self,'detail_responsive',None)
             if resize:resize(widget,clock)
             return True
-        if self.route!='home':return True
-        if hasattr(self,'home_stage') and hasattr(self,'tv_page'):
-            height=self.tv_page.get_height()
-            if height>0 and self.home_stage.get_size_request()[1]!=height:self.home_stage.set_size_request(-1,height)
         size=self.console_dimensions()
-        if size==self.console_size:return True
+        if self.route in ('library','store'):
+            if size!=getattr(self,'collection_card_size',None):
+                self.collection_card_size=size
+                for tile in getattr(self,'collection_tiles',{}).values():
+                    tile.console_width=size[0]+20
+                    tile.queue_resize()
+                    if hasattr(tile,'console_cover'):
+                        tile.console_cover.set_size_request(*size)
+                    if hasattr(tile,'console_title'):
+                        tile.console_title.set_size_request(size[0],int(48*scale))
+            return True
+        if self.route!='home':return True
         self.console_size=size
         if hasattr(self,'tv_scroll'):self.tv_scroll.set_min_content_height(size[1]+int(48*scale)+48)
         if size[0]<152 and scale<=1.0:self.add_css_class('tv-compact')
