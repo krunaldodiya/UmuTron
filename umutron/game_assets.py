@@ -7,6 +7,7 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
+import subprocess
 import tarfile
 import tempfile
 from typing import Any
@@ -190,18 +191,69 @@ def _linked_paths(game: dict[str, Any]) -> tuple[Path, Path, Path]:
     return root, prefix, manifest
 
 
-def _archive_component(source: Path, destination: Path, directory: str, progress=None, cancelled=None) -> None:
+def _fast_size(path: Path) -> int:
+    total = 0
+    try:
+        with os.scandir(path) as it:
+            for entry in it:
+                if entry.is_dir(follow_symlinks=False):
+                    total += _fast_size(Path(entry.path))
+                elif entry.is_file(follow_symlinks=False):
+                    total += entry.stat().st_size
+    except OSError:
+        pass
+    return total
+
+
+def _archive_component(source: Path, destination: Path, directory: str, progress=None, cancelled=None) -> str:
     _check_cancelled(cancelled)
-    files=[path for path in source.rglob("*") if path.is_file()]
-    total=sum(path.stat().st_size for path in files);done=0
-    with tarfile.open(destination, "w", format=tarfile.PAX_FORMAT) as tar:
-        tar.add(source, arcname=directory + "/" + source.name, recursive=False)
-        for path in files:
-            _check_cancelled(cancelled)
-            tar.add(path,arcname=(Path(directory)/source.name/path.relative_to(source)).as_posix(),recursive=False)
-            done+=path.stat().st_size
-            if progress:progress(done,total)
+    total = _fast_size(source)
+    done = 0
+    hasher = hashlib.sha256()
+    tar_bin = shutil.which("tar")
+    if tar_bin:
+        base = str(source.parent.parent) if source.parent.name == directory else str(source.parent)
+        rel = f"{directory}/{source.name}" if source.parent.name == directory else source.name
+        cmd = [tar_bin, "-cf", "-", "-C", base, rel]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+        try:
+            with destination.open("wb", buffering=0) as out:
+                while True:
+                    if cancelled and cancelled():
+                        if proc.poll() is None:
+                            proc.terminate()
+                            try:proc.wait(timeout=1)
+                            except subprocess.TimeoutExpired:(proc.kill(),proc.wait())
+                        raise BackupCancelled("Backup cancelled.")
+                    chunk = proc.stdout.read(4 * 1024 * 1024)
+                    if not chunk:break
+                    out.write(chunk);hasher.update(chunk);done += len(chunk)
+                    if progress:progress(min(done, total), total)
+            ret = proc.wait()
+            if ret > 1:
+                err = proc.stderr.read().decode("utf-8", errors="replace")
+                raise RuntimeError(f"tar command failed: {err}")
+        finally:
+            if proc.stdout:proc.stdout.close()
+            if proc.stderr:proc.stderr.close()
+            if proc.poll() is None:(proc.kill(),proc.wait())
+    else:
+        class _HashingWriter:
+            def __init__(self, target, h):self.target = target;self.hasher = h
+            def write(self, b):self.target.write(b);self.hasher.update(b);return len(b)
+        files = [p for p in source.rglob("*") if p.is_file()]
+        with destination.open("wb", buffering=0) as raw_out:
+            writer = _HashingWriter(raw_out, hasher)
+            with tarfile.open(fileobj=writer, mode="w", format=tarfile.PAX_FORMAT) as tar:
+                tar.add(source, arcname=directory + "/" + source.name, recursive=False)
+                for path in files:
+                    _check_cancelled(cancelled)
+                    tar.add(path, arcname=(Path(directory)/source.name/path.relative_to(source)).as_posix(), recursive=False)
+                    done += path.stat().st_size
+                    if progress:progress(min(done, total), total)
     _check_cancelled(cancelled)
+    if progress:progress(total, total)
+    return hasher.hexdigest()
 
 
 def backup_game(game: dict[str, Any], destination: str | Path, *, replace: bool = False, progress=None, cancelled=None) -> Path:
@@ -220,8 +272,7 @@ def backup_game(game: dict[str, Any], destination: str | Path, *, replace: bool 
         package.mkdir()
         shutil.copy2(manifest, package / manifest.name)
         manifest_data=json.loads(manifest.read_bytes())
-        _archive_component(root, package / "content.tar", "common", progress, cancelled)
-        digest=_digest(package / "content.tar",cancelled)
+        digest = _archive_component(root, package / "content.tar", "common", progress, cancelled)
         _check_cancelled(cancelled)
         manifest_data["content_archive"]={"name":"content.tar","sha256":digest}
         _write_manifest(package / manifest.name,manifest_data)
@@ -287,8 +338,17 @@ def restore_game(game: dict[str, Any], *, archive: str | Path, drive_root: str |
         expected=manifest.get("content_archive",{})
         if expected and (expected.get("name")!="content.tar" or expected.get("sha256")!=_digest(content_archive)):
             raise ValueError("Backup content checksum does not match its manifest.")
+        staging.mkdir(parents=True, exist_ok=True)
         with tarfile.open(content_archive, "r:") as tar:
-            tar.extractall(staging, members=_safe_members(tar, ("common/",)), filter="data")
+            members = _safe_members(tar, ("common/",))
+        tar_bin = shutil.which("tar")
+        if tar_bin:
+            res = subprocess.run([tar_bin, "-xf", str(content_archive), "-C", str(staging)], capture_output=True)
+            if res.returncode != 0:
+                raise RuntimeError(f"tar extraction failed: {res.stderr.decode('utf-8', errors='replace')}")
+        else:
+            with tarfile.open(content_archive, "r:") as tar:
+                tar.extractall(staging, members=members, filter="data")
         staged_content = staging / backed_content.parts[0] / backed_content.parts[1]
         if not staged_content.is_dir():
             raise ValueError("Backup did not restore the expected game content.")

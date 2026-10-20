@@ -1082,17 +1082,21 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             else:start()
         submit.connect('clicked',submit_link)
         dialog.present()
-    def backup_current_game(self):
+    def backup_current_game(self, parent=None):
         if not self.game:return
         if getattr(self,'archive_future',None) and not self.archive_future.done():self.archive_dialog.present();return
-        dialog=modal_window(self,'Back Up Game',width=640,height=300,subtitle='Create a portable content backup.',attached=False,close_only=True)
+        owner=parent or getattr(self,'game_settings_dialog',None) or self
+        dialog=modal_window(owner,'Back Up Game',width=640,height=340,subtitle='Create a portable content backup.',attached=True,close_only=True)
         root=dialog_body(dialog);content=box(spacing=12);root.append(content);footer=dialog_footer();root.append(footer)
         content.append(label('Backup location','heading',xalign=0))
         location=Gtk.Entry(editable=False,hexpand=True,placeholder_text='Choose a destination directory')
         row=box(False,8);row.append(location);browse=button('Browse…',lambda:self.choose_file('Choose backup location',lambda path:location.set_text(str(path)),folder=True,parent=dialog));row.append(browse);content.append(row)
         status=label('Creates <game>/appmanifest.json and content.tar. compatdata is excluded.','dim-label',xalign=0,wrap=True);content.append(status)
         progress=Gtk.ProgressBar(show_text=True);progress.set_visible(False);content.append(progress)
-        cancel=button('Cancel',lambda:None);footer.append(cancel);start=button('Back up game',lambda:None,'suggested-action');footer.append(start)
+        stats=label('','caption',xalign=0);stats.set_visible(False);content.append(stats)
+        cancel=button('Cancel',lambda:None);footer.append(cancel)
+        start=button('Back up game',lambda:None,'suggested-action');footer.append(start)
+        close_btn=button('Close',dialog.close,'suggested-action');close_btn.set_visible(False);footer.append(close_btn)
         cancelling={'value':False}
         def request_cancel():
             active=getattr(self,'archive_future',None) and not self.archive_future.done()
@@ -1116,17 +1120,68 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                 self.confirm('Replace existing backup?',str(target)+' already exists. Its backup files will be replaced after the new backup is ready.','Replace backup',lambda:begin(replace=True),True);return
             start.set_sensitive(False);browse.set_sensitive(False);status.set_text('Creating backup… You can keep using UmuTron.')
             from .game_assets import backup_game
-            progress.set_visible(True)
+            progress.set_visible(True);stats.set_visible(True);progress.set_fraction(0.0)
+            progress.set_text('Preparing backup…');stats.set_text('Starting transfer…')
+            import time
+            timing={'start':None,'last_ui':0,'total':0}
+            def format_duration(seconds):
+                s=max(0,int(seconds))
+                if s>=3600:return f"{s//3600}h {(s%3600)//60:02d}m {s%60:02d}s"
+                if s>=60:return f"{s//60}m {s%60:02d}s"
+                return f"{s}s"
             def reported(done,total):
-                GLib.idle_add(lambda:(progress.set_fraction(done/total if total else 0),progress.set_text(f'{done/1024**3:.2f} GiB of {total/1024**3:.2f} GiB · {done/total:.0%}' if total else 'Preparing backup…'),False)[-1])
-            self.archive_job(dialog,'Creating game backup…',lambda cancelled:backup_game(deepcopy(self.game),location.get_text(),replace=replace,progress=reported,cancelled=cancelled.is_set),
-                             lambda path:(status.set_text('Backup complete: '+str(path)),start.set_visible(False),cancel.set_visible(False)))
+                now=time.monotonic()
+                if timing['start'] is None:timing['start']=now
+                timing['total']=total
+                elapsed=max(0.001,now-timing['start'])
+                if now-timing['last_ui']<0.05 and done<total:return
+                timing['last_ui']=now
+                fraction=min(1.0,done/total) if total else 0.0
+                speed=done/elapsed
+                speed_str=f"{speed/(1024**2):.1f} MB/s" if speed>=1024**2 else f"{speed/1024:.1f} KB/s"
+                rem=max(0,total-done)
+                eta=rem/speed if speed>0 and total>done else 0
+                eta_str=format_duration(eta) if (total>done and speed>0) else "0s"
+                bar_text=f"{done/(1024**3):.2f} GiB of {total/(1024**3):.2f} GiB · {fraction:.0%}"
+                stats_text=f"Speed: {speed_str} · Elapsed: {format_duration(elapsed)} · ETA: {eta_str}"
+                GLib.idle_add(lambda:(progress.set_fraction(fraction),progress.set_text(bar_text),stats.set_text(stats_text),False)[-1])
+            def completed(path):
+                now=time.monotonic()
+                elapsed=max(0.001,(now-timing['start']) if timing['start'] else 0)
+                tot=timing['total']
+                speed=(tot/elapsed) if tot and elapsed else 0
+                speed_str=f"{speed/(1024**2):.1f} MB/s" if speed>=1024**2 else f"{speed/1024:.1f} KB/s"
+                progress.set_fraction(1.0)
+                progress.set_text(f"100% · {tot/(1024**3):.2f} GiB" if tot else "100%")
+                stats.set_text(f"Completed in {format_duration(elapsed)} · Average speed: {speed_str}")
+                status.set_text('Backup complete: '+str(path))
+                start.set_visible(False)
+                cancel.set_visible(False)
+                close_btn.set_visible(True)
+            self.archive_job(dialog,'Creating game backup…',lambda cancelled:backup_game(deepcopy(self.game),location.get_text(),replace=replace,progress=reported,cancelled=cancelled.is_set),completed)
         cancel.connect('clicked',lambda _:request_cancel())
         start.connect('clicked',begin);dialog.present()
 
     def open_game_settings(self):
         if not self.game:return
+        existing=getattr(self,'game_settings_dialog',None)
+        if existing and existing.get_visible():
+            if getattr(self,'game_settings_game_id',None)==self.game.get('id'):
+                existing.present()
+                if getattr(self,'archive_dialog',None) and self.archive_dialog.get_visible():
+                    self.archive_dialog.present()
+                return
+            existing.close()
         dialog=modal_window(self,'Game Settings · '+self.game['title'],width=760,height=520,attached=False)
+        self.game_settings_dialog=dialog
+        self.game_settings_game_id=self.game.get('id')
+        def cleanup(*_):
+            if getattr(self,'game_settings_dialog',None) is dialog:
+                self.game_settings_dialog=None
+                self.game_settings_game_id=None
+            return False
+        dialog.connect('destroy',cleanup)
+        dialog.connect('close-request',cleanup)
         root=dialog_body(dialog);row=box(False,18);root.append(row)
         stack=Gtk.Stack(vexpand=True,hexpand=True);sidebar=Gtk.StackSidebar(stack=stack);sidebar.set_size_request(170,-1);row.append(sidebar);row.append(stack)
         general=box(spacing=12);general.append(label('General','title-2',xalign=0))
@@ -1166,21 +1221,22 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                 try:_count,_bytes,size=folder_summary(Path(root_path));files.append(label('Installed content: '+size,'dim-label',xalign=0))
                 except OSError:files.append(label('Installed content size unavailable.','dim-label',xalign=0))
             else:files.append(label('Installed content size unavailable.','dim-label',xalign=0))
-            files.append(button('Back up game files…',self.backup_current_game));files.append(button('Uninstall game files…',self.review_uninstall,'destructive-action'))
-        else:files.append(button('Restore game backup…',self.restore_current_game_backup));files.append(button('Add Installed Game…',self.open_add_installed_game))
+            files.append(button('Back up game files…',lambda:self.backup_current_game(parent=dialog)));files.append(button('Uninstall game files…',self.review_uninstall,'destructive-action'))
+        else:files.append(button('Restore game backup…',lambda:self.restore_current_game_backup(parent=dialog)));files.append(button('Add Installed Game…',self.open_add_installed_game))
         stack.add_titled(files,'files','Installed Files');dialog.present()
 
-    def restore_current_game_backup(self):
+    def restore_current_game_backup(self, parent=None):
         if not self.game:return
         if getattr(self,'archive_future',None) and not self.archive_future.done():self.archive_dialog.present();return
+        owner=parent or getattr(self,'game_settings_dialog',None) or self
         def selected(archive):
             try:drives=self._managed_drives()
             except Exception as error:self.error(error);return
             if not drives:
                 self.notify('Add a game drive in Settings → Storage first.')
                 return
-            dialog=modal_window(self,'Restore Game Backup',width=620,height=360,
-                                subtitle='Restore this backup into the selected UmuLibrary common directory.',attached=False)
+            dialog=modal_window(owner,'Restore Game Backup',width=620,height=360,
+                                subtitle='Restore this backup into the selected UmuLibrary common directory.',attached=True)
             root=dialog_body(dialog);content=box(spacing=14);root.append(content);footer=dialog_footer();root.append(footer)
             content.append(label('Library drive','heading',xalign=0))
             content.append(label('The backup restores game content under common/. A fresh per-game prefix is created under compatdata/; existing managed files are never overwritten.','dim-label',xalign=0,wrap=True))
@@ -1197,8 +1253,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                     lambda linked:(dialog.close(),self._save_managed_game(linked)))
             restore.connect('clicked',begin)
             dialog.present()
-        self.choose_file('Choose game backup folder',selected,folder=True)
-
+        self.choose_file('Choose game backup folder',selected,folder=True,parent=owner)
 
     def add_game(self):
         self.show_store()

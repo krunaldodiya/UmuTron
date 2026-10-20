@@ -94,6 +94,8 @@ with tempfile.TemporaryDirectory() as temp:
     w.show_game(uninstalled_game);settle()
     assert w.detail_primary.get_label()=='Add Installed Game'
     w.detail_gear.emit('clicked');settings=next(window for window in Gtk.Window.get_toplevels() if isinstance(window,Gtk.Window) and window.get_title().startswith('Game Settings'))
+    w.detail_gear.emit('clicked');settle()
+    assert len([win for win in Gtk.Window.get_toplevels() if isinstance(win,Gtk.Window) and win.get_title().startswith('Game Settings')])==1
     uninstalled_actions={button.get_label() for button in buttons(settings)}
     assert 'Restore game backup…' in uninstalled_actions and 'Back up game files…' not in uninstalled_actions
     settings.close();pump_until(lambda:not settings.get_visible())
@@ -112,9 +114,9 @@ with tempfile.TemporaryDirectory() as temp:
     assert 'Back up game files…' in managed_actions and 'Restore game backup…' not in managed_actions
     click(settings,'Back up game files…');settle()
     backup=next(window for window in Gtk.Window.get_toplevels() if isinstance(window,Gtk.Window) and window.get_title()=='Back Up Game')
+    assert backup.get_transient_for() is settings
     assert {'Cancel','Back up game'} <= {button.get_label() for button in buttons(backup)}
     click(backup,'Cancel');pump_until(lambda:not backup.get_visible())
-    settings.close();pump_until(lambda:not settings.get_visible())
     # Active operation controls and navigation use an inert injected service.
     class FakeLaunch:
         def __init__(self):self.record={}
