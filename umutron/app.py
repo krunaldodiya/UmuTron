@@ -1080,6 +1080,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         location=Gtk.Entry(editable=False,hexpand=True,placeholder_text='Choose a destination directory')
         row=box(False,8);row.append(location);browse=button('Browse…',lambda:self.choose_file('Choose backup location',lambda path:location.set_text(str(path)),folder=True,parent=dialog));row.append(browse);content.append(row)
         status=label('Creates <game>/appmanifest.json and content.tar. compatdata is excluded.','dim-label',xalign=0,wrap=True);content.append(status)
+        progress=Gtk.ProgressBar(show_text=True);progress.set_visible(False);content.append(progress)
         footer.append(button('Close',dialog.close));start=button('Back up game',lambda:None,'suggested-action');footer.append(start)
         def begin(*_,replace=False):
             if not location.get_text():self.error(ValueError('Choose a backup location.'));return
@@ -1088,7 +1089,10 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                 self.confirm('Replace existing backup?',str(target)+' already exists. Its backup files will be replaced after the new backup is ready.','Replace backup',lambda:begin(replace=True),True);return
             start.set_sensitive(False);browse.set_sensitive(False);status.set_text('Creating backup… You can keep using UmuTron.')
             from .game_assets import backup_game
-            self.archive_job(dialog,'Creating game backup…',lambda:backup_game(deepcopy(self.game),location.get_text(),replace=replace),
+            progress.set_visible(True)
+            def reported(done,total):
+                GLib.idle_add(lambda:(progress.set_fraction(done/total if total else 0),progress.set_text(f'{done/1024**3:.2f} GiB of {total/1024**3:.2f} GiB · {done/total:.0%}' if total else 'Preparing backup…'),False)[-1])
+            self.archive_job(dialog,'Creating game backup…',lambda:backup_game(deepcopy(self.game),location.get_text(),replace=replace,progress=reported),
                              lambda path:(status.set_text('Backup complete: '+str(path)),start.set_visible(False)))
         start.connect('clicked',begin);dialog.present()
 
@@ -1111,7 +1115,11 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         stack.add_titled(compatibility,'compatibility','Compatibility')
         files=box(spacing=12);files.append(label('Installed Files','title-2',xalign=0))
         managed=self.game.get('installation',{}).get('mode')=='linked'
-        if managed:files.append(button('Back up game files…',self.backup_current_game));files.append(button('Uninstall game files…',self.review_uninstall,'destructive-action'))
+        if managed:
+            from .game_uninstall import folder_summary
+            try:_count,_bytes,size=folder_summary(Path(self.game['installation']['root']));files.append(label('Installed content: '+size,'dim-label',xalign=0))
+            except OSError:files.append(label('Installed content size unavailable.','dim-label',xalign=0))
+            files.append(button('Back up game files…',self.backup_current_game));files.append(button('Uninstall game files…',self.review_uninstall,'destructive-action'))
         else:files.append(button('Restore game backup…',self.restore_current_game_backup));files.append(button('Add Installed Game…',self.open_add_installed_game))
         stack.add_titled(files,'files','Installed Files');dialog.present()
 

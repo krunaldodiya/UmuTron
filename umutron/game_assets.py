@@ -166,12 +166,18 @@ def _linked_paths(game: dict[str, Any]) -> tuple[Path, Path, Path]:
     return root, prefix, manifest
 
 
-def _archive_component(source: Path, destination: Path, directory: str) -> None:
+def _archive_component(source: Path, destination: Path, directory: str, progress=None) -> None:
+    files=[path for path in source.rglob("*") if path.is_file()]
+    total=sum(path.stat().st_size for path in files);done=0
     with tarfile.open(destination, "w", format=tarfile.PAX_FORMAT) as tar:
-        tar.add(source, arcname=directory + "/" + source.name, recursive=True)
+        tar.add(source, arcname=directory + "/" + source.name, recursive=False)
+        for path in files:
+            tar.add(path,arcname=(Path(directory)/source.name/path.relative_to(source)).as_posix(),recursive=False)
+            done+=path.stat().st_size
+            if progress:progress(done,total)
 
 
-def backup_game(game: dict[str, Any], destination: str | Path, *, replace: bool = False) -> Path:
+def backup_game(game: dict[str, Any], destination: str | Path, *, replace: bool = False, progress=None) -> Path:
     """Write one portable game directory with a manifest and uncompressed content tar."""
     root, _prefix, manifest = _linked_paths(game)
     parent = Path(destination).expanduser().resolve(strict=True)
@@ -186,7 +192,7 @@ def backup_game(game: dict[str, Any], destination: str | Path, *, replace: bool 
         package.mkdir()
         shutil.copy2(manifest, package / manifest.name)
         manifest_data=json.loads(manifest.read_bytes())
-        _archive_component(root, package / "content.tar", "common")
+        _archive_component(root, package / "content.tar", "common", progress)
         digest=_digest(package / "content.tar")
         manifest_data["content_archive"]={"name":"content.tar","sha256":digest}
         _write_manifest(package / manifest.name,manifest_data)
