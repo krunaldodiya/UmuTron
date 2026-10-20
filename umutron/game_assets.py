@@ -17,6 +17,14 @@ _LAYOUT = "UmuLibrary/umuapps"
 _MANIFEST_PREFIX = "appmanifest_"
 _MAX_MANIFEST = 256 * 1024
 
+class BackupCancelled(Exception):
+    """A user cancelled a backup before its archive was finalized."""
+
+
+def _check_cancelled(cancelled) -> None:
+    if cancelled and cancelled():
+        raise BackupCancelled("Backup cancelled.")
+
 
 def _safe_folder(title: str) -> str:
     value = re.sub(r"[\\/:*?\"<>|\x00-\x1f]+", " ", title).strip().rstrip(".")
@@ -78,15 +86,20 @@ def _manifest(game: dict[str, Any], content: Path, prefix: Path, executable_rela
         "launcher_relative_path": executable_relative.as_posix(),
         "compatdata_directory": (Path("compatdata") / prefix.name).as_posix(),
         "proton": proton,
+        "launch_options": list(game.get("launch", {}).get("arguments", [])),
     }
 
 
 def _write_manifest(path: Path, data: dict[str, Any]) -> None:
     atomic_write(path, json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8"))
 
-def _digest(path: Path) -> str:
+def _digest(path: Path, cancelled=None) -> str:
+    digest=hashlib.sha256()
     with path.open("rb") as stream:
-        return hashlib.file_digest(stream,"sha256").hexdigest()
+        while chunk:=stream.read(1024*1024):
+            _check_cancelled(cancelled)
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def link_game(
@@ -152,6 +165,17 @@ def set_game_proton(game: dict[str, Any], proton: str | Path) -> str:
     _write_manifest(manifest,data)
     return selected
 
+def set_game_launch_options(game: dict[str, Any], arguments: list[str]) -> list[str]:
+    """Persist direct launch arguments in the managed manifest."""
+    if not isinstance(arguments,list) or any(not isinstance(value,str) or '\x00' in value or '\n' in value or '\r' in value for value in arguments):
+        raise ValueError("Launch options must be direct single-line arguments.")
+    _root, _prefix, manifest = _linked_paths(game)
+    try:data=json.loads(manifest.read_bytes())
+    except (UnicodeDecodeError,json.JSONDecodeError) as error:raise ValueError("Managed game manifest is invalid.") from error
+    data["launch_options"]=list(arguments)
+    _write_manifest(manifest,data)
+    return arguments
+
 
 def _linked_paths(game: dict[str, Any]) -> tuple[Path, Path, Path]:
     installation = game.get("installation", {})
@@ -166,19 +190,23 @@ def _linked_paths(game: dict[str, Any]) -> tuple[Path, Path, Path]:
     return root, prefix, manifest
 
 
-def _archive_component(source: Path, destination: Path, directory: str, progress=None) -> None:
+def _archive_component(source: Path, destination: Path, directory: str, progress=None, cancelled=None) -> None:
+    _check_cancelled(cancelled)
     files=[path for path in source.rglob("*") if path.is_file()]
     total=sum(path.stat().st_size for path in files);done=0
     with tarfile.open(destination, "w", format=tarfile.PAX_FORMAT) as tar:
         tar.add(source, arcname=directory + "/" + source.name, recursive=False)
         for path in files:
+            _check_cancelled(cancelled)
             tar.add(path,arcname=(Path(directory)/source.name/path.relative_to(source)).as_posix(),recursive=False)
             done+=path.stat().st_size
             if progress:progress(done,total)
+    _check_cancelled(cancelled)
 
 
-def backup_game(game: dict[str, Any], destination: str | Path, *, replace: bool = False, progress=None) -> Path:
+def backup_game(game: dict[str, Any], destination: str | Path, *, replace: bool = False, progress=None, cancelled=None) -> Path:
     """Write one portable game directory with a manifest and uncompressed content tar."""
+    _check_cancelled(cancelled)
     root, _prefix, manifest = _linked_paths(game)
     parent = Path(destination).expanduser().resolve(strict=True)
     if not parent.is_dir():
@@ -192,8 +220,9 @@ def backup_game(game: dict[str, Any], destination: str | Path, *, replace: bool 
         package.mkdir()
         shutil.copy2(manifest, package / manifest.name)
         manifest_data=json.loads(manifest.read_bytes())
-        _archive_component(root, package / "content.tar", "common", progress)
-        digest=_digest(package / "content.tar")
+        _archive_component(root, package / "content.tar", "common", progress, cancelled)
+        digest=_digest(package / "content.tar",cancelled)
+        _check_cancelled(cancelled)
         manifest_data["content_archive"]={"name":"content.tar","sha256":digest}
         _write_manifest(package / manifest.name,manifest_data)
         if final.exists():
@@ -216,6 +245,8 @@ def _backup_manifest(backup: str | Path) -> tuple[dict[str, Any], Path]:
         raise ValueError("Backup game manifest is unsupported.")
     if not isinstance(value["title"],str) or not isinstance(value["launcher_relative_path"],str) or not isinstance(value["proton"],str):
         raise ValueError("Backup game manifest is invalid.")
+    if "launch_options" in value and (not isinstance(value["launch_options"],list) or any(not isinstance(option,str) or '\x00' in option or '\n' in option or '\r' in option for option in value["launch_options"])):
+        raise ValueError("Backup launch options are invalid.")
     return value, folder
 
 
@@ -265,7 +296,8 @@ def restore_game(game: dict[str, Any], *, archive: str | Path, drive_root: str |
         (base / "compatdata").mkdir(exist_ok=True)
         staged_content.rename(destination)
         prefix.mkdir(mode=0o700)
-        restored = _manifest(game, destination, prefix, Path(manifest["launcher_relative_path"]), _validate_proton(manifest["proton"]))
+        restored_game={**game,"launch":{**game.get("launch",{}),"arguments":manifest.get("launch_options",[])}}
+        restored = _manifest(restored_game, destination, prefix, Path(manifest["launcher_relative_path"]), _validate_proton(manifest["proton"]))
         _write_manifest(destination_manifest, restored)
     finally:
         if staging.exists():
@@ -275,5 +307,6 @@ def restore_game(game: dict[str, Any], *, archive: str | Path, drive_root: str |
         raise ValueError("Backup launcher executable is missing after restore.")
     return {
         "root": str(destination), "executable": str(executable), "working_dir": str(executable.parent),
-        "prefix": str(prefix), "proton": manifest["proton"], "manifest": str(destination_manifest), "mode": "restore",
+        "prefix": str(prefix), "proton": manifest["proton"], "manifest": str(destination_manifest),
+        "arguments": manifest.get("launch_options", []), "mode": "restore",
     }

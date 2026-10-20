@@ -1,5 +1,6 @@
 """GTK desktop UI. Network/archive work stays off the main loop."""
 from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
@@ -874,13 +875,20 @@ class Window(CatalogUI, Adw.ApplicationWindow):
     def archive_job(self, dialog, message, work, done):
         if getattr(self,'archive_future',None) and not self.archive_future.done():
             self.archive_dialog.present();self.error(ValueError('A backup or restore is already running.'));return
-        self.archive_dialog=dialog;self.archive_future=self.pool.submit(work)
+        cancelled=Event();future=self.pool.submit(work,cancelled)
+        self.archive_dialog=dialog;self.archive_cancel=cancelled;self.archive_future=future
         def finish():
-            try:done(self.archive_future.result())
-            except Exception as error:self.error(error)
-            finally:self.archive_future=None
+            was_cancelled=False
+            try:done(future.result())
+            except Exception as error:
+                from .game_assets import BackupCancelled
+                if isinstance(error,BackupCancelled):was_cancelled=True
+                else:self.error(error)
+            finally:
+                if self.archive_future is future:self.archive_future=None;self.archive_cancel=None
+            if was_cancelled:dialog.close()
             return False
-        self.archive_future.add_done_callback(lambda _:GLib.idle_add(finish))
+        future.add_done_callback(lambda _:GLib.idle_add(finish))
 
     def confirm(self,title,body,action,callback,destructive=False):
         dialog=message_dialog(getattr(self,'installer_dialog',None) or self.editor or self,title,body,
@@ -1003,7 +1011,8 @@ class Window(CatalogUI, Adw.ApplicationWindow):
     def _save_managed_game(self, linked):
         game=deepcopy(self.ensure_saved_game())
         game.update(executable=linked['executable'],working_dir=linked['working_dir'])
-        game['launch']={**game.get('launch',{}),'prefix':linked['prefix'],'proton':linked['proton']}
+        game['launch']={**game.get('launch',{}),'prefix':linked['prefix'],'proton':linked['proton'],
+                        **({'arguments':linked['arguments']} if 'arguments' in linked else {})}
         game['installation']={'mode':'linked','root':linked['root'],'prefix':linked['prefix'],
                               'proton':linked['proton'],'manifest':linked['manifest'],
                               'link_mode':linked['mode'],'confirmed':True}
@@ -1076,15 +1085,25 @@ class Window(CatalogUI, Adw.ApplicationWindow):
     def backup_current_game(self):
         if not self.game:return
         if getattr(self,'archive_future',None) and not self.archive_future.done():self.archive_dialog.present();return
-        dialog=modal_window(self,'Back Up Game',width=640,height=300,subtitle='Create a portable content backup.',attached=False)
+        dialog=modal_window(self,'Back Up Game',width=640,height=300,subtitle='Create a portable content backup.',attached=False,close_only=True)
         root=dialog_body(dialog);content=box(spacing=12);root.append(content);footer=dialog_footer();root.append(footer)
         content.append(label('Backup location','heading',xalign=0))
         location=Gtk.Entry(editable=False,hexpand=True,placeholder_text='Choose a destination directory')
         row=box(False,8);row.append(location);browse=button('Browse…',lambda:self.choose_file('Choose backup location',lambda path:location.set_text(str(path)),folder=True,parent=dialog));row.append(browse);content.append(row)
         status=label('Creates <game>/appmanifest.json and content.tar. compatdata is excluded.','dim-label',xalign=0,wrap=True);content.append(status)
         progress=Gtk.ProgressBar(show_text=True);progress.set_visible(False);content.append(progress)
-        footer.append(button('Close',dialog.close));start=button('Back up game',lambda:None,'suggested-action');footer.append(start)
-        dialog.connect('close-request',lambda *_:(dialog.set_visible(False),True)[1] if getattr(self,'archive_future',None) and not self.archive_future.done() else False)
+        cancel=button('Cancel',lambda:None);footer.append(cancel);start=button('Back up game',lambda:None,'suggested-action');footer.append(start)
+        cancelling={'value':False}
+        def request_cancel(*_):
+            active=getattr(self,'archive_future',None) and not self.archive_future.done()
+            if not active:dialog.close();return True
+            if cancelling['value']:return True
+            cancelling['value']=True
+            def confirmed():
+                self.archive_cancel.set();status.set_text('Cancelling backup…');cancel.set_sensitive(False)
+            self.confirm('Cancel backup?','The incomplete backup will be discarded.','Cancel backup',confirmed,True)
+            return True
+        dialog.connect('close-request',request_cancel)
         def begin(*_,replace=False):
             if not location.get_text():self.error(ValueError('Choose a backup location.'));return
             target=Path(location.get_text())/self.game['title']
@@ -1095,8 +1114,9 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             progress.set_visible(True)
             def reported(done,total):
                 GLib.idle_add(lambda:(progress.set_fraction(done/total if total else 0),progress.set_text(f'{done/1024**3:.2f} GiB of {total/1024**3:.2f} GiB · {done/total:.0%}' if total else 'Preparing backup…'),False)[-1])
-            self.archive_job(dialog,'Creating game backup…',lambda:backup_game(deepcopy(self.game),location.get_text(),replace=replace,progress=reported),
-                             lambda path:(status.set_text('Backup complete: '+str(path)),start.set_visible(False)))
+            self.archive_job(dialog,'Creating game backup…',lambda cancelled:backup_game(deepcopy(self.game),location.get_text(),replace=replace,progress=reported,cancelled=cancelled.is_set),
+                             lambda path:(status.set_text('Backup complete: '+str(path)),start.set_visible(False),cancel.set_visible(False)))
+        cancel.connect('clicked',request_cancel)
         start.connect('clicked',begin);dialog.present()
 
     def open_game_settings(self):
@@ -1113,8 +1133,11 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         save_args=button('Save launch options',lambda:None,'suggested-action');general.append(save_args)
         def apply_args(*_):
             try:arguments=shlex.split(launch_args.get_text())
-            except ValueError as error:self.error(ValueError('Launch options have unmatched quotes.'));return
+            except ValueError:self.error(ValueError('Launch options have unmatched quotes.'));return
             updated=deepcopy(self.game);updated['launch']={**updated.get('launch',{}),'arguments':arguments}
+            if updated.get('installation',{}).get('mode')=='linked':
+                from .game_assets import set_game_launch_options
+                set_game_launch_options(updated,arguments)
             self.library.save(updated);self.game=updated;self.notify('Launch options updated.')
         save_args.connect('clicked',apply_args)
         stack.add_titled(general,'general','General')
@@ -1165,7 +1188,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                 from .game_assets import restore_game
                 draft=deepcopy(self.game);drive=drives[choice.get_selected()]
                 self.archive_job(dialog,'Restoring game backup…',
-                    lambda:restore_game(draft,archive=archive,drive_root=drive['root']),
+                    lambda _cancelled:restore_game(draft,archive=archive,drive_root=drive['root']),
                     lambda linked:(dialog.close(),self._save_managed_game(linked)))
             restore.connect('clicked',begin)
             dialog.present()

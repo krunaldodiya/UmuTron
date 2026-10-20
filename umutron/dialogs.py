@@ -186,7 +186,7 @@ def _close_on_escape(controller, key, *_):
     return False
 
 
-def modal_window(parent, title, *, width=640, height=560, subtitle='', attached=True):
+def modal_window(parent, title, *, width=640, height=560, subtitle='', attached=True, close_only=False):
     """Create a native window; attached windows follow their parent."""
     if parent.get_width() > 0:
         width = min(width, max(320, parent.get_width() - 48))
@@ -198,6 +198,10 @@ def modal_window(parent, title, *, width=640, height=560, subtitle='', attached=
     heading = Adw.WindowTitle(title=title, subtitle=subtitle)
     dialog.bind_property('title', heading, 'title', GObject.BindingFlags.SYNC_CREATE)
     header.set_title_widget(heading)
+    if close_only:
+        dialog.set_decorated(False);dialog.set_resizable(False);header.set_show_title_buttons(False)
+        close = Gtk.Button(icon_name='window-close-symbolic',tooltip_text='Cancel backup')
+        close.connect('clicked',lambda *_:dialog.close());header.pack_end(close)
     dialog.set_titlebar(header)
     keys = Gtk.EventControllerKey()
     keys.connect('key-pressed', _close_on_escape)

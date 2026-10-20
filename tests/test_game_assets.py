@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from umutron.game_assets import backup_game, link_game, restore_game, unlink_game
+from umutron.game_assets import BackupCancelled, backup_game, link_game, restore_game, set_game_launch_options, unlink_game
 from umutron.library import Library
 
 
@@ -82,6 +82,26 @@ class ManagedGameAssetsTests(unittest.TestCase):
         restored = restore_game(self.game, archive=backup, drive_root=restored_drive)
         self.assertTrue(Path(restored['prefix']).is_dir())
 
+
+    def test_backup_cancellation_discards_staged_archive(self):
+        linked_game = self._linked_game()
+        backup_parent = self.root / 'backups'
+        backup_parent.mkdir()
+        with self.assertRaises(BackupCancelled):
+            backup_game(linked_game, backup_parent, cancelled=lambda: True)
+        self.assertEqual(list(backup_parent.iterdir()), [])
+
+    def test_backup_and_restore_keep_launch_options(self):
+        linked_game = self._linked_game()
+        linked_game['launch']['arguments'] = ['--nolauncher', '--mod-path', '/mods with spaces']
+        set_game_launch_options(linked_game, linked_game['launch']['arguments'])
+        backup_parent = self.root / 'backups'
+        backup_parent.mkdir()
+        backup = backup_game(linked_game, backup_parent)
+        restored_drive = self.root / 'restored-drive'
+        restored_drive.mkdir()
+        restored = restore_game(self.game, archive=backup, drive_root=restored_drive)
+        self.assertEqual(restored['arguments'], linked_game['launch']['arguments'])
 
 if __name__ == '__main__':
     unittest.main()
