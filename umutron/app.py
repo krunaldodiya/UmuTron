@@ -877,11 +877,20 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         dialog.connect('response',lambda _,response:callback() if response=='confirm' else None)
         dialog.present()
 
-    def choose_file(self,title,callback,save=False,folder=False,filename=None,start_folder=None,parent=None):
+    def choose_file(self,title,callback,save=False,folder=False,filename=None,start_folder=None,parent=None,launcher=False):
         action=Gtk.FileChooserAction.SAVE if save else Gtk.FileChooserAction.SELECT_FOLDER if folder else Gtk.FileChooserAction.OPEN
         owner=parent or self.editor or self
         dialog=Gtk.FileChooserNative.new(title,owner,action,'Save' if save else 'Select','Cancel')
         if filename: dialog.set_current_name(filename)
+        if launcher:
+            launchers=Gtk.FileFilter();launchers.set_name('Game launchers')
+            for mime in ('application/vnd.microsoft.portable-executable','application/x-ms-dos-executable',
+                         'application/x-executable','application/x-shellscript'):
+                launchers.add_mime_type(mime)
+            for pattern in ('*.exe','*.EXE','*.AppImage','*.appimage','*.sh','*.SH','*.run','*.RUN','*.bin','*.BIN'):
+                launchers.add_pattern(pattern)
+            all_files=Gtk.FileFilter();all_files.set_name('All files');all_files.add_pattern('*')
+            dialog.add_filter(launchers);dialog.add_filter(all_files)
         target=None
         if start_folder:
             p=Path(start_folder)
@@ -1014,7 +1023,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         content.append(button('Choose game root…',lambda:self.choose_file('Choose installed game root',lambda path:game_root.set_text(str(path)),folder=True,parent=dialog)))
         content.append(label('Main game launcher','heading',xalign=0))
         launcher=Gtk.Entry(hexpand=True,placeholder_text='Main .exe used to launch the game');content.append(launcher)
-        content.append(button('Choose launcher executable…',lambda:self.choose_file('Choose main game launcher',lambda path:launcher.set_text(str(path)),start_folder=Path(game_root.get_text()) if game_root.get_text() else None,parent=dialog)))
+        content.append(button('Choose launcher executable…',lambda:self.choose_file('Choose main game launcher',lambda path:launcher.set_text(str(path)),start_folder=Path(game_root.get_text()) if game_root.get_text() else None,parent=dialog,launcher=True)))
         content.append(label('Installed Proton compatibility layer','heading',xalign=0))
         proton_choice=Gtk.DropDown.new_from_strings([Path(path).name for path in protons]);proton_choice.set_selected(0);content.append(proton_choice)
         move_row=box(False,12)
