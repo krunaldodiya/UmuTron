@@ -1105,7 +1105,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             if getattr(self,'archive_dialog',None):raise_window(self.archive_dialog)
             return
         owner=parent or getattr(self,'game_settings_dialog',None) or self
-        dialog=modal_window(owner,'Back Up Game',width=640,height=340,subtitle='Create a portable content backup.',attached=True,close_only=True)
+        dialog=modal_window(owner,'Back Up Game',width=580,height=320,subtitle='Create a portable content backup.',attached=True,close_only=True)
         root=dialog_body(dialog);content=box(spacing=12);root.append(content);footer=dialog_footer();root.append(footer)
         content.append(label('Backup location','heading',xalign=0))
         location=Gtk.Entry(editable=False,hexpand=True,placeholder_text='Choose a destination directory')
@@ -1210,7 +1210,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                         raise_window(sub)
                 return
             existing.close()
-        dialog=modal_window(self,'Game Settings · '+self.game['title'],width=760,height=520,attached=False)
+        dialog=modal_window(self,'Game Settings · '+self.game['title'],width=920,height=640,attached=False)
         self.game_settings_dialog=dialog
         self.game_settings_game_id=self.game.get('id')
         def cleanup(*_):
@@ -1221,7 +1221,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         dialog.connect('destroy',cleanup)
         dialog.connect('close-request',cleanup)
         root=dialog_body(dialog);row=box(False,18);root.append(row)
-        stack=Gtk.Stack(vexpand=True,hexpand=True);sidebar=Gtk.StackSidebar(stack=stack);sidebar.set_size_request(170,-1);row.append(sidebar);row.append(stack)
+        stack=Gtk.Stack(vexpand=True,hexpand=True);sidebar=Gtk.StackSidebar(stack=stack);sidebar.set_size_request(200,-1);row.append(sidebar);row.append(stack)
         general=box(spacing=12);general.append(label('General','title-2',xalign=0))
         general.append(label('Launch options','heading',xalign=0))
         general.append(label('Pass arguments to this game. Use quotes around an argument containing spaces; shell commands are not evaluated.','dim-label',xalign=0,wrap=True))
@@ -1323,7 +1323,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         if existing and existing.get_visible():
             raise_window(existing)
             return
-        dialog=modal_window(owner,'Move Install Folder',width=620,height=340,
+        dialog=modal_window(owner,'Move Install Folder',width=580,height=320,
                             subtitle=f"Move {self.game['title']} to another drive.",attached=True)
         self.move_dialog=dialog
         dialog.connect('destroy',lambda *_:setattr(self,'move_dialog',None))
@@ -1371,7 +1371,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             if not drives:
                 self.notify('Add a game drive in Settings → Storage first.')
                 return
-            dialog=modal_window(owner,'Restore Game Backup',width=620,height=360,
+            dialog=modal_window(owner,'Restore Game Backup',width=580,height=340,
                                 subtitle='Restore this backup into the selected UmuLibrary common directory.',attached=True)
             root=dialog_body(dialog);content=box(spacing=14);root.append(content);footer=dialog_footer();root.append(footer)
             content.append(label('Library drive','heading',xalign=0))
