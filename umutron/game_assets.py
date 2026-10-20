@@ -94,12 +94,14 @@ def _manifest(game: dict[str, Any], content: Path, prefix: Path, executable_rela
 def _write_manifest(path: Path, data: dict[str, Any]) -> None:
     atomic_write(path, json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8"))
 
-def _digest(path: Path, cancelled=None) -> str:
+def _digest(path: Path, cancelled=None, progress=None, total=None) -> str:
     digest=hashlib.sha256()
+    done=0
     with path.open("rb") as stream:
-        while chunk:=stream.read(1024*1024):
+        while chunk:=stream.read(4*1024*1024):
             _check_cancelled(cancelled)
-            digest.update(chunk)
+            digest.update(chunk);done+=len(chunk)
+            if progress and total:progress(min(done,total),total)
     return digest.hexdigest()
 
 
@@ -356,8 +358,9 @@ def _safe_members(tar: tarfile.TarFile, allowed: tuple[str, ...]) -> list[tarfil
     return members
 
 
-def restore_game(game: dict[str, Any], *, archive: str | Path, drive_root: str | Path) -> dict[str, Any]:
+def restore_game(game: dict[str, Any], *, archive: str | Path, drive_root: str | Path, progress=None, cancelled=None) -> dict[str, Any]:
     """Restore one game backup directory into common/ and compatdata/."""
+    _check_cancelled(cancelled)
     manifest, folder = _backup_manifest(archive)
     if manifest["game_id"] != game["id"]:
         raise ValueError("This backup belongs to another game library entry.")
@@ -378,9 +381,11 @@ def restore_game(game: dict[str, Any], *, archive: str | Path, drive_root: str |
         content_archive = folder / "content.tar"
         if not content_archive.is_file():
             raise ValueError("Backup does not contain content.tar.")
+        total = content_archive.stat().st_size
         expected=manifest.get("content_archive",{})
-        if expected and (expected.get("name")!="content.tar" or expected.get("sha256")!=_digest(content_archive)):
+        if expected and (expected.get("name")!="content.tar" or expected.get("sha256")!=_digest(content_archive,cancelled,progress,total)):
             raise ValueError("Backup content checksum does not match its manifest.")
+        _check_cancelled(cancelled)
         staging.mkdir(parents=True, exist_ok=True)
         with tarfile.open(content_archive, "r:") as tar:
             members = _safe_members(tar, ("common/",))
@@ -402,6 +407,7 @@ def restore_game(game: dict[str, Any], *, archive: str | Path, drive_root: str |
         restored_game={**game,"launch":{**game.get("launch",{}),"arguments":manifest.get("launch_options",[])}}
         restored = _manifest(restored_game, destination, prefix, Path(manifest["launcher_relative_path"]), _validate_proton(manifest["proton"]))
         _write_manifest(destination_manifest, restored)
+        if progress and total:progress(total,total)
     finally:
         if staging.exists():
             shutil.rmtree(staging, ignore_errors=True)

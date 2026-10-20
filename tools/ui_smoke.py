@@ -98,6 +98,11 @@ with tempfile.TemporaryDirectory() as temp:
     assert len([win for win in Gtk.Window.get_toplevels() if isinstance(win,Gtk.Window) and win.get_title().startswith('Game Settings')])==1
     uninstalled_actions={button.get_label() for button in buttons(settings)}
     assert 'Restore game backup…' in uninstalled_actions and 'Back up game files…' not in uninstalled_actions
+    click(settings,'Restore game backup…');settle()
+    restore_dlg=next(window for window in Gtk.Window.get_toplevels() if isinstance(window,Gtk.Window) and window.get_title()=='Restore Game Backup')
+    assert restore_dlg.get_transient_for() is settings
+    assert {'Browse…','Cancel','Restore game'} <= {button.get_label() for button in buttons(restore_dlg)}
+    click(restore_dlg,'Cancel');pump_until(lambda:not restore_dlg.get_visible())
     settings.close();pump_until(lambda:not settings.get_visible())
     w.open_add_installed_game()
     add_dialog=next(window for window in Gtk.Window.get_toplevels()

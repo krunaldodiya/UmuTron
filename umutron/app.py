@@ -1054,7 +1054,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             return
         dialog=modal_window(owner,'Add Installed Game',width=700,height=580,
                             subtitle='Select the installed game folder and main launcher.',
-                            attached=owner is not self)
+                            attached=owner is not self,close_only=True)
         root=dialog_body(dialog);content=box(spacing=14);root.append(content);footer=dialog_footer();root.append(footer)
         content.append(label('Installed game folder','heading',xalign=0))
         self.add_installed_dialog=dialog
@@ -1324,7 +1324,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             raise_window(existing)
             return
         dialog=modal_window(owner,'Move Install Folder',width=580,height=320,
-                            subtitle=f"Move {self.game['title']} to another drive.",attached=True)
+                            subtitle=f"Move {self.game['title']} to another drive.",attached=True,close_only=True)
         self.move_dialog=dialog
         dialog.connect('destroy',lambda *_:setattr(self,'move_dialog',None))
         root=dialog_body(dialog);content=box(spacing=14);root.append(content);footer=dialog_footer();root.append(footer)
@@ -1364,32 +1364,104 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             if getattr(self,'game_settings_dialog',None):raise_window(self.game_settings_dialog)
             if getattr(self,'archive_dialog',None):raise_window(self.archive_dialog)
             return
+        try:drives=self._managed_drives()
+        except Exception as error:self.error(error);return
+        if not drives:
+            self.notify('Add a game drive in Settings → Storage first.')
+            return
         owner=parent or getattr(self,'game_settings_dialog',None) or self
-        def selected(archive):
-            try:drives=self._managed_drives()
-            except Exception as error:self.error(error);return
-            if not drives:
-                self.notify('Add a game drive in Settings → Storage first.')
-                return
-            dialog=modal_window(owner,'Restore Game Backup',width=580,height=340,
-                                subtitle='Restore this backup into the selected UmuLibrary common directory.',attached=True)
-            root=dialog_body(dialog);content=box(spacing=14);root.append(content);footer=dialog_footer();root.append(footer)
-            content.append(label('Library drive','heading',xalign=0))
-            content.append(label('The backup restores game content under common/. A fresh per-game prefix is created under compatdata/; existing managed files are never overwritten.','dim-label',xalign=0,wrap=True))
-            choices=[row['label']+' · '+row['root'] for row in drives]
-            choice=Gtk.DropDown.new_from_strings(choices);choice.set_selected(0);content.append(choice)
-            footer.append(button('Cancel',dialog.close))
-            restore=button('Restore game',lambda:None,'suggested-action');footer.append(restore)
-            def begin(*_):
-                restore.set_sensitive(False)
-                from .game_assets import restore_game
-                draft=deepcopy(self.game);drive=drives[choice.get_selected()]
-                self.archive_job(dialog,'Restoring game backup…',
-                    lambda _cancelled:restore_game(draft,archive=archive,drive_root=drive['root']),
-                    lambda linked:(dialog.close(),self._save_managed_game(linked)))
-            restore.connect('clicked',begin)
-            dialog.present()
-        self.choose_file('Choose game backup folder',selected,folder=True,parent=owner)
+        dialog=modal_window(owner,'Restore Game Backup',width=580,height=360,
+                            subtitle='Restore this backup into the selected UmuLibrary common directory.',
+                            attached=True,close_only=True)
+        root=dialog_body(dialog);content=box(spacing=12);root.append(content);footer=dialog_footer();root.append(footer)
+        content.append(label('Backup folder','heading',xalign=0))
+        location=Gtk.Entry(editable=False,hexpand=True,placeholder_text='Choose a game backup folder')
+        row=box(False,8);row.append(location)
+        browse=button('Browse…',lambda:self.choose_file('Choose game backup folder',lambda path:location.set_text(str(path)),folder=True,parent=dialog))
+        row.append(browse);content.append(row)
+        content.append(label('Destination library drive','heading',xalign=0))
+        choices=[row['label']+' · '+row['root']+(' · Default' if row.get('default') else '') for row in drives]
+        choice=Gtk.DropDown.new_from_strings(choices);choice.set_selected(0);content.append(choice)
+        status=label('Restores game content under common/ and creates a clean prefix under compatdata/.','dim-label',xalign=0,wrap=True);content.append(status)
+        progress=Gtk.ProgressBar(show_text=True);progress.set_visible(False);content.append(progress)
+        stats=label('','caption',xalign=0);stats.set_visible(False);content.append(stats)
+        cancel=button('Cancel',lambda:None);footer.append(cancel)
+        restore_btn=button('Restore game',lambda:None,'suggested-action');footer.append(restore_btn)
+        close_btn=button('Close',dialog.close,'suggested-action');close_btn.set_visible(False);footer.append(close_btn)
+        cancelling={'value':False}
+        def request_cancel():
+            active=getattr(self,'archive_future',None) and not self.archive_future.done()
+            if not active:dialog.close();return
+            if cancelling['value']:return
+            cancelling['value']=True
+            def confirmed():
+                self.archive_cancel.set();status.set_text('Cancelling restore…');cancel.set_sensitive(False)
+            def dismiss():
+                cancelling['value']=False
+            self.confirm('Cancel restore?','The incomplete restore files will be discarded.','Cancel restore',confirmed,True,parent=dialog,cancel=dismiss)
+        def close_request(*_):
+            if not (getattr(self,'archive_future',None) and not self.archive_future.done()):return False
+            request_cancel();return True
+        dialog.connect('close-request',close_request)
+        cancel.connect('clicked',lambda _:request_cancel())
+        def begin(*_):
+            folder_text=location.get_text().strip()
+            if not folder_text:self.error(ValueError('Choose a game backup folder.'));return
+            archive_folder=Path(folder_text).expanduser().resolve()
+            if not archive_folder.is_dir():self.error(ValueError('The selected backup folder does not exist.'));return
+            drive=drives[choice.get_selected()]
+            restore_btn.set_sensitive(False);browse.set_sensitive(False)
+            status.set_text('Restoring backup… You can keep using UmuTron.')
+            from .game_assets import restore_game
+            progress.set_visible(True);stats.set_visible(True);progress.set_fraction(0.0)
+            progress.set_text('Preparing restore…');stats.set_text('Starting transfer…')
+            import time
+            timing={'start':time.monotonic(),'last_ui':0,'total':0}
+            def format_duration(seconds):
+                s=max(0,int(seconds))
+                if s>=3600:return f"{s//3600}h {(s%3600)//60:02d}m {s%60:02d}s"
+                if s>=60:return f"{s//60}m {s%60:02d}s"
+                return f"{s}s"
+            def reported(done,total):
+                now=time.monotonic()
+                timing['total']=total
+                elapsed=max(0.001,now-timing['start'])
+                if now-timing['last_ui']<0.05 and done<total:return
+                timing['last_ui']=now
+                fraction=min(1.0,done/total) if total else 0.0
+                speed=done/elapsed
+                speed_str=f"{speed/(1024**2):.1f} MB/s" if speed>=1024**2 else f"{speed/1024:.1f} KB/s"
+                rem=max(0,total-done)
+                eta=rem/speed if speed>0 and total>done else 0
+                eta_str=format_duration(eta) if (total>done and speed>0) else "0s"
+                bar_text=f"{done/(1024**3):.2f} GiB of {total/(1024**3):.2f} GiB · {fraction:.0%}"
+                stats_text=f"Speed: {speed_str} · Elapsed: {format_duration(elapsed)} · ETA: {eta_str}"
+                GLib.idle_add(lambda:(progress.set_fraction(fraction),progress.set_text(bar_text),stats.set_text(stats_text),False)[-1])
+            def completed(linked):
+                now=time.monotonic()
+                elapsed=max(0.001,now-timing['start'])
+                tot=timing['total']
+                speed=(tot/elapsed) if tot and elapsed else 0
+                speed_str=f"{speed/(1024**2):.1f} MB/s" if speed>=1024**2 else f"{speed/1024:.1f} KB/s"
+                progress.set_fraction(1.0)
+                progress.set_text(f"100% · {tot/(1024**3):.2f} GiB" if tot else "100%")
+                stats.set_text(f"Completed in {format_duration(elapsed)}" + (f" · Average speed: {speed_str}" if speed else ""))
+                status.set_text('Restore complete: '+str(linked['root']))
+                restore_btn.set_visible(False)
+                cancel.set_visible(False)
+                close_btn.set_visible(True)
+                self._save_managed_game(linked)
+                self.notify(f"Restored {self.game['title']} successfully.")
+            def failed(error):
+                restore_btn.set_sensitive(True);browse.set_sensitive(True);cancel.set_sensitive(True)
+                progress.set_visible(False);stats.set_visible(True)
+                stats.set_text(str(error));status.set_text('Restore did not complete.')
+            draft=deepcopy(self.game)
+            self.archive_job(dialog,'Restoring game backup…',
+                             lambda cancelled:restore_game(draft,archive=archive_folder,drive_root=drive['root'],progress=reported,cancelled=cancelled.is_set),
+                             completed,on_error=failed)
+        restore_btn.connect('clicked',begin)
+        dialog.present()
 
     def add_game(self):
         self.show_store()
