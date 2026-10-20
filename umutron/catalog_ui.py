@@ -270,7 +270,8 @@ class CatalogUI:
                 tile.console_cover.set_size_request(card_w,card_h)
                 tile.console_cover.set_halign(Gtk.Align.CENTER)
                 tile.console_title.set_size_request(card_w,int(48*scale))
-                tile.collection_badge.set_visible(not short)
+                badge_text=tile.collection_badge.get_text() if hasattr(tile,'collection_badge') else ''
+                tile.collection_badge.set_visible(bool(badge_text) and not short)
             size=(self.get_width(),self.get_height())
             if getattr(toolbar,'browse_size',None)!=size:
                 toolbar.browse_size=size
@@ -546,7 +547,8 @@ class CatalogUI:
             self.store_item_futures.append(self.catalog_job(lambda:self.catalog.detail(item['id']),identified,lambda _:None,background=True,valid=current))
         url=item['images'].get('portrait')
         if tile.catalog_image_url is not None and tile.catalog_image_url!=url:
-            placeholder=console_cover(None,136,204);cover=tile.console_cover
+            card_w,card_h=self.collection_card_dimensions()
+            placeholder=console_cover(None,card_w,card_h);cover=tile.console_cover
             while cover.get_first_child():cover.remove(cover.get_first_child())
             while placeholder.get_first_child():
                 child=placeholder.get_first_child();placeholder.remove(child);cover.append(child)
