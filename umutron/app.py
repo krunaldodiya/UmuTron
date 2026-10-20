@@ -72,8 +72,8 @@ def raise_window(window):
 class Window(CatalogUI, Adw.ApplicationWindow):
     def __init__(self, app, library, demo=False, catalog_provider=None, storage_service=None):
         super().__init__(application=app,title=APP_NAME,default_width=1120,default_height=800)
+        self.maximize()
         self.add_css_class('desktop-mode')
-        Adw.StyleManager.get_default().connect_object('notify::dark',Window.sync_desktop_palette,self)
         self.sync_desktop_palette()
         css=Gtk.CssProvider()
         css.load_from_data(DIALOG_CSS + FULLSCREEN_CSS + CATALOG_CSS + b'.control-focused, button:focus { outline: 3px solid #82bcff; outline-offset: 2px; } .art-frame { background: alpha(@window_fg_color, 0.055); border-radius: 12px; padding: 8px; } .game-card { padding: 10px; } .game-card:hover { background: alpha(@accent_color, 0.09); }')
@@ -2146,6 +2146,7 @@ class Application(Adw.Application):
                 self.activate_window();window.set_tv_mode(False);callback()
             self.tray=Tray(self.activate_window,window.explicit_exit,availability,lambda:switch_mode(True),lambda:switch_mode(False),lambda:desktop_action(window.open_settings),mode=window.is_fullscreen)
             window.connect('notify::fullscreened',self.tray.sync_mode)
+        window.maximize()
         window.present()
         if isinstance(window,Window) and window.editor:window.editor.present()
 

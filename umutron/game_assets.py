@@ -26,6 +26,12 @@ def _check_cancelled(cancelled) -> None:
     if cancelled and cancelled():
         raise BackupCancelled("Backup cancelled.")
 
+def _fast_rmtree(path: Path) -> None:
+    if not path.exists():return
+    rm_bin = shutil.which("rm")
+    if rm_bin:subprocess.run([rm_bin, "-rf", str(path)], check=True)
+    else:shutil.rmtree(path)
+
 
 def _safe_folder(title: str) -> str:
     value = re.sub(r"[\\/:*?\"<>|\x00-\x1f]+", " ", title).strip().rstrip(".")
@@ -322,7 +328,7 @@ def backup_game(game: dict[str, Any], destination: str | Path, *, replace: bool 
         manifest_data["content_archive"]={"name":"content.tar","sha256":digest}
         _write_manifest(package / manifest_name,manifest_data)
         if final.exists():
-            shutil.rmtree(final)
+            _fast_rmtree(final)
         package.rename(final)
     return final
 
@@ -403,7 +409,7 @@ def restore_game(game: dict[str, Any], *, archive: str | Path, drive_root: str |
         (base / "common").mkdir(exist_ok=True)
         (base / "compatdata").mkdir(exist_ok=True)
         if destination.exists():
-            shutil.rmtree(destination)
+            _fast_rmtree(destination)
         staged_content.rename(destination)
         prefix.mkdir(mode=0o700, exist_ok=True)
         restored_game={**game,"launch":{**game.get("launch",{}),"arguments":manifest.get("launch_options",[])}}
@@ -412,7 +418,7 @@ def restore_game(game: dict[str, Any], *, archive: str | Path, drive_root: str |
         if progress and total:progress(total,total)
     finally:
         if staging.exists():
-            shutil.rmtree(staging, ignore_errors=True)
+            _fast_rmtree(staging)
     executable = destination / manifest["launcher_relative_path"]
     if not executable.is_file():
         raise ValueError("Backup launcher executable is missing after restore.")
