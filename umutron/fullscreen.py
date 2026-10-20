@@ -25,9 +25,14 @@ CSS = b'''
 .tv-mode .tv-collection { background: alpha(#0b101a,.88); padding-top: 14px; }
 .tv-mode .tv-section-heading { font-size: 22px; font-weight: 700; margin: 0 48px 4px; }
 .tv-mode .tv-counter { color: #acb9ce; font-size: 15px; margin-right: 48px; }
-.tv-mode .tv-card { padding: 7px; border: 1px solid alpha(#b4c7e5,.09); background: #141d2b; border-radius: 12px; }
+.tv-mode .tv-card { padding: 7px; border: 2px solid alpha(#b4c7e5,.09); background: #141d2b; border-radius: 12px; }
 .tv-mode .tv-card:hover { background: #223349; }
-.tv-mode .tv-card.selected-game { border-color: #85efd4; background: #243d44; }
+.tv-mode .tv-card.game-ready { border: 2px solid #58c9a8; }
+.tv-mode .tv-card.game-ready:hover { border-color: #85efd4; }
+.tv-mode .tv-card.game-ready:focus, .tv-mode .tv-card.game-ready.selected-game { border-color: #85efd4; }
+.tv-mode .tv-card.game-not-ready { border: 2px solid #d99b26; }
+.tv-mode .tv-card.game-not-ready:hover { border-color: #f0b74d; }
+.tv-mode .tv-card.game-not-ready:focus, .tv-mode .tv-card.game-not-ready.selected-game { border-color: #f0b74d; }
 .tv-mode .tv-card-title { font-size: 17px; font-weight: 600; line-height: 1.2; color: #edf3ff; }
 .tv-mode .tv-cover { background: #202b3c; border-radius: 7px; }
 .tv-mode .tv-cover-missing { color: #7b91ae; font-size: 12px; }

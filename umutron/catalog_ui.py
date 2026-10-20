@@ -19,9 +19,14 @@ from .library import description_excerpt
 CSS = b'''
 .collection-page { padding: 24px 32px; }
 .collection-heading { font-size: 30px; font-weight: 800; }
-.collection-card { padding: 10px; border-radius: 14px; background: alpha(@window_fg_color,.045); }
+.collection-card { padding: 10px; border-radius: 14px; background: alpha(@window_fg_color,.045); border: 2px solid transparent; }
 .collection-card:hover { background: alpha(@accent_color,.12); }
-.collection-card:focus { outline: 3px solid #7de8d3; outline-offset: 1px; }
+.collection-card.game-ready { border: 2px solid #58c9a8; }
+.collection-card.game-ready:hover { border-color: #85efd4; }
+.collection-card.game-ready:focus { border-color: #85efd4; outline: 3px solid #85efd4; outline-offset: 1px; }
+.collection-card.game-not-ready { border: 2px solid #d99b26; }
+.collection-card.game-not-ready:hover { border-color: #f0b74d; }
+.collection-card.game-not-ready:focus { border-color: #f0b74d; outline: 3px solid #f0b74d; outline-offset: 1px; }
 .collection-page .browse-search.control-focused { outline: 3px solid #7de8d3; outline-offset: 2px; }
 .collection-title { font-size: 16px; font-weight: 700; }
 .collection-badge { font-size: 12px; color: #70cebb; }
@@ -279,9 +284,10 @@ class CatalogUI:
         toolbar.add_tick_callback(resize_toolbar)
         self.collection_status=label('','dim-label',xalign=0,wrap=True);page.append(self.collection_status)
         is_tv = getattr(self, 'tv_mode', False)
-        self.collection_flow=Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE,homogeneous=True,min_children_per_line=1,max_children_per_line=10,column_spacing=22 if is_tv else 16,row_spacing=28 if is_tv else 20)
+        self.collection_flow=Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE,homogeneous=True,min_children_per_line=1,max_children_per_line=12,column_spacing=20 if is_tv else 16,row_spacing=24 if is_tv else 20)
         self.collection_flow.set_valign(Gtk.Align.START)
-        self.collection_flow.set_margin_start(42 if is_tv else 24);self.collection_flow.set_margin_end(42 if is_tv else 24)
+        self.collection_flow.set_halign(Gtk.Align.START)
+        self.collection_flow.set_margin_start(48 if is_tv else 24);self.collection_flow.set_margin_end(48 if is_tv else 24)
         # Let the heading/search scroll with the cards. A fixed toolbar can
         # otherwise leave less room than one complete card in a short window.
         content=box(spacing=0);content.append(page);content.append(self.collection_flow)
@@ -380,18 +386,27 @@ class CatalogUI:
         if limited:total+=' · browsing limited to 1,000 pages; narrow your search'
         self.collection_page_label.set_text(f'Page {page}{total}'+suffix)
 
-    def make_card(self,title,identity,callback,path=None,badge=''):
+    def make_card(self,title,identity,callback,path=None,badge='',is_ready=None):
         box,button,label,_,_=ui()
         card_w,card_h=self.collection_card_dimensions()
         scale=getattr(self,'ui_scale_factor',lambda:1.0)()
-        tile=button(title,callback,'collection-card');tile.set_halign(Gtk.Align.CENTER);tile.set_valign(Gtk.Align.START)
+        tile=button(title,callback,'collection-card');tile.set_halign(Gtk.Align.START);tile.set_valign(Gtk.Align.START)
         tile.console_width=card_w+20;tile.set_layout_manager(CoverLayout())
-        tile.set_tooltip_text('View '+title)
+        if is_ready is True:
+            tile.add_css_class('game-ready')
+            tile.set_tooltip_text(f"{title}\nReady to play")
+        elif is_ready is False:
+            tile.add_css_class('game-not-ready')
+            tile.set_tooltip_text(f"{title}\nLink a game to play")
+        else:
+            tile.set_tooltip_text('View '+title)
         content=box(spacing=max(10,int(10*scale)));tile.set_child(content)
         cover=console_cover(path,card_w,card_h);content.append(cover)
         caption=label(title,'collection-title',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END,width_chars=1,max_width_chars=1)
         caption.set_size_request(card_w,int(48*scale));content.append(caption)
-        tag=label(badge,'collection-badge',xalign=0);tag.set_size_request(-1,int(18*scale));content.append(tag)
+        tag=label(badge,'collection-badge',xalign=0)
+        tag.set_visible(bool(badge))
+        content.append(tag)
         focus=Gtk.EventControllerFocus()
         def focused(*_):
             if self.route in self.routes:self.routes[self.route]['focus']=identity
@@ -432,7 +447,8 @@ class CatalogUI:
         self.collection_status.set_text(f'{data["count"]} games'+(f' · {data["total"]} in your library' if state['query'] or state['genre'] else ''))
         for game in self.tv_games:
             name=game['artwork'].get('portrait') or game['artwork'].get('landscape')
-            self.make_card(game['title'],game['id'],lambda g=game:self.show_game(g),self.library.art_dir/name if name else None,'Ready to play' if game['executable'] else 'Set up to play')
+            is_ready=bool(configured_game(game) and game.get('executable') and Path(game['executable']).is_file())
+            self.make_card(game['title'],game['id'],lambda g=game:self.show_game(g),self.library.art_dir/name if name else None,badge='',is_ready=is_ready)
         if not data['count']:
             self.collection_flow.append(label('No matching games.' if games else 'Your collection starts in Store.','title-2',wrap=True))
             if not games:self.collection_flow.append(button('Browse Store',self.show_store,'suggested-action'))
@@ -628,10 +644,7 @@ class CatalogUI:
         max_sum=min(int(960*scale),max(960,self.get_width()-int(96*scale)))
         summary=Adw.Clamp(maximum_size=max_sum,tightening_threshold=max_sum);summary.set_hexpand(True);summary.set_halign(Gtk.Align.START);summary.set_child(info);row.append(summary)
         info.append(label(game['title'],'detail-title',xalign=0,wrap=True,wrap_mode=Pango.WrapMode.WORD_CHAR,lines=2,ellipsize=Pango.EllipsizeMode.END))
-        entity_text=entity_label(item) if item else ''
-        self.detail_entity=label(entity_text,'detail-meta',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END)
-        self.detail_entity.set_visible(bool(entity_text))
-        info.append(self.detail_entity)
+        self.detail_entity=None
         meta=label(' · '.join(filter(None,(game.get('release_date'),game.get('genres')))) or 'Game details','dim-label',xalign=0,wrap=True);meta.add_css_class('detail-meta');info.append(meta)
         excerpt=description_excerpt(game.get('description','')) or 'No description available for this title.'
         info.append(label(excerpt,'detail-copy',xalign=0,wrap=True,lines=3,ellipsize=Pango.EllipsizeMode.END))

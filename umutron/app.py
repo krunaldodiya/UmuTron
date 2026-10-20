@@ -281,7 +281,14 @@ class Window(CatalogUI, Adw.ApplicationWindow):
 
 
     def tv_tile(self,game,grid=False):
-        tile=button(game['title'],lambda g=game:self.show_game(g));tile.set_focusable(False);tile.add_css_class('tv-card');tile.set_valign(Gtk.Align.START);tile.set_halign(Gtk.Align.CENTER);tile.set_tooltip_text('Open '+game['title'])
+        tile=button(game['title'],lambda g=game:self.show_game(g));tile.set_focusable(False);tile.add_css_class('tv-card');tile.set_valign(Gtk.Align.START);tile.set_halign(Gtk.Align.CENTER)
+        is_ready=bool(configured_game(game) and game.get('executable') and Path(game['executable']).is_file())
+        if is_ready:
+            tile.add_css_class('game-ready')
+            tile.set_tooltip_text(f"{game['title']}\nReady to play")
+        else:
+            tile.add_css_class('game-not-ready')
+            tile.set_tooltip_text(f"{game['title']}\nLink a game to play")
         tile.update_property([Gtk.AccessibleProperty.LABEL],['Open '+game['title']])
         if not grid:tile.add_css_class('tv-game-chip')
         content=box(spacing=10);tile.set_child(content)
@@ -387,7 +394,8 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         self.home_setup_section.append(label('Your latest completed setups, newest first.','tv-meta',xalign=0,wrap=True))
         if not dated:self.home_setup_section.append(label('Newly completed setups will appear here. Saving metadata does not count as setup.','tv-meta',xalign=0,wrap=True))
         if dated:
-            grid=Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE,homogeneous=True,min_children_per_line=1,max_children_per_line=12,column_spacing=22,row_spacing=28);grid.set_valign(Gtk.Align.START)
+            grid=Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE,homogeneous=True,min_children_per_line=1,max_children_per_line=12,column_spacing=20,row_spacing=24)
+            grid.set_valign(Gtk.Align.START);grid.set_halign(Gtk.Align.START)
             self.home_setup_section.append(grid)
             for entry in dated:
                 tile=self.tv_tile(entry,grid=True);tile.home_section='setup';tile.add_css_class('home-setup-card')
