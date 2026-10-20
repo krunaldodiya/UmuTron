@@ -1037,10 +1037,10 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             self.notify('Install a Proton version in Settings → Proton Manager first.')
             return
         owner=getattr(self,'game_settings_dialog',None) or self
-        dialog=modal_window(owner,'Add Installed Game',width=680,height=440,
+        dialog=modal_window(owner,'Add Installed Game',width=700,height=580,
                             subtitle='Select the installed game folder and main launcher.',
                             attached=owner is not self)
-        root=dialog_body(dialog);content=box(spacing=14);root.append(self.scrolled(content));footer=dialog_footer();root.append(footer)
+        root=dialog_body(dialog);content=box(spacing=14);root.append(content);footer=dialog_footer();root.append(footer)
         content.append(label('Installed game folder','heading',xalign=0))
         game_root=Gtk.Entry(hexpand=True,placeholder_text='Folder containing the installed game');content.append(game_root)
         content.append(button('Choose game folder…',lambda:self.choose_file('Choose installed game folder',lambda path:game_root.set_text(str(path)),folder=True,parent=dialog)))
@@ -1249,7 +1249,12 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             move_card.append(label("Move this game's content to another folder or drive.",'dim-label',xalign=0,wrap=True))
             move_btn=button('Move install folder…',lambda:self.move_install_folder(parent=dialog))
             move_card.append(move_btn);files.append(move_card)
+            remove_card=box(spacing=4)
+            remove_card.append(label('Remove this game from your library without deleting its installation files.','dim-label',xalign=0,wrap=True))
+            remove_btn=button('Remove from library…',self.remove_detail)
+            remove_card.append(remove_btn);files.append(remove_card)
             uninstall_card=box(spacing=4)
+            uninstall_card.append(label('Permanently delete this game’s installation folder from disk.','dim-label',xalign=0,wrap=True))
             uninstall_btn=button('Uninstall game files…',self.review_uninstall,'destructive-action')
             uninstall_card.append(uninstall_btn);files.append(uninstall_card)
         else:

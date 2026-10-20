@@ -165,13 +165,17 @@ def move_game_installation(game: dict[str, Any], *, drive_root: str | Path) -> d
 def unlink_game(game: dict[str, Any]) -> None:
     """Remove the managed manifest after its content is uninstalled; keep compatdata."""
     installation = game.get("installation", {})
-    root = Path(installation.get("root", "")).expanduser().resolve()
-    manifest = Path(installation.get("manifest", "")).expanduser().resolve(strict=True)
+    manifest_path_str = installation.get("manifest")
+    if not manifest_path_str:
+        return
+    try:
+        manifest = Path(manifest_path_str).expanduser().resolve(strict=True)
+    except OSError:
+        return
     base = manifest.parent
-    if root.parent != base / "common" or manifest.name != f"{_MANIFEST_PREFIX}{manifest_key(game)}.json":
-        raise ValueError("Only a matching managed game manifest can be removed.")
-    manifest.unlink()
-
+    root = Path(installation.get("root", "")).expanduser().resolve()
+    if root.parent == base / "common" and manifest.name == f"{_MANIFEST_PREFIX}{manifest_key(game)}.json":
+        manifest.unlink()
 def set_game_proton(game: dict[str, Any], proton: str | Path) -> str:
     """Persist an installed Proton choice in the managed manifest."""
     _root, _prefix, manifest = _linked_paths(game)

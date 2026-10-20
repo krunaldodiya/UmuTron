@@ -111,7 +111,7 @@ with tempfile.TemporaryDirectory() as temp:
     w.show_game(managed_game);settle()
     w.detail_gear.emit('clicked');settings=next(window for window in Gtk.Window.get_toplevels() if isinstance(window,Gtk.Window) and window.get_title().startswith('Game Settings'))
     managed_actions={button.get_label() for button in buttons(settings)}
-    assert {'Back up game files…','Move install folder…','Uninstall game files…','Browse…'} <= managed_actions
+    assert {'Back up game files…','Move install folder…','Remove from library…','Uninstall game files…','Browse…'} <= managed_actions
     assert 'Restore game backup…' not in managed_actions
     click(settings,'Back up game files…');settle()
     backup=next(window for window in Gtk.Window.get_toplevels() if isinstance(window,Gtk.Window) and window.get_title()=='Back Up Game')

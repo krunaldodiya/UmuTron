@@ -923,6 +923,7 @@ class CatalogUI:
             if not self.game or self.game['id']!=game['id']:return
             current=next((g for g in self.library.games() if g['id']==game['id']),None)
             if current!=game:raise ValueError('Game setup changed. Review removal again.')
+            if getattr(self,'game_settings_dialog',None):self.game_settings_dialog.close()
             self.library.delete(game['id']);self.return_from_detail();self.notify('Removed from library. Game files, saves and prefixes were kept.')
             self.library.data.setdefault('downloaded_installers', {}).pop(game['id'], None)
             try: self.library._write()
@@ -958,6 +959,8 @@ class CatalogUI:
                 self.library.save(uninstalled)
                 return uninstalled
             def complete(uninstalled):
+                if getattr(self,'game_settings_dialog',None):self.game_settings_dialog.close()
+                self.game=uninstalled
                 self.show_game(uninstalled)
                 self.notify(f'{game["title"]} files were uninstalled. Its library entry was kept.')
             self.async_job('Uninstalling game files…',run_delete,complete)
