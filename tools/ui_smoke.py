@@ -113,7 +113,7 @@ with tempfile.TemporaryDirectory() as temp:
     click(settings,'Back up game files…');settle()
     backup=next(window for window in Gtk.Window.get_toplevels() if isinstance(window,Gtk.Window) and window.get_title()=='Back Up Game')
     assert {'Cancel','Back up game'} <= {button.get_label() for button in buttons(backup)}
-    backup.destroy()
+    click(backup,'Cancel');pump_until(lambda:not backup.get_visible())
     settings.close();pump_until(lambda:not settings.get_visible())
     # Active operation controls and navigation use an inert injected service.
     class FakeLaunch:

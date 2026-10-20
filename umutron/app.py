@@ -1094,16 +1094,21 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         progress=Gtk.ProgressBar(show_text=True);progress.set_visible(False);content.append(progress)
         cancel=button('Cancel',lambda:None);footer.append(cancel);start=button('Back up game',lambda:None,'suggested-action');footer.append(start)
         cancelling={'value':False}
-        def request_cancel(*_):
+        def request_cancel():
             active=getattr(self,'archive_future',None) and not self.archive_future.done()
-            if not active:return False
-            if cancelling['value']:return True
+            if not active:
+                dialog.close()
+                return
+            if cancelling['value']:return
             cancelling['value']=True
             def confirmed():
                 self.archive_cancel.set();status.set_text('Cancelling backup…');cancel.set_sensitive(False)
             self.confirm('Cancel backup?','The incomplete backup will be discarded.','Cancel backup',confirmed,True)
+        def close_request(*_):
+            if not (getattr(self,'archive_future',None) and not self.archive_future.done()):return False
+            request_cancel()
             return True
-        dialog.connect('close-request',request_cancel)
+        dialog.connect('close-request',close_request)
         def begin(*_,replace=False):
             if not location.get_text():self.error(ValueError('Choose a backup location.'));return
             target=Path(location.get_text())/self.game['title']
@@ -1116,7 +1121,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                 GLib.idle_add(lambda:(progress.set_fraction(done/total if total else 0),progress.set_text(f'{done/1024**3:.2f} GiB of {total/1024**3:.2f} GiB · {done/total:.0%}' if total else 'Preparing backup…'),False)[-1])
             self.archive_job(dialog,'Creating game backup…',lambda cancelled:backup_game(deepcopy(self.game),location.get_text(),replace=replace,progress=reported,cancelled=cancelled.is_set),
                              lambda path:(status.set_text('Backup complete: '+str(path)),start.set_visible(False),cancel.set_visible(False)))
-        cancel.connect('clicked',request_cancel)
+        cancel.connect('clicked',lambda _:request_cancel())
         start.connect('clicked',begin);dialog.present()
 
     def open_game_settings(self):
