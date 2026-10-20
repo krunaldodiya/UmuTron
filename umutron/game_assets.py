@@ -146,6 +146,22 @@ def link_game(
         "mode": "move" if move else "copy",
     }
 
+def move_game_installation(game: dict[str, Any], *, drive_root: str | Path) -> dict[str, Any]:
+    """Move an existing installed or linked game into the selected managed library drive."""
+    installation = game.get("installation", {})
+    source_root = Path(installation.get("root", "")).expanduser().resolve(strict=True)
+    executable = Path(game.get("executable", "")).expanduser().resolve(strict=True)
+    proton = game.get("launch", {}).get("proton", "")
+    old_manifest_path = installation.get("manifest")
+    result = link_game(game, drive_root=drive_root, source_root=source_root,
+                       launcher=executable, proton=proton, move=True)
+    if old_manifest_path:
+        old_manifest = Path(old_manifest_path).expanduser().resolve()
+        if old_manifest.is_file() and old_manifest != Path(result["manifest"]):
+            try:old_manifest.unlink()
+            except OSError:pass
+    return result
+
 def unlink_game(game: dict[str, Any]) -> None:
     """Remove the managed manifest after its content is uninstalled; keep compatdata."""
     installation = game.get("installation", {})
@@ -205,16 +221,41 @@ def _fast_size(path: Path) -> int:
     return total
 
 
+def _game_archive_paths(game: dict[str, Any]) -> tuple[Path, Path, dict[str, Any], str]:
+    installation = game.get("installation", {})
+    root = Path(installation.get("root", "")).expanduser().resolve(strict=True)
+    if not root.is_dir():
+        raise ValueError("This game's installation folder is unavailable.")
+    executable = Path(game.get("executable", "")).expanduser().resolve(strict=True)
+    try:executable_rel = executable.relative_to(root)
+    except ValueError:raise ValueError("The launcher executable must be inside the game installation folder.")
+    proton = game.get("launch", {}).get("proton", "")
+    prefix_str = installation.get("prefix", game.get("launch", {}).get("prefix", ""))
+    prefix = Path(prefix_str).expanduser() if prefix_str else root.parent / "compatdata" / _safe_folder(game["title"])
+    manifest_name = f"{_MANIFEST_PREFIX}{manifest_key(game)}.json"
+    manifest_path = Path(installation.get("manifest", "")) if installation.get("manifest") else None
+    if manifest_path and manifest_path.is_file():
+        try:manifest_data = json.loads(manifest_path.read_bytes())
+        except (UnicodeDecodeError, json.JSONDecodeError):manifest_data = _manifest(game, root, prefix, executable_rel, proton)
+    else:manifest_data = _manifest(game, root, prefix, executable_rel, proton)
+    return root, prefix, manifest_data, manifest_name
+
+
 def _archive_component(source: Path, destination: Path, directory: str, progress=None, cancelled=None) -> str:
     _check_cancelled(cancelled)
     total = _fast_size(source)
     done = 0
     hasher = hashlib.sha256()
+    safe_name = _safe_folder(source.name)
     tar_bin = shutil.which("tar")
     if tar_bin:
-        base = str(source.parent.parent) if source.parent.name == directory else str(source.parent)
-        rel = f"{directory}/{source.name}" if source.parent.name == directory else source.name
-        cmd = [tar_bin, "-cf", "-", "-C", base, rel]
+        if source.parent.name == directory:
+            base = str(source.parent.parent)
+            rel = f"{directory}/{source.name}"
+            cmd = [tar_bin, "-cf", "-", "-C", base, rel]
+        else:
+            base = str(source.parent)
+            cmd = [tar_bin, "-cf", "-", "-C", base, "--transform", f"s,^{re.escape(source.name)},{directory}/{safe_name},", source.name]
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
         try:
             with destination.open("wb", buffering=0) as out:
@@ -245,10 +286,10 @@ def _archive_component(source: Path, destination: Path, directory: str, progress
         with destination.open("wb", buffering=0) as raw_out:
             writer = _HashingWriter(raw_out, hasher)
             with tarfile.open(fileobj=writer, mode="w", format=tarfile.PAX_FORMAT) as tar:
-                tar.add(source, arcname=directory + "/" + source.name, recursive=False)
+                tar.add(source, arcname=f"{directory}/{safe_name}", recursive=False)
                 for path in files:
                     _check_cancelled(cancelled)
-                    tar.add(path, arcname=(Path(directory)/source.name/path.relative_to(source)).as_posix(), recursive=False)
+                    tar.add(path, arcname=(Path(directory)/safe_name/path.relative_to(source)).as_posix(), recursive=False)
                     done += path.stat().st_size
                     if progress:progress(min(done, total), total)
     _check_cancelled(cancelled)
@@ -259,7 +300,7 @@ def _archive_component(source: Path, destination: Path, directory: str, progress
 def backup_game(game: dict[str, Any], destination: str | Path, *, replace: bool = False, progress=None, cancelled=None) -> Path:
     """Write one portable game directory with a manifest and uncompressed content tar."""
     _check_cancelled(cancelled)
-    root, _prefix, manifest = _linked_paths(game)
+    root, _prefix, manifest_data, manifest_name = _game_archive_paths(game)
     parent = Path(destination).expanduser().resolve(strict=True)
     if not parent.is_dir():
         raise ValueError("Choose an existing backup directory.")
@@ -270,12 +311,10 @@ def backup_game(game: dict[str, Any], destination: str | Path, *, replace: bool 
     with tempfile.TemporaryDirectory(prefix=".umutron-backup-", dir=parent) as staging:
         package = Path(staging) / package_name
         package.mkdir()
-        shutil.copy2(manifest, package / manifest.name)
-        manifest_data=json.loads(manifest.read_bytes())
         digest = _archive_component(root, package / "content.tar", "common", progress, cancelled)
         _check_cancelled(cancelled)
         manifest_data["content_archive"]={"name":"content.tar","sha256":digest}
-        _write_manifest(package / manifest.name,manifest_data)
+        _write_manifest(package / manifest_name,manifest_data)
         if final.exists():
             shutil.rmtree(final)
         package.rename(final)

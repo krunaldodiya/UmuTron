@@ -102,16 +102,17 @@ with tempfile.TemporaryDirectory() as temp:
     w.open_add_installed_game()
     add_dialog=next(window for window in Gtk.Window.get_toplevels()
                     if isinstance(window,Gtk.Window) and window.get_title()=='Add Installed Game')
-    assert len([widget for widget in widgets(add_dialog) if isinstance(widget,Gtk.DropDown)])==2
-    assert {'Choose game root…','Choose launcher executable…','Add game'} <= {button.get_label() for button in buttons(add_dialog)}
+    assert len([widget for widget in widgets(add_dialog) if isinstance(widget,Gtk.DropDown)])==1
+    assert {'Choose game folder…','Choose launcher executable…','Add game'} <= {button.get_label() for button in buttons(add_dialog)}
     screenshot('add-installed-game-dark.png',add_dialog)
     add_dialog.close();pump_until(lambda:not add_dialog.get_visible())
     w.storage_service=original_storage
-    managed_game=deepcopy(game);managed_game['installation']={'mode':'linked'}
+    managed_game=deepcopy(game);managed_game['installation']={'mode':'linked','root':temp}
     w.show_game(managed_game);settle()
     w.detail_gear.emit('clicked');settings=next(window for window in Gtk.Window.get_toplevels() if isinstance(window,Gtk.Window) and window.get_title().startswith('Game Settings'))
     managed_actions={button.get_label() for button in buttons(settings)}
-    assert 'Back up game files…' in managed_actions and 'Restore game backup…' not in managed_actions
+    assert {'Back up game files…','Move install folder…','Uninstall game files…','Browse…'} <= managed_actions
+    assert 'Restore game backup…' not in managed_actions
     click(settings,'Back up game files…');settle()
     backup=next(window for window in Gtk.Window.get_toplevels() if isinstance(window,Gtk.Window) and window.get_title()=='Back Up Game')
     assert backup.get_transient_for() is settings

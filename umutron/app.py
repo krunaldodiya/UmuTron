@@ -1032,63 +1032,54 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         if self.tv_mode:
             self.notify('Switch to desktop mode to add an installed game.')
             return
-        try:drives=self._managed_drives()
-        except Exception as error:self.error(error);return
-        if not drives:
-            self.notify('Add a game drive in Settings → Storage first.')
-            return
         protons=[path for path in self.proton_manager.installed() if (Path(path)/'proton').is_file()]
         if not protons:
             self.notify('Install a Proton version in Settings → Proton Manager first.')
             return
-        dialog=modal_window(self,'Add Installed Game',width=720,height=620,
-                            subtitle='Choose a pre-installed game to copy or move into your UmuLibrary.')
+        owner=getattr(self,'game_settings_dialog',None) or self
+        dialog=modal_window(owner,'Add Installed Game',width=680,height=440,
+                            subtitle='Select the installed game folder and main launcher.',
+                            attached=owner is not self)
         root=dialog_body(dialog);content=box(spacing=14);root.append(self.scrolled(content));footer=dialog_footer();root.append(footer)
-        content.append(label('Library drive','heading',xalign=0))
-        drive_labels=[row['label']+' · '+row['root']+(' · Default' if row.get('default') else '') for row in drives]
-        drive_choice=Gtk.DropDown.new_from_strings(drive_labels);drive_choice.set_selected(0);content.append(drive_choice)
-        content.append(label('Installed game root','heading',xalign=0))
+        content.append(label('Installed game folder','heading',xalign=0))
         game_root=Gtk.Entry(hexpand=True,placeholder_text='Folder containing the installed game');content.append(game_root)
-        content.append(button('Choose game root…',lambda:self.choose_file('Choose installed game root',lambda path:game_root.set_text(str(path)),folder=True,parent=dialog)))
+        content.append(button('Choose game folder…',lambda:self.choose_file('Choose installed game folder',lambda path:game_root.set_text(str(path)),folder=True,parent=dialog)))
         content.append(label('Main game launcher','heading',xalign=0))
-        launcher=Gtk.Entry(hexpand=True,placeholder_text='Main .exe used to launch the game');content.append(launcher)
+        launcher=Gtk.Entry(hexpand=True,placeholder_text='Main .exe or executable used to launch the game');content.append(launcher)
         content.append(button('Choose launcher executable…',lambda:self.choose_file('Choose main game launcher',lambda path:launcher.set_text(str(path)),start_folder=Path(game_root.get_text()) if game_root.get_text() else None,parent=dialog,launcher=True)))
         content.append(label('Installed Proton compatibility layer','heading',xalign=0))
         proton_choice=Gtk.DropDown.new_from_strings([Path(path).name for path in protons]);proton_choice.set_selected(0);content.append(proton_choice)
-        move_row=box(False,12)
-        move_text=box(spacing=2);move_text.set_hexpand(True)
-        move_title=label('Copy game files','heading',xalign=0)
-        move_subtitle=label('Keep the original game folder unchanged. Turn off to move it into the selected UmuLibrary.','dim-label',xalign=0,wrap=True)
-        move_text.append(move_title);move_text.append(move_subtitle);move_row.append(move_text)
-        move_switch=Gtk.Switch(active=True,valign=Gtk.Align.CENTER);move_row.append(move_switch);content.append(move_row)
-        def copy_mode_changed(widget,*_):
-            copying=widget.get_active()
-            move_title.set_text('Copy game files' if copying else 'Move game files')
-            move_subtitle.set_text('Keep the original game folder unchanged.' if copying else 'The original folder will be removed after it is moved into the selected UmuLibrary.')
-        move_switch.connect('notify::active',copy_mode_changed)
         footer.append(button('Cancel',dialog.close))
         submit=button('Add game',lambda:None,'suggested-action');footer.append(submit)
-        def submit_link(*_):
-            root_path=game_root.get_text().strip();launcher_path=launcher.get_text().strip()
-            if not root_path or not launcher_path:
-                self.error(ValueError('Choose both the installed game root and its main launcher executable.'));return
-            drive=drives[drive_choice.get_selected()]
-            move=not move_switch.get_active()
+        def submit_add(*_):
+            root_str=game_root.get_text().strip();launcher_str=launcher.get_text().strip()
+            if not root_str or not launcher_str:
+                self.error(ValueError('Choose both the installed game folder and its main launcher executable.'));return
+            source_root=Path(root_str).expanduser().resolve()
+            launcher_path=Path(launcher_str).expanduser().resolve()
+            if not source_root.is_dir():
+                self.error(ValueError('The selected game folder does not exist.'));return
+            if not launcher_path.is_file():
+                self.error(ValueError('The selected launcher executable does not exist.'));return
+            try:
+                launcher_path.relative_to(source_root)
+            except ValueError:
+                self.error(ValueError('The launcher executable must be inside the selected game folder.'));return
             selected_proton=protons[proton_choice.get_selected()]
-            draft=deepcopy(self.game)
-            def start():
-                submit.set_sensitive(False)
-                from .game_assets import link_game
-                self.async_job('Adding installed game…',
-                    lambda:link_game(draft,drive_root=drive['root'],source_root=root_path,launcher=launcher_path,proton=selected_proton,move=move),
-                    lambda linked:(dialog.close(),self._save_managed_game(linked)))
-            if move:
-                self.confirm('Move installed game?',
-                    'This moves the selected game from:\n'+root_path+'\n\nto:\n'+str(Path(drive['root'])/'UmuLibrary/umuapps/common')+
-                    '\n\nThe original game folder will be removed after the move completes.',
-                    'Move game',start,True)
-            else:start()
-        submit.connect('clicked',submit_link)
+            prefix=Path(self.library.root)/'prefixes'/self.game['id']
+            prefix.mkdir(parents=True,exist_ok=True,mode=0o700)
+            updated=deepcopy(self.ensure_saved_game())
+            updated.update(executable=str(launcher_path),working_dir=str(launcher_path.parent))
+            updated['launch']={**updated.get('launch',{}),'prefix':str(prefix),'proton':selected_proton}
+            updated['installation']={'mode':'installed','root':str(source_root),'confirmed':True}
+            saved=self.library.save_setup(updated)
+            self.game=saved
+            self.show_game(saved)
+            dialog.close()
+            if getattr(self,'game_settings_dialog',None):
+                self.game_settings_dialog.close()
+            self.notify(f"Added {saved['title']} to your library.")
+        submit.connect('clicked',submit_add)
         dialog.present()
     def backup_current_game(self, parent=None):
         if not self.game:return
@@ -1236,18 +1227,83 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             save.connect('clicked',apply)
         else:compatibility.append(label('Install a Proton version in Settings → Proton Manager first.','dim-label',xalign=0,wrap=True))
         stack.add_titled(compatibility,'compatibility','Compatibility')
-        files=box(spacing=12);files.append(label('Installed Files','title-2',xalign=0))
-        managed=self.game.get('installation',{}).get('mode')=='linked'
-        if managed:
+        files=box(spacing=16);files.append(label('Installed Files','title-2',xalign=0))
+        root_path=self.game.get('installation',{}).get('root')
+        is_installed=bool(root_path and Path(root_path).is_dir())
+        if is_installed:
             from .game_uninstall import folder_summary
-            root_path=self.game['installation'].get('root')
-            if root_path:
-                try:_count,_bytes,size=folder_summary(Path(root_path));files.append(label('Installed content: '+size,'dim-label',xalign=0))
-                except OSError:files.append(label('Installed content size unavailable.','dim-label',xalign=0))
-            else:files.append(label('Installed content size unavailable.','dim-label',xalign=0))
-            files.append(button('Back up game files…',lambda:self.backup_current_game(parent=dialog)));files.append(button('Uninstall game files…',self.review_uninstall,'destructive-action'))
-        else:files.append(button('Restore game backup…',lambda:self.restore_current_game_backup(parent=dialog)));files.append(button('Add Installed Game…',self.open_add_installed_game))
+            resolved_root=Path(root_path).resolve()
+            try:_count,_bytes,size=folder_summary(resolved_root);size_text=size
+            except OSError:size_text='Unknown size'
+            size_row=box(False,12);size_row.set_hexpand(True)
+            size_info=label(f'Size of installation: {size_text} ({resolved_root.name})','heading',xalign=0)
+            size_info.set_hexpand(True);size_row.append(size_info)
+            browse_btn=button('Browse…',lambda:Gio.AppInfo.launch_default_for_uri(resolved_root.as_uri(),None))
+            browse_btn.set_tooltip_text('Open installation folder in file manager')
+            size_row.append(browse_btn);files.append(size_row)
+            backup_card=box(spacing=4)
+            backup_card.append(label('Create a backup of the installed files to restore this game in the future.','dim-label',xalign=0,wrap=True))
+            backup_btn=button('Back up game files…',lambda:self.backup_current_game(parent=dialog))
+            backup_card.append(backup_btn);files.append(backup_card)
+            move_card=box(spacing=4)
+            move_card.append(label("Move this game's content to another folder or drive.",'dim-label',xalign=0,wrap=True))
+            move_btn=button('Move install folder…',lambda:self.move_install_folder(parent=dialog))
+            move_card.append(move_btn);files.append(move_card)
+            uninstall_card=box(spacing=4)
+            uninstall_btn=button('Uninstall game files…',self.review_uninstall,'destructive-action')
+            uninstall_card.append(uninstall_btn);files.append(uninstall_card)
+        else:
+            files.append(label('This game is not currently installed.','dim-label',xalign=0,wrap=True))
+            files.append(button('Add Installed Game…',self.open_add_installed_game))
+            files.append(button('Restore game backup…',lambda:self.restore_current_game_backup(parent=dialog)))
         stack.add_titled(files,'files','Installed Files');dialog.present()
+
+    def move_install_folder(self, parent=None):
+        if not self.game:return
+        if getattr(self,'archive_future',None) and not self.archive_future.done():
+            self.notify('Wait for the active archive operation to finish.');return
+        try:drives=self._managed_drives()
+        except Exception as error:self.error(error);return
+        if not drives:
+            self.notify('Add a library drive in Settings → Storage first.')
+            return
+        root_path=self.game.get('installation',{}).get('root')
+        if not root_path or not Path(root_path).is_dir():
+            self.error(ValueError('Installation folder is unavailable.'));return
+        current_path=Path(root_path).resolve()
+        owner=parent or getattr(self,'game_settings_dialog',None) or self
+        dialog=modal_window(owner,'Move Install Folder',width=620,height=340,
+                            subtitle=f"Move {self.game['title']} to another drive.",attached=True)
+        root=dialog_body(dialog);content=box(spacing=14);root.append(content);footer=dialog_footer();root.append(footer)
+        content.append(label('Current location','heading',xalign=0))
+        content.append(label(str(current_path),'dim-label',xalign=0,wrap=True))
+        content.append(label('Destination library drive','heading',xalign=0))
+        choices=[row['label']+' · '+row['root']+(' · Default' if row.get('default') else '') for row in drives]
+        choice=Gtk.DropDown.new_from_strings(choices);choice.set_selected(0);content.append(choice)
+        footer.append(button('Cancel',dialog.close))
+        move_btn=button('Move folder',lambda:None,'suggested-action');footer.append(move_btn)
+        def begin_move(*_):
+            drive=drives[choice.get_selected()]
+            target_drive_root=Path(drive['root']).resolve()
+            from .game_assets import layout_root, _safe_folder
+            managed_base=layout_root(target_drive_root)
+            dest_folder=managed_base/'common'/_safe_folder(self.game['title'])
+            if current_path==dest_folder:
+                self.error(ValueError('This game is already installed on the selected drive.'));return
+            move_btn.set_sensitive(False)
+            from .game_assets import move_game_installation
+            draft=deepcopy(self.game)
+            def do_move():
+                return move_game_installation(draft,drive_root=drive['root'])
+            def done(updated):
+                dialog.close()
+                self._save_managed_game(updated)
+                self.notify(f"Moved {self.game['title']} to {drive['label']}.")
+                if getattr(self,'game_settings_dialog',None):
+                    self.game_settings_dialog.close()
+            self.async_job('Moving game installation…',do_move,done)
+        move_btn.connect('clicked',begin_move)
+        dialog.present()
 
     def restore_current_game_backup(self, parent=None):
         if not self.game:return

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from umutron.game_assets import BackupCancelled, backup_game, link_game, restore_game, set_game_launch_options, unlink_game
+from umutron.game_assets import BackupCancelled, backup_game, link_game, move_game_installation, restore_game, set_game_launch_options, unlink_game
 from umutron.library import Library
 
 
@@ -113,6 +113,38 @@ class ManagedGameAssetsTests(unittest.TestCase):
         restored_drive.mkdir()
         with self.assertRaisesRegex(ValueError, 'no valid game manifest'):
             restore_game(self.game, archive=backup, drive_root=restored_drive)
+
+    def test_backup_and_restore_external_installed_game_uses_managed_drive(self):
+        external_game = {
+            **self.game,
+            'executable': str(self.launcher),
+            'working_dir': str(self.launcher.parent),
+            'launch': {'proton': str(self.proton), 'prefix': str(self.root / 'external_prefix')},
+            'installation': {'mode': 'installed', 'root': str(self.source), 'confirmed': True},
+        }
+        backup_parent = self.root / 'backups'
+        backup_parent.mkdir()
+        backup = backup_game(external_game, backup_parent)
+        self.assertTrue((backup / 'appmanifest_292030.json').is_file())
+        self.assertTrue((backup / 'content.tar').is_file())
+        restored_drive = self.root / 'internal-managed-drive'
+        restored_drive.mkdir()
+        restored = restore_game(external_game, archive=backup, drive_root=restored_drive)
+        self.assertEqual(restored['root'], str(restored_drive / 'UmuLibrary' / 'umuapps' / 'common' / 'Fixture Game'))
+        self.assertTrue(Path(restored['executable']).is_file())
+        self.assertTrue(Path(restored['manifest']).is_file())
+        self.assertNotEqual(Path(restored['root']), self.source)
+
+    def test_move_game_installation_moves_files_and_updates_manifest(self):
+        linked_game = self._linked_game()
+        destination_drive = self.root / 'second-managed-drive'
+        destination_drive.mkdir()
+        moved = move_game_installation(linked_game, drive_root=destination_drive)
+        self.assertEqual(moved['root'], str(destination_drive / 'UmuLibrary' / 'umuapps' / 'common' / 'Fixture Game'))
+        self.assertTrue(Path(moved['executable']).is_file())
+        self.assertTrue(Path(moved['manifest']).is_file())
+        self.assertFalse(Path(linked_game['installation']['root']).exists())
+        self.assertFalse(Path(linked_game['installation']['manifest']).exists())
 
 if __name__ == '__main__':
     unittest.main()
