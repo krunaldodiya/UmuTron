@@ -37,6 +37,15 @@ class ObserverTests(unittest.TestCase):
                 before=deepcopy(self.objects);self.objects['/block'][BLOCK][key]=value
                 self.assertEqual(self.observer(),[]);self.objects=before
 
+
+    def test_btrfs_subvolumes_are_presented_once_at_the_parent_mount(self):
+        self.mounts=(
+            '41 1 8:2 /@ / rw,nosuid - btrfs /dev/fixture rw\n'
+            '42 1 8:2 /@home /home rw,nosuid - btrfs /dev/fixture rw\n'
+        )
+        self.objects['/block'][FILESYSTEM]['MountPoints']=[b'/\0',b'/home\0']
+        volumes=self.observer()
+        self.assertEqual([(volume.root,volume.label) for volume in volumes],[('/', 'System Root (/)')])
     def test_duplicate_identity_and_bind_mount_rejected(self):
         self.objects['/clone']=deepcopy(self.objects['/block'])
         values=self.observer()

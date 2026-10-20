@@ -111,6 +111,19 @@ class LinuxVolumes:
             dev_bytes = bytes(block.get('Device', []))
             dev_path = dev_bytes[:-1].decode('utf-8', 'ignore') if dev_bytes and dev_bytes[-1] == 0 else ''
             matching=[m for m in mounts if m['device']==device or (dev_path and m.get('source')==dev_path)]
+            if len(matching)>1 and all(m.get('filesystem')=='btrfs' for m in matching):
+                # Btrfs exposes subvolumes such as / and /home as separate mounts
+                # on one filesystem. Register only its parent mount, never each
+                # internal subvolume as if it were another physical drive.
+                preferred=[m for m in matching if m['filesystem_root']=='/']
+                primary=sorted(preferred or matching,key=lambda m:(len(m['root']),m['root']))[0]
+                matching=[primary]
+                selected_roots=[]
+                for raw in roots:
+                    try:
+                        if mount_text(raw)==primary['root']:selected_roots.append(raw)
+                    except (ValueError,TypeError,UnicodeError):continue
+                roots=selected_roots
             for raw in roots:
                 try:root=mount_text(raw)
                 except (ValueError,TypeError,UnicodeError):continue
