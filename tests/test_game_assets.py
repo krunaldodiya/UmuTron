@@ -146,5 +146,25 @@ class ManagedGameAssetsTests(unittest.TestCase):
         self.assertFalse(Path(linked_game['installation']['root']).exists())
         self.assertFalse(Path(linked_game['installation']['manifest']).exists())
 
+    def test_restore_game_succeeds_when_prefix_and_manifest_already_exist(self):
+        linked_game = self._linked_game()
+        backup_parent = self.root / 'backups'
+        backup_parent.mkdir()
+        backup = backup_game(linked_game, backup_parent)
+        shutil.rmtree(Path(linked_game['installation']['root']))
+        self.assertFalse(Path(linked_game['installation']['root']).exists())
+        self.assertTrue(Path(linked_game['installation']['prefix']).is_dir())
+        self.assertTrue(Path(linked_game['installation']['manifest']).is_file())
+        restored = restore_game(self.game, archive=backup, drive_root=self.drive)
+        self.assertTrue(Path(restored['root']).is_dir())
+        self.assertTrue(Path(restored['executable']).is_file())
+
+    def test_unlink_game_keeps_actual_game_folder_on_disk(self):
+        linked_game = self._linked_game()
+        unlink_game(linked_game)
+        self.assertTrue(Path(linked_game['installation']['root']).is_dir())
+        self.assertTrue(Path(linked_game['executable']).is_file())
+        self.assertFalse(Path(linked_game['installation']['manifest']).exists())
+
 if __name__ == '__main__':
     unittest.main()

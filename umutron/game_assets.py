@@ -358,15 +358,15 @@ def _safe_members(tar: tarfile.TarFile, allowed: tuple[str, ...]) -> list[tarfil
     return members
 
 
-def restore_game(game: dict[str, Any], *, archive: str | Path, drive_root: str | Path, progress=None, cancelled=None) -> dict[str, Any]:
+def restore_game(game: dict[str, Any], *, archive: str | Path, drive_root: str | Path, progress=None, cancelled=None, replace: bool = False) -> dict[str, Any]:
     """Restore one game backup directory into common/ and compatdata/."""
     _check_cancelled(cancelled)
     manifest, folder = _backup_manifest(archive)
     if manifest["game_id"] != game["id"]:
         raise ValueError("This backup belongs to another game library entry.")
     base, destination, prefix, destination_manifest = _managed_paths(drive_root, game)
-    if destination.exists() or prefix.exists() or destination_manifest.exists():
-        raise ValueError("This game already has managed files on the selected drive.")
+    if destination.exists() and not replace:
+        raise ValueError("This game already has installed content on the selected drive.")
     backed_content = PurePosixPath(manifest["content_directory"])
     if len(backed_content.parts) != 2 or backed_content.parts[0] != "common" or not backed_content.parts[1]:
         raise ValueError("Backup content path is invalid.")
@@ -402,8 +402,10 @@ def restore_game(game: dict[str, Any], *, archive: str | Path, drive_root: str |
             raise ValueError("Backup did not restore the expected game content.")
         (base / "common").mkdir(exist_ok=True)
         (base / "compatdata").mkdir(exist_ok=True)
+        if destination.exists():
+            shutil.rmtree(destination)
         staged_content.rename(destination)
-        prefix.mkdir(mode=0o700)
+        prefix.mkdir(mode=0o700, exist_ok=True)
         restored_game={**game,"launch":{**game.get("launch",{}),"arguments":manifest.get("launch_options",[])}}
         restored = _manifest(restored_game, destination, prefix, Path(manifest["launcher_relative_path"]), _validate_proton(manifest["proton"]))
         _write_manifest(destination_manifest, restored)

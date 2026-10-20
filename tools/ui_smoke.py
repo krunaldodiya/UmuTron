@@ -92,12 +92,12 @@ with tempfile.TemporaryDirectory() as temp:
     proton=Path(temp)/'Proton';proton.mkdir();(proton/'proton').write_text('inert')
     w.proton_manager.installed=lambda:[str(proton)]
     w.show_game(uninstalled_game);settle()
-    assert w.detail_primary.get_label()=='Add Installed Game'
+    assert w.detail_primary.get_label()=='Link a game'
     w.detail_gear.emit('clicked');settings=next(window for window in Gtk.Window.get_toplevels() if isinstance(window,Gtk.Window) and window.get_title().startswith('Game Settings'))
     w.detail_gear.emit('clicked');settle()
     assert len([win for win in Gtk.Window.get_toplevels() if isinstance(win,Gtk.Window) and win.get_title().startswith('Game Settings')])==1
     uninstalled_actions={button.get_label() for button in buttons(settings)}
-    assert 'Restore game backup…' in uninstalled_actions and 'Back up game files…' not in uninstalled_actions
+    assert {'Link a game…','Restore game backup…'} <= uninstalled_actions and 'Back up game files…' not in uninstalled_actions
     click(settings,'Restore game backup…');settle()
     restore_dlg=next(window for window in Gtk.Window.get_toplevels() if isinstance(window,Gtk.Window) and window.get_title()=='Restore Game Backup')
     assert restore_dlg.get_transient_for() is settings
@@ -106,9 +106,9 @@ with tempfile.TemporaryDirectory() as temp:
     settings.close();pump_until(lambda:not settings.get_visible())
     w.open_add_installed_game()
     add_dialog=next(window for window in Gtk.Window.get_toplevels()
-                    if isinstance(window,Gtk.Window) and window.get_title()=='Add Installed Game')
+                    if isinstance(window,Gtk.Window) and window.get_title()=='Link a game')
     assert len([widget for widget in widgets(add_dialog) if isinstance(widget,Gtk.DropDown)])==1
-    assert {'Choose game folder…','Choose launcher executable…','Add game'} <= {button.get_label() for button in buttons(add_dialog)}
+    assert {'Choose game folder…','Choose launcher executable…','Link a game'} <= {button.get_label() for button in buttons(add_dialog)}
     screenshot('add-installed-game-dark.png',add_dialog)
     add_dialog.close();pump_until(lambda:not add_dialog.get_visible())
     w.storage_service=original_storage
@@ -116,7 +116,7 @@ with tempfile.TemporaryDirectory() as temp:
     w.show_game(managed_game);settle()
     w.detail_gear.emit('clicked');settings=next(window for window in Gtk.Window.get_toplevels() if isinstance(window,Gtk.Window) and window.get_title().startswith('Game Settings'))
     managed_actions={button.get_label() for button in buttons(settings)}
-    assert {'Back up game files…','Move install folder…','Remove installed game…','Uninstall game files…','Browse…'} <= managed_actions
+    assert {'Back up game files…','Move install folder…','Unlink…','Uninstall…','Browse…'} <= managed_actions
     assert 'Restore game backup…' not in managed_actions
     click(settings,'Back up game files…');settle()
     backup=next(window for window in Gtk.Window.get_toplevels() if isinstance(window,Gtk.Window) and window.get_title()=='Back Up Game')
@@ -187,7 +187,7 @@ with tempfile.TemporaryDirectory() as temp:
     w.tv_home_tab.grab_focus();navigate('right');settle();assert w.focused_control(w) is w.tv_library_tab
     navigate('right');settle();assert w.focused_control(w) is w.tv_games_tab
     w.show_game(uninstalled_game);settle()
-    assert w.detail_primary.get_label()=='Add Installed Game'
+    assert w.detail_primary.get_label()=='Link a game'
     assert not any(isinstance(i,(Gtk.Entry,Gtk.DropDown)) for i in widgets(w.body))
     w.exiting=True;w.catalog_cancel();w.catalog_pool.shutdown(wait=True,cancel_futures=True)
     w.pool.shutdown(wait=True);w.destroy()

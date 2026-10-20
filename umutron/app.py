@@ -846,9 +846,10 @@ class Window(CatalogUI, Adw.ApplicationWindow):
     def notify(self,text):
         self.log(text); self.toast.add_toast(Adw.Toast.new(text))
 
-    def error(self,error):
+    def error(self,error,parent=None):
         self.log('Error: '+str(error))
-        dialog=message_dialog(getattr(self,'installer_dialog',None) or self.editor or self,'Could not complete this action',str(error)[:2000])
+        owner=parent or getattr(self,'archive_dialog',None) or getattr(self,'game_settings_dialog',None) or getattr(self,'installer_dialog',None) or self.editor or self
+        dialog=message_dialog(owner,'Could not complete this action',str(error)[:2000])
         dialog.present()
 
     def toggle_log(self): self.log_revealer.set_reveal_child(not self.log_revealer.get_reveal_child())
@@ -1052,8 +1053,8 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         if existing and existing.get_visible():
             raise_window(existing)
             return
-        dialog=modal_window(owner,'Add Installed Game',width=700,height=580,
-                            subtitle='Select the installed game folder and main launcher.',
+        dialog=modal_window(owner,'Link a game',width=700,height=580,
+                            subtitle='Select an installed game folder and main launcher.',
                             attached=owner is not self,close_only=True)
         root=dialog_body(dialog);content=box(spacing=14);root.append(content);footer=dialog_footer();root.append(footer)
         content.append(label('Installed game folder','heading',xalign=0))
@@ -1067,7 +1068,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         content.append(label('Installed Proton compatibility layer','heading',xalign=0))
         proton_choice=Gtk.DropDown.new_from_strings([Path(path).name for path in protons]);proton_choice.set_selected(0);content.append(proton_choice)
         footer.append(button('Cancel',dialog.close))
-        submit=button('Add game',lambda:None,'suggested-action');footer.append(submit)
+        submit=button('Link a game',lambda:None,'suggested-action');footer.append(submit)
         def submit_add(*_):
             root_str=game_root.get_text().strip();launcher_str=launcher.get_text().strip()
             if not root_str or not launcher_str:
@@ -1095,7 +1096,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             dialog.close()
             if getattr(self,'game_settings_dialog',None):
                 self.game_settings_dialog.close()
-            self.notify(f"Added {saved['title']} to your library.")
+            self.notify(f"Linked {saved['title']} to your library.")
         submit.connect('clicked',submit_add)
         dialog.present()
     def backup_current_game(self, parent=None):
@@ -1272,17 +1273,17 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             move_card.append(label("Move this game's content to another folder or drive.",'dim-label',xalign=0,wrap=True))
             move_btn=button('Move install folder…',lambda:self.move_install_folder(parent=dialog))
             move_card.append(move_btn);files.append(move_card)
-            remove_card=box(spacing=4)
-            remove_card.append(label('Unlink this game’s installation folder without deleting any files on disk. The game stays in your library.','dim-label',xalign=0,wrap=True))
-            remove_btn=button('Remove installed game…',self.remove_installed_game)
-            remove_card.append(remove_btn);files.append(remove_card)
-            uninstall_card=box(spacing=4)
-            uninstall_card.append(label('Permanently delete this game’s installation folder from disk.','dim-label',xalign=0,wrap=True))
-            uninstall_btn=button('Uninstall game files…',self.review_uninstall,'destructive-action')
-            uninstall_card.append(uninstall_btn);files.append(uninstall_card)
+            manage_card=box(spacing=6)
+            manage_card.append(label('Unlink to remove the folder connection while keeping all files, or uninstall to permanently delete the game folder.','dim-label',xalign=0,wrap=True))
+            btn_row=box(False,10)
+            unlink_btn=button('Unlink…',self.remove_installed_game,'warning-action')
+            btn_row.append(unlink_btn)
+            uninstall_btn=button('Uninstall…',self.review_uninstall,'destructive-action')
+            btn_row.append(uninstall_btn)
+            manage_card.append(btn_row);files.append(manage_card)
         else:
             files.append(label('This game is not currently installed.','dim-label',xalign=0,wrap=True))
-            files.append(button('Add Installed Game…',self.open_add_installed_game))
+            files.append(button('Link a game…',self.open_add_installed_game))
             files.append(button('Restore game backup…',lambda:self.restore_current_game_backup(parent=dialog)))
         stack.add_titled(files,'files','Installed Files');dialog.present()
 
@@ -1302,9 +1303,9 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             if getattr(self,'game_settings_dialog',None):
                 self.game_settings_dialog.close()
             self.notify(f"Unlinked installed files for {game['title']}. Game was kept in your library.")
-        self.confirm('Remove installed game?',
+        self.confirm('Unlink?',
                      f'Unlink "{game["title"]}" from its installed folder?\n\nNo files will be deleted from disk. The game remains in your library so you can link or restore it again later.',
-                     'Remove installed game',unlink,destructive=True)
+                     'Unlink',unlink,destructive=True)
     def move_install_folder(self, parent=None):
         if not self.game:return
         if getattr(self,'archive_future',None) and not self.archive_future.done():
@@ -1404,12 +1405,25 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             request_cancel();return True
         dialog.connect('close-request',close_request)
         cancel.connect('clicked',lambda _:request_cancel())
-        def begin(*_):
+        def begin(*_,replace=False):
             folder_text=location.get_text().strip()
-            if not folder_text:self.error(ValueError('Choose a game backup folder.'));return
+            if not folder_text:self.error(ValueError('Choose a game backup folder.'),parent=dialog);return
             archive_folder=Path(folder_text).expanduser().resolve()
-            if not archive_folder.is_dir():self.error(ValueError('The selected backup folder does not exist.'));return
+            if not archive_folder.is_dir():self.error(ValueError('The selected backup folder does not exist.'),parent=dialog);return
             drive=drives[choice.get_selected()]
+            from .game_assets import _managed_paths
+            _base, destination, _prefix, _manifest_path = _managed_paths(drive['root'], self.game)
+            if destination.exists() and not replace:
+                def confirm_replace():
+                    begin(replace=True)
+                def cancel_replace():
+                    restore_btn.set_sensitive(True);browse.set_sensitive(True)
+                    progress.set_visible(False);stats.set_visible(False)
+                    status.set_text('Restore cancelled. Existing files were kept.')
+                self.confirm('Overwrite installed files?',
+                             f'"{self.game["title"]}" already has files on this drive.\n\nDo you want to overwrite and replace existing files with this backup?',
+                             'Overwrite files',confirm_replace,True,parent=dialog,cancel=cancel_replace)
+                return
             restore_btn.set_sensitive(False);browse.set_sensitive(False)
             status.set_text('Restoring backup… You can keep using UmuTron.')
             from .game_assets import restore_game
@@ -1451,6 +1465,8 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                 cancel.set_visible(False)
                 close_btn.set_visible(True)
                 self._save_managed_game(linked)
+                if getattr(self,'game_settings_dialog',None):
+                    self.game_settings_dialog.close()
                 self.notify(f"Restored {self.game['title']} successfully.")
             def failed(error):
                 restore_btn.set_sensitive(True);browse.set_sensitive(True);cancel.set_sensitive(True)
@@ -1458,7 +1474,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                 stats.set_text(str(error));status.set_text('Restore did not complete.')
             draft=deepcopy(self.game)
             self.archive_job(dialog,'Restoring game backup…',
-                             lambda cancelled:restore_game(draft,archive=archive_folder,drive_root=drive['root'],progress=reported,cancelled=cancelled.is_set),
+                             lambda cancelled:restore_game(draft,archive=archive_folder,drive_root=drive['root'],progress=reported,cancelled=cancelled.is_set,replace=replace),
                              completed,on_error=failed)
         restore_btn.connect('clicked',begin)
         dialog.present()
@@ -2043,11 +2059,11 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             else:control.remove_css_class('destructive-action')
             detail=getattr(self,'route',None)=='detail' and self.game and self.game['id']==game_id
             setup_needed=detail and not configured and not own
-            control.set_label('Preparing…' if preparing else 'Stopping…' if stopping else ('Stop installer' if installer else 'Stop' if own else 'Play' if configured else 'Add Installed Game'))
+            control.set_label('Preparing…' if preparing else 'Stopping…' if stopping else ('Stop installer' if installer else 'Stop' if own else 'Play' if configured else 'Link a game'))
             control.set_sensitive(not self.demo and not stopping and not preparing and (not active or own) and (not self.tv_mode or configured or own or setup_needed))
-            control.set_tooltip_text(('Active: '+current.get('title','game')+'. Finish it before starting another.') if active and not own else 'Stop this game' if own else 'Play through UMU' if configured else 'Add a pre-installed game to a selected library drive.')
+            control.set_tooltip_text(('Active: '+current.get('title','game')+'. Finish it before starting another.') if active and not own else 'Stop this game' if own else 'Play through UMU' if configured else 'Link an installed game folder to this library entry.')
             if setup_needed and not active:
-                self.detail_status.set_text('Add a pre-installed game to a selected library drive.')
+                self.detail_status.set_text('Link an installed game folder to this library entry.')
         if getattr(self,'route',None)=='detail' and self.game and hasattr(self,'detail_primary') and not configured_game(self.game):
             adding=getattr(self,'detail_adding',False)
             self.detail_primary.set_sensitive(not adding and not self.demo and not active)

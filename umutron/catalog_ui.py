@@ -641,7 +641,7 @@ class CatalogUI:
             primary=button('Play',self.detail_action);primary.add_css_class('suggested-action')
             self.play_buttons={game['id']:primary}
         else:
-            primary=button('Add Installed Game',self.open_add_installed_game);primary.add_css_class('suggested-action')
+            primary=button('Link a game',self.open_add_installed_game);primary.add_css_class('suggested-action')
         primary.add_css_class('detail-primary');primary.set_valign(Gtk.Align.CENTER);self.detail_primary=primary
         actions.append(primary)
         if saved:

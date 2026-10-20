@@ -39,9 +39,9 @@ with tempfile.TemporaryDirectory(prefix='umutron-detail-actions-') as temp:
     for fullscreen in (False,True):
         w.set_tv_mode(fullscreen);w.unfullscreen();settle(300)
         w.show_shared_detail(item_game(provider.detail(1),preview=True),provider.detail(1));settle()
-        assert not w.saved_detail() and w.detail_primary.get_label()=='Add Installed Game'
+        assert not w.saved_detail() and w.detail_primary.get_label()=='Link a game'
         w.show_game(uninstalled);settle();w.demo=False;w.refresh_launch_state()
-        assert w.detail_primary.get_label()=='Add Installed Game' and w.detail_primary.get_sensitive()
+        assert w.detail_primary.get_label()=='Link a game' and w.detail_primary.get_sensitive()
         assert menu_labels(w)==['Remove from library','Add Installed Game…','Restore game backup…','Game Info','Search links']
         if fullscreen:
             w.set_visible(False);w.unrealize();w.set_default_size(1920,1080);w.set_size_request(1920,1080);w.present();settle(700)
@@ -56,7 +56,7 @@ with tempfile.TemporaryDirectory(prefix='umutron-detail-actions-') as temp:
         assert 'Remove from library' in menu_labels(w) and 'Uninstall…' in menu_labels(w)
         incomplete=deepcopy(installed);incomplete['installation']={'mode':'installer','confirmed':False}
         library.save(incomplete);w.show_game(incomplete);settle()
-        assert w.detail_primary.get_label()=='Add Installed Game' and 'Uninstall…' not in menu_labels(w)
+        assert w.detail_primary.get_label()=='Link a game' and 'Uninstall…' not in menu_labels(w)
         library.save(installed)
     class Launch:
         record={'game_id':installed['id'],'state':'Running','operation':'play','title':'Fixture'}

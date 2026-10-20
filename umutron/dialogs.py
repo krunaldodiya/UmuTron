@@ -31,6 +31,10 @@ CSS = b'''
 .umu-surface button.destructive-action { background-color: #b83043; color: white; }
 .umu-surface.umu-dark button.destructive-action { background-color: #a93249; color: white; }
 .umu-surface button.destructive-action:hover { background-color: #cc3d50; }
+.umu-surface button.warning-action { background-color: #d99b26; color: #1a1408; font-weight: 600; }
+.umu-surface.umu-dark button.warning-action { background-color: #e5a93b; color: #1c1508; font-weight: 600; }
+.umu-surface button.warning-action:hover { background-color: #c48b20; }
+.umu-surface.umu-dark button.warning-action:hover { background-color: #f0b74d; }
 .umu-surface button:disabled { opacity: .45; }
 .umu-surface button.flat, .umu-surface headerbar button { background-color: transparent; }
 .umu-surface button.flat:hover, .umu-surface headerbar button:hover { background-color: alpha(#648596,.15); }
