@@ -872,7 +872,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             return False
         future.add_done_callback(lambda _:GLib.idle_add(finish))
 
-    def archive_job(self, dialog, message, work, done):
+    def archive_job(self, dialog, message, work, done, on_error=None):
         if getattr(self,'archive_future',None) and not self.archive_future.done():
             self.archive_dialog.present();self.error(ValueError('A backup or restore is already running.'));return
         cancelled=Event();future=self.pool.submit(work,cancelled)
@@ -883,18 +883,26 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             except Exception as error:
                 from .game_assets import BackupCancelled
                 if isinstance(error,BackupCancelled):was_cancelled=True
-                else:self.error(error)
+                else:
+                    self.error(error)
+                    if on_error:
+                        try:on_error(error)
+                        except Exception:pass
             finally:
                 if self.archive_future is future:self.archive_future=None;self.archive_cancel=None
             if was_cancelled:dialog.close()
             return False
         future.add_done_callback(lambda _:GLib.idle_add(finish))
 
-    def confirm(self,title,body,action,callback,destructive=False):
-        dialog=message_dialog(getattr(self,'installer_dialog',None) or self.editor or self,title,body,
+    def confirm(self,title,body,action,callback,destructive=False,parent=None,cancel=None):
+        owner=parent or getattr(self,'archive_dialog',None) or getattr(self,'game_settings_dialog',None) or getattr(self,'installer_dialog',None) or self.editor or self
+        dialog=message_dialog(owner,title,body,
             responses=(('cancel','Cancel'),('confirm',action)),default='cancel',close='cancel',
             destructive='confirm' if destructive else None,suggested=None if destructive else 'confirm')
-        dialog.connect('response',lambda _,response:callback() if response=='confirm' else None)
+        def on_response(_,response):
+            if response=='confirm':callback()
+            elif cancel:cancel()
+        dialog.connect('response',on_response)
         dialog.present()
 
     def choose_file(self,title,callback,save=False,folder=False,filename=None,start_folder=None,parent=None,launcher=False):
@@ -1107,7 +1115,9 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             cancelling['value']=True
             def confirmed():
                 self.archive_cancel.set();status.set_text('Cancelling backup…');cancel.set_sensitive(False)
-            self.confirm('Cancel backup?','The incomplete backup will be discarded.','Cancel backup',confirmed,True)
+            def dismiss():
+                cancelling['value']=False
+            self.confirm('Cancel backup?','The incomplete backup will be discarded.','Cancel backup',confirmed,True,parent=dialog,cancel=dismiss)
         def close_request(*_):
             if not (getattr(self,'archive_future',None) and not self.archive_future.done()):return False
             request_cancel()
@@ -1115,11 +1125,21 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         dialog.connect('close-request',close_request)
         def begin(*_,replace=False):
             if not location.get_text():self.error(ValueError('Choose a backup location.'));return
-            target=Path(location.get_text())/self.game['title']
+            from .game_assets import _safe_folder, backup_game
+            package_name=_safe_folder(self.game['title'])
+            target=Path(location.get_text())/package_name
             if target.exists() and not replace:
-                self.confirm('Replace existing backup?',str(target)+' already exists. Its backup files will be replaced after the new backup is ready.','Replace backup',lambda:begin(replace=True),True);return
+                def confirm_overwrite():
+                    begin(replace=True)
+                def cancel_overwrite():
+                    start.set_sensitive(True);browse.set_sensitive(True)
+                    progress.set_visible(False);stats.set_visible(False)
+                    status.set_text('Backup cancelled. Existing files were kept.')
+                self.confirm('Overwrite existing backup?',
+                             f'"{target.name}" already exists in the selected destination.\nDo you want to overwrite and replace it?',
+                             'Overwrite backup',confirm_overwrite,True,parent=dialog,cancel=cancel_overwrite)
+                return
             start.set_sensitive(False);browse.set_sensitive(False);status.set_text('Creating backup… You can keep using UmuTron.')
-            from .game_assets import backup_game
             progress.set_visible(True);stats.set_visible(True);progress.set_fraction(0.0)
             progress.set_text('Preparing backup…');stats.set_text('Starting transfer…')
             import time
@@ -1158,7 +1178,11 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                 start.set_visible(False)
                 cancel.set_visible(False)
                 close_btn.set_visible(True)
-            self.archive_job(dialog,'Creating game backup…',lambda cancelled:backup_game(deepcopy(self.game),location.get_text(),replace=replace,progress=reported,cancelled=cancelled.is_set),completed)
+            def failed(error):
+                start.set_sensitive(True);browse.set_sensitive(True);cancel.set_sensitive(True)
+                progress.set_visible(False);stats.set_visible(True)
+                stats.set_text(str(error));status.set_text('Backup did not complete.')
+            self.archive_job(dialog,'Creating game backup…',lambda cancelled:backup_game(deepcopy(self.game),location.get_text(),replace=replace,progress=reported,cancelled=cancelled.is_set),completed,on_error=failed)
         cancel.connect('clicked',lambda _:request_cancel())
         start.connect('clicked',begin);dialog.present()
 
