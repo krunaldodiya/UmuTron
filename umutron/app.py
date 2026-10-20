@@ -1273,12 +1273,25 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             move_card.append(label("Move this game's content to another folder or drive.",'dim-label',xalign=0,wrap=True))
             move_btn=button('Move install folder…',lambda:self.move_install_folder(parent=dialog))
             move_card.append(move_btn);files.append(move_card)
+            is_internal=self.game.get('installation',{}).get('mode')=='linked'
+            if not is_internal and root_path:
+                for d in self._managed_drives():
+                    managed_common=(Path(d['root'])/'UmuLibrary'/'umuapps'/'common').resolve()
+                    if resolved_root==managed_common or resolved_root.is_relative_to(managed_common):
+                        is_internal=True;break
+            is_external=not is_internal
             manage_card=box(spacing=6)
-            manage_card.append(label('Unlink to remove the folder connection while keeping all files, or uninstall to permanently delete the game folder.','dim-label',xalign=0,wrap=True))
-            btn_row=box(False,10)
-            unlink_btn=button('Unlink…',self.remove_installed_game,'warning-action')
+            desc_text=('Unlink removes the folder connection while keeping all files on disk. Uninstall permanently deletes the game folder.' if is_external
+                       else 'Uninstall permanently deletes this game folder from your managed library.')
+            manage_card.append(label(desc_text,'dim-label',xalign=0,wrap=True))
+            btn_row=box(False,12);btn_row.set_homogeneous(True);btn_row.set_hexpand(True)
+            unlink_btn=button('Unlink',self.remove_installed_game,'warning-action')
+            unlink_btn.set_hexpand(True);unlink_btn.set_sensitive(is_external)
+            if not is_external:
+                unlink_btn.set_tooltip_text('Unlink is only available for externally installed games. Use Uninstall for managed library games.')
             btn_row.append(unlink_btn)
-            uninstall_btn=button('Uninstall…',self.review_uninstall,'destructive-action')
+            uninstall_btn=button('Uninstall',self.review_uninstall,'destructive-action')
+            uninstall_btn.set_hexpand(True)
             btn_row.append(uninstall_btn)
             manage_card.append(btn_row);files.append(manage_card)
         else:
