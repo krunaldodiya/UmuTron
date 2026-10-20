@@ -93,6 +93,9 @@ with tempfile.TemporaryDirectory() as temp:
     w.proton_manager.installed=lambda:[str(proton)]
     w.show_game(uninstalled_game);settle()
     assert w.detail_primary.get_label()=='Add Installed Game'
+    uninstalled_actions={button.get_label() for button in buttons(w.detail_gear.get_popover().get_child())}
+    assert 'Restore game backup…' in uninstalled_actions and 'Back up game…' not in uninstalled_actions
+    assert 'Relink Installed Game…' not in uninstalled_actions
     w.open_add_installed_game()
     add_dialog=next(window for window in Gtk.Window.get_toplevels()
                     if isinstance(window,Gtk.Window) and window.get_title()=='Add Installed Game')
@@ -101,6 +104,11 @@ with tempfile.TemporaryDirectory() as temp:
     screenshot('add-installed-game-dark.png',add_dialog)
     add_dialog.close();pump_until(lambda:not add_dialog.get_visible())
     w.storage_service=original_storage
+    managed_game=deepcopy(game);managed_game['installation']={'mode':'linked'}
+    w.show_game(managed_game);settle()
+    managed_actions={button.get_label() for button in buttons(w.detail_gear.get_popover().get_child())}
+    assert 'Back up game…' in managed_actions and 'Restore game backup…' not in managed_actions
+    assert 'Relink Installed Game…' not in managed_actions
     # Active operation controls and navigation use an inert injected service.
     class FakeLaunch:
         def __init__(self):self.record={}

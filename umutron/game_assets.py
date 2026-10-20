@@ -94,8 +94,8 @@ def link_game(
     source, _launcher, executable_relative = _validate_source(source_root, launcher)
     proton_path = _validate_proton(proton)
     base, destination, prefix, manifest_path = _managed_paths(drive_root, game)
-    if destination.exists() or prefix.exists() or manifest_path.exists():
-        raise ValueError("This game already has managed files on the selected drive.")
+    if destination.exists() or manifest_path.exists() or (prefix.exists() and not prefix.is_dir()):
+        raise ValueError("This game already has managed content on the selected drive.")
     if destination == source or destination.is_relative_to(source) or source.is_relative_to(destination):
         raise ValueError("The managed library must be separate from the selected game root.")
     base.mkdir(parents=True, exist_ok=True)
@@ -110,7 +110,7 @@ def link_game(
         else:
             shutil.copytree(source, staging, symlinks=True)
         staging.rename(destination)
-        prefix.mkdir(mode=0o700)
+        prefix.mkdir(mode=0o700, exist_ok=True)
         manifest = _manifest(game, destination, prefix, executable_relative, proton_path)
         _write_manifest(manifest_path, manifest)
     except BaseException:
@@ -126,6 +126,16 @@ def link_game(
         "manifest": str(manifest_path),
         "mode": "move" if move else "copy",
     }
+
+def unlink_game(game: dict[str, Any]) -> None:
+    """Remove the managed manifest after its content is uninstalled; keep compatdata."""
+    installation = game.get("installation", {})
+    root = Path(installation.get("root", "")).expanduser().resolve()
+    manifest = Path(installation.get("manifest", "")).expanduser().resolve(strict=True)
+    base = manifest.parent
+    if root.parent != base / "common" or manifest.name != f"{_MANIFEST_PREFIX}{manifest_key(game)}.json":
+        raise ValueError("Only a matching managed game manifest can be removed.")
+    manifest.unlink()
 
 
 def _linked_paths(game: dict[str, Any]) -> tuple[Path, Path, Path]:

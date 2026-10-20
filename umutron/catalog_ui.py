@@ -653,12 +653,12 @@ class CatalogUI:
         self.detail_gear=Gtk.MenuButton(icon_name='emblem-system-symbolic');self.detail_gear.add_css_class('circular');self.detail_gear.set_tooltip_text('Game options');self.detail_gear.set_valign(Gtk.Align.CENTER);actions.append(self.detail_gear)
         popover=style_surface(Gtk.Popover());menu=box(spacing=6);margins(menu,8);popover.set_child(menu);self.detail_gear.set_popover(popover)
         def menu_action(callback):self.detail_gear.popdown();callback()
+        managed=game.get('installation',{}).get('mode')=='linked'
         if installed:menu.append(button('Uninstall…',lambda:menu_action(self.review_uninstall)))
-        menu.append(button('Relink Installed Game…' if installed else 'Add Installed Game…',
-                           lambda:menu_action(self.open_add_installed_game)))
-        if game.get('installation',{}).get('mode')=='linked':
+        if managed:
             menu.append(button('Back up game…',lambda:menu_action(self.backup_current_game)))
-        if saved:
+        elif saved:
+            if not installed:menu.append(button('Add Installed Game…',lambda:menu_action(self.open_add_installed_game)))
             menu.append(button('Restore game backup…',lambda:menu_action(self.restore_current_game_backup)))
         menu.append(button('Game Info',lambda:menu_action(lambda:self.show_game_info(self.game))))
         menu.append(button('Search links',lambda:menu_action(self.open_detail_links)))
@@ -948,29 +948,29 @@ class CatalogUI:
         from .game_uninstall import detect_game_root, folder_summary, remove_game_directory
         detected_root=detect_game_root(game,self.library)
         if not detected_root or not Path(detected_root).is_dir():
-            body=('Could not safely isolate a dedicated installation folder for this game.\n\n'
-                  'To protect against unintended data loss, automatic folder deletion is disabled. '
-                  'You can remove this game card from your library using "Remove from library".')
-            self.confirm('Uninstall '+game['title']+'?',body,'Remove from library',self.remove_detail)
+            self.notify('Could not safely isolate this game’s managed content folder. Its library entry is unchanged.')
             return
         file_count,total_size,size_str=folder_summary(detected_root)
         body=(f'Game folder to remove:\n{detected_root}\n\n'
               f'({size_str} · {file_count} files)\n\n'
-              'This will permanently delete this game installation folder and remove its library record. '
+              'This permanently deletes this game installation folder. Its library entry remains, so you can add an installed copy again later. '
               'Game saves and Wine prefixes are kept separate.')
         def do_uninstall():
             if self.demo:self.error(ValueError('File deletion is disabled in the visual demo.'));return
             if self.launcher.active():self.error(RuntimeError('Finish the active game or installer first.'));return
             if not self.game or self.game['id']!=game['id']:return
             def run_delete():
+                from .game_assets import unlink_game
                 remove_game_directory(detected_root)
-                self.library.delete(game['id'])
-                self.library.data.setdefault('downloaded_installers', {}).pop(game['id'], None)
-                try: self.library._write()
-                except Exception: pass
-            def complete(_):
-                self.return_from_detail()
-                self.notify(f'{game["title"]} uninstalled and files removed.')
+                unlink_game(game)
+                uninstalled=deepcopy(game)
+                uninstalled.update(executable='',working_dir='',installation={})
+                uninstalled['launch']={**uninstalled.get('launch',{}),'prefix':'','proton':''}
+                self.library.save(uninstalled)
+                return uninstalled
+            def complete(uninstalled):
+                self.show_game(uninstalled)
+                self.notify(f'{game["title"]} files were uninstalled. Its library entry was kept.')
             self.async_job('Uninstalling game files…',run_delete,complete)
         self.confirm('Uninstall '+game['title']+'?',body,'Delete game folder',do_uninstall,destructive=True)
 

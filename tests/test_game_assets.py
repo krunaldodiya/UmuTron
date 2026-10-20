@@ -1,9 +1,10 @@
 import tarfile
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
-from umutron.game_assets import backup_game, link_game, restore_game
+from umutron.game_assets import backup_game, link_game, restore_game, unlink_game
 from umutron.library import Library
 
 
@@ -52,6 +53,19 @@ class ManagedGameAssetsTests(unittest.TestCase):
                            launcher=self.launcher, proton=self.proton, move=True)
         self.assertFalse(self.source.exists())
         self.assertTrue(Path(linked['executable']).is_file())
+
+    def test_unlink_keeps_prefix_and_allows_a_fresh_add(self):
+        linked_game = self._linked_game()
+        linked_root = Path(linked_game['installation']['root'])
+        linked_prefix = Path(linked_game['installation']['prefix'])
+        linked_manifest = Path(linked_game['installation']['manifest'])
+        shutil.rmtree(linked_root)
+        unlink_game(linked_game)
+        self.assertTrue(linked_prefix.is_dir())
+        self.assertFalse(linked_manifest.exists())
+        fresh = link_game(self.game, drive_root=self.drive, source_root=self.source,
+                          launcher=self.launcher, proton=self.proton, move=False)
+        self.assertTrue(Path(fresh['executable']).is_file())
 
     def test_backup_has_manifest_and_content_archive_then_restores(self):
         linked_game = self._linked_game()
