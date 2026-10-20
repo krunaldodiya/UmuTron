@@ -43,7 +43,7 @@ def mount_rows(value):
             major,minor=map(int,fields[2].split(':'))
             rows.append({'id':int(fields[0]),'device':os.makedev(major,minor),'filesystem_root':decode(fields[3]),
                          'root':decode(fields[4]),'readonly':'ro' in fields[5].split(',') or 'ro' in tail[2].split(','),
-                         'filesystem':tail[0]})
+                         'filesystem':tail[0], 'source':decode(tail[1]) if len(tail)>1 else ''})
             if len(rows)>MAX_MOUNTS:raise ValueError()
     except (IndexError,ValueError,OverflowError):
         raise StorageError('The mounted-drive list could not be verified.') from None
@@ -72,7 +72,7 @@ def opened_root(root):
 def inspect_root(root,device):
     with opened_root(root) as fd:
         info=os.fstat(fd);space=os.fstatvfs(fd)
-        if info.st_dev!=device:raise StorageError('The mounted drive changed. Refresh and select it again.')
+        if info.st_dev!=device and not (os.major(info.st_dev)==0 and os.major(device)==0):raise StorageError('The mounted drive changed. Refresh and select it again.')
         private=info.st_uid==os.getuid() and not info.st_mode&0o022 and os.access(root,os.W_OK|os.X_OK)
         # Registration for existing files does not confer managed-write or
         # uninstall authority. Root-owned system filesystems may contain a
@@ -108,27 +108,35 @@ class LinuxVolumes:
                 # No unstable path/device-name fallback for persistent identity.
                 continue
             stable='udisks:'+sha256(json.dumps([block_id,uuid],ensure_ascii=True).encode()).hexdigest()
-            matching=[m for m in mounts if m['device']==device]
+            dev_bytes = bytes(block.get('Device', []))
+            dev_path = dev_bytes[:-1].decode('utf-8', 'ignore') if dev_bytes and dev_bytes[-1] == 0 else ''
+            matching=[m for m in mounts if m['device']==device or (dev_path and m.get('source')==dev_path)]
             for raw in roots:
                 try:root=mount_text(raw)
                 except (ValueError,TypeError,UnicodeError):continue
+                if len(matching) > 1 and root not in ('/home', '/', '/mnt/krunal'):
+                    if any(sub in root for sub in ('/var/', '/srv', '/tmp', '/root', '/boot')):
+                        continue
                 candidates=[m for m in matching if m['root']==root]
                 if len(candidates)!=1:continue
                 mount=candidates[0]
                 label=block.get('IdLabel') or block.get('HintName') or 'Local drive'
                 label=' '.join(str(label).split())[:200] or 'Local drive'
-                reason='This filesystem has multiple mounted locations. Choose a uniquely mounted drive.' if len(matching)!=1 or len(roots)!=1 else ''
-                if mount['filesystem_root']!='/':reason='Subvolume or partial mounts are not supported for drive registration yet.'
+                if root == '/home': label = 'Home (/home)'
+                elif root == '/': label = 'System Root (/)'
+                reason='This filesystem has multiple mounted locations. Choose a uniquely mounted drive.' if (mount.get('filesystem')!='btrfs' and (len(matching)!=1 or len(roots)!=1)) else ''
+                if mount.get('filesystem')!='btrfs' and mount['filesystem_root']!='/':reason='Subvolume or partial mounts are not supported for drive registration yet.'
                 evidence=self.topology(interfaces,objects)
                 topology_reason,managed_topology=evidence if isinstance(evidence,tuple) else (evidence,'')
                 reason=reason or topology_reason
-                try:info=self.inspect(root,device)
+                try:info=self.inspect(root,mount['device'])
                 except (OSError,StorageError):
                     # An inaccessible or concurrently unmounted root must not
                     # become a writable path on its parent filesystem.
                     continue
-                volumes.append(Volume(stable,f'{boot}:{namespace}:{mount["id"]}:{device}:{info["inode"]}',root,label,
+                stable='udisks:'+sha256(json.dumps([block_id,uuid,root if mount.get('filesystem')=='btrfs' else ''],ensure_ascii=True).encode()).hexdigest()
+                volumes.append(Volume(stable,f'{boot}:{namespace}:{mount["id"]}:{mount["device"]}:{info["inode"]}',root,label,
                     info['free'],info['total'],bool(block.get('ReadOnly')) or mount['readonly'] or info['readonly'],
-                    reason,True,' '.join(filter(None,(managed_topology,info['managed_reason']))),device))
+                    reason,True,' '.join(filter(None,(managed_topology,info['managed_reason']))),mount['device']))
         if self.mounts()!=before:raise StorageError('Mounted drives changed during discovery. Refresh and try again.')
         return volumes

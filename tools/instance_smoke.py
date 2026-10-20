@@ -4,6 +4,13 @@ from pathlib import Path
 import subprocess
 import tempfile
 import time
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from headless import ensure_headless
+    ensure_headless()
+except ImportError:
+    pass
 
 with tempfile.TemporaryDirectory() as temp:
     env=dict(os.environ,XDG_DATA_HOME=temp+'/data',XDG_CONFIG_HOME=temp+'/config',XDG_CACHE_HOME=temp+'/cache',GSK_RENDERER='cairo')

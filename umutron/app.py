@@ -22,6 +22,7 @@ from .storage_access import DemoStorage, configured_storage
 from .storage_ui import StoragePage
 from .dialogs import CSS as DIALOG_CSS, message_dialog, modal_window, dialog_body, dialog_footer, style_surface
 from .fullscreen import CSS as FULLSCREEN_CSS, cover as console_cover, set_art, CoverLayout, CoverPicture
+from .server_manager import ServerManager
 from . import APP_ID, APP_NAME, ICON_NAME, __version__
 
 
@@ -57,7 +58,7 @@ def clear(container):
 
 
 class Window(CatalogUI, Adw.ApplicationWindow):
-    def __init__(self, app, library, demo=False, catalog_provider=None, storage_service=None):
+    def __init__(self, app, library, demo=False, catalog_provider=None, storage_service=None, server_manager=None):
         super().__init__(application=app,title=APP_NAME,default_width=1120,default_height=800)
         self.add_css_class('desktop-mode')
         Adw.StyleManager.get_default().connect_object('notify::dark',Window.sync_desktop_palette,self)
@@ -66,6 +67,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         css.load_from_data(DIALOG_CSS + FULLSCREEN_CSS + CATALOG_CSS + b'.control-focused, button:focus { outline: 3px solid #82bcff; outline-offset: 2px; } .art-frame { background: alpha(@window_fg_color, 0.055); border-radius: 12px; padding: 8px; } .game-card { padding: 10px; } .game-card:hover { background: alpha(@accent_color, 0.09); }')
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(),css,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self.demo=demo;self.tv_mode=False;self.tv_selected_id=None;self.tv_tiles=[];self.tv_section='library'
+        self.server=server_manager if server_manager is not None else ServerManager()
         self.library=library; self.launcher=Launcher(library.root); self.proton_manager=ProtonManager(library.root/'proton-manager',umu_root=library.root/'demo-umu-runners' if demo else None); self.launch_fields={}; self.play_buttons={}; self.installations=Installations(library,self.launcher);self.editor=None;self.editor_kind=None;self.exiting=False
         self.storage_service=storage_service if storage_service is not None else DemoStorage() if demo else configured_storage(library.root)
         self.settings_dialog=None
@@ -101,6 +103,12 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         self.desktop_toggle_btn = button('', lambda: self.set_tv_mode(True), icon='view-fullscreen-symbolic')
         self.desktop_toggle_btn.set_tooltip_text('Switch to fullscreen mode (F11)')
         self.header.pack_end(self.desktop_toggle_btn)
+        self.sources_links_btn = button('', lambda: self.open_sources_links_dialog('sources'), icon='folder-download-symbolic')
+        self.sources_links_btn.set_tooltip_text('Download Sources & Links')
+        self.header.pack_end(self.sources_links_btn)
+        self.add_installer_btn = button('', self.pick_and_run_global_installer, icon='list-add-symbolic')
+        self.add_installer_btn.set_tooltip_text('Install game (.exe) using shared prefix')
+        self.header.pack_end(self.add_installer_btn)
         self.tv_controls=box(False,16);self.tv_controls.add_css_class('tv-controls');margins(self.tv_controls,0);self.tv_controls.set_visible(False)
         brand=box(False,10);brand.set_valign(Gtk.Align.CENTER);brand.add_css_class('tv-brand')
         brand_icon=Gtk.Image.new_from_icon_name(ICON_NAME);brand_icon.set_pixel_size(34);brand.append(brand_icon);brand.append(label(APP_NAME));self.tv_controls.append(brand)
@@ -1309,16 +1317,85 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             except Exception as error:self.error(error)
         self.confirm('Clear all diagnostic logs?','Deletes diagnostic log files only. Game files, saves, prefixes and artwork are kept.','Clear all',clear_logs,True)
 
+    def open_sources_links_dialog(self, section='sources', search_query=None):
+        if self.tv_mode and section != 'links':
+            self.notify('Switch to desktop mode to manage sources.')
+            return
+        if getattr(self, 'sources_links_dialog', None) and self.sources_links_dialog.get_visible():
+            self.sources_links_dialog.open_tab(section, search_query)
+            self.sources_links_dialog.present()
+            return self.sources_links_dialog
+        from .sources_modal import SourcesLinksDialog
+        dialog = SourcesLinksDialog(self.library, self)
+        self.sources_links_dialog = dialog
+        def clear_dialog(owner):
+            if getattr(self, 'sources_links_dialog', None) is owner:
+                self.sources_links_dialog = None
+            return False
+        dialog.connect('close-request', clear_dialog)
+        dialog.connect('unrealize', clear_dialog)
+        dialog.open_tab(section, search_query)
+        dialog.present()
+        return dialog
+
+    def pick_and_run_global_installer(self):
+        if self.demo:
+            self.notify('Installer execution is disabled in the demo.')
+            return
+        if self.busy or self.launcher.active():
+            self.notify('Another game or installer is currently running. Finish it first.')
+            return
+        def selected(path):
+            if not path or not Path(path).is_file():
+                return
+            p = Path(path).resolve()
+            if p.suffix.lower() not in ('.exe', '.msi', '.bat', '.cmd') and not os.access(p, os.X_OK):
+                self.notify('Choose an executable installer (.exe).')
+                return
+            shared_prefix = Path(self.library.root) / 'prefixes' / 'global-installer'
+            shared_prefix.mkdir(parents=True, exist_ok=True)
+            from .launcher import MARKER
+            (shared_prefix / MARKER).touch(exist_ok=True)
+            game = {
+                'id': 'global-installer',
+                'title': p.stem or 'Game Installer',
+                'executable': str(p),
+                'working_dir': str(p.parent),
+                'launch': {
+                    'runner': '',
+                    'proton': '',
+                    'prefix': str(shared_prefix),
+                    'arguments': [],
+                    'dll_overrides': '',
+                },
+                'installation': {
+                    'mode': 'installer',
+                    'installer': str(p),
+                    'prefix': str(shared_prefix),
+                }
+            }
+            try:
+                self.launcher.start(game, operation='installer')
+                self.notify(f'Launching installer: {p.name}')
+            except Exception as e:
+                self.error(e)
+
+        self.choose_file('Select game installer (.exe)', selected)
+
     def open_settings(self,section=None):
         if self.tv_mode and section!='storage':self.notify('Switch to desktop mode to manage settings.');return
         if self.settings_dialog and self.settings_dialog.get_visible():
             if section=='storage':self.settings_dialog.set_visible_page(self.storage_settings_page)
-            elif section=='sources':self.settings_dialog.set_visible_page(getattr(self,'sources_settings_page',self.storage_settings_page))
+            elif section=='server':self.settings_dialog.set_visible_page(getattr(self,'server_settings_page',self.storage_settings_page))
             self.settings_dialog.present();return self.settings_dialog
-        dialog=Adw.PreferencesWindow(title='Settings',transient_for=self,modal=True,default_width=min(660,max(520,self.get_width()-48)),default_height=min(740,max(440,self.get_height()-48)))
+        pw = self.get_width() if self.get_width() > 0 else 1200
+        ph = self.get_height() if self.get_height() > 0 else 800
+        target_w = max(920, pw - 48)
+        target_h = max(620, ph - 48)
+        dialog=Adw.PreferencesWindow(title='Settings',transient_for=self,modal=True,default_width=target_w,default_height=target_h)
         style_surface(dialog,self);self.settings_dialog=dialog
         def clear_settings(owner):
-            if self.settings_dialog is owner:self.settings_dialog=None;self.storage_settings_page=None;self.sources_settings_page=None
+            if self.settings_dialog is owner:self.settings_dialog=None;self.storage_settings_page=None;self.server_settings_page=None
             for name in ('proton_panel','proton_settings_page','default_mode_choice'):
                 control=getattr(self,name,None)
                 if control is not None and control.get_root() is owner:
@@ -1326,13 +1403,6 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                     setattr(self,name,None)
             return False
         dialog.connect('close-request',clear_settings);dialog.connect('unrealize',clear_settings)
-        self.storage_settings_page=StoragePage(self.storage_service,dialog);dialog.add(self.storage_settings_page)
-        from .settings_sources import SourcesPage
-        self.sources_settings_page=SourcesPage(self.library,self);dialog.add(self.sources_settings_page)
-        if section=='storage' and self.tv_mode:
-            dialog.set_title('Storage');dialog.present();return
-        if section=='sources' and self.tv_mode:
-            dialog.set_title('Sources');dialog.present();return
         page=Adw.PreferencesPage(title='General',icon_name='preferences-system-symbolic');dialog.add(page)
         modes=Adw.PreferencesGroup(title='Display mode',description='Default mode applies on the next app start. Enter fullscreen from the mode button; leave through fullscreen options or the tray.');page.add(modes)
         mode_row=Adw.ActionRow(title='Default launch mode');self.default_mode_choice=Gtk.DropDown.new_from_strings(['Desktop','Fullscreen / TV']);self.default_mode_choice.set_selected(1 if self.library.data['settings'].get('default_display_mode')=='fullscreen' else 0);mode_row.add_suffix(self.default_mode_choice);modes.add(mode_row)
@@ -1386,17 +1456,21 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             row=Adw.ActionRow(title=title,subtitle=subtitle)
             control=button(action,lambda c=callback:leave_then(c)); control.set_valign(Gtk.Align.CENTER)
             row.add_suffix(control); backup.add(row)
+        self.storage_settings_page=StoragePage(self.storage_service,dialog);dialog.add(self.storage_settings_page)
+        from .settings_server import ServerPage
+        self.server_settings_page=ServerPage(self.server,self);dialog.add(self.server_settings_page)
         self.build_proton_manager_tab(dialog)
-        catalog_info=Adw.PreferencesGroup(title='Store',description='Game data by IGDB. Catalog service configuration is separate from game setup; your saved library works offline.');page.add(catalog_info)
-        catalog_info.add(Gtk.LinkButton.new_with_label('https://www.igdb.com','IGDB'))
-        target_page=self.storage_settings_page if section=='storage' else self.sources_settings_page if section=='sources' else page
+        target_page=self.storage_settings_page if section=='storage' else self.server_settings_page if section=='server' else page
         dialog.set_visible_page(target_page)
+        from .dialogs import expand_clamps
+        expand_clamps(dialog, max_width=max(1200, target_w - 64))
         dialog.present()
 
     def build_proton_manager_tab(self,dialog):
         from .proton_ui import ProtonPanel
         page=Adw.PreferencesPage(title='Proton Manager',icon_name='application-x-executable-symbolic');dialog.add(page);self.proton_settings_page=page
         group=Adw.PreferencesGroup();page.add(group)
+        group.set_vexpand(True)
         self.proton_panel=ProtonPanel(self,dialog);group.add(self.proton_panel)
 
 
@@ -1547,16 +1621,187 @@ class Application(Adw.Application):
         GLib.set_application_name(APP_NAME)
         Gtk.Window.set_default_icon_name(ICON_NAME)
         super().__init__(application_id=app_id,flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
+        self.server_manager=None
+        self._startup_state='ready' if demo else 'new'
+        self._startup_gate=None
+        self._startup_page=None
+        self._startup_dialog=None
+        self._startup_pool=None
+        self._startup_hold=False
+        self._open_fullscreen=False
         self.add_main_option('fullscreen',0,GLib.OptionFlags.NONE,GLib.OptionArg.NONE,'Open in fullscreen for this activation',None)
         self.connect('command-line',self.command_line)
         self.connect('activate',self.activate_window)
+
+    def _shutdown_startup(self,*_):
+        if self._startup_pool is not None:
+            self._startup_pool.shutdown(wait=False,cancel_futures=True)
+
     def command_line(self,app,command_line):
+        self._open_fullscreen=bool(command_line.get_options_dict().contains('fullscreen'))
         self.activate_window()
-        if command_line.get_options_dict().contains('fullscreen'):
-            window=self.window
-            if not isinstance(window,Window) or not window.set_tv_mode(True):return 1
+        if self._open_fullscreen:
+            window=getattr(self,'window',None)
+            if isinstance(window,Window):
+                self._open_fullscreen=False
+                window.set_tv_mode(True)
         return 0
+
     def activate_window(self,*_):
+        window=getattr(self,'window',None)
+        if window:
+            window.present()
+            if self._open_fullscreen and isinstance(window,Window):
+                self._open_fullscreen=False;window.set_tv_mode(True)
+            return
+        if self._startup_state=='new':
+            self._begin_startup();return
+        if self._startup_state in ('checking','prompt','starting'):
+            if self._startup_gate is not None:self._startup_gate.present()
+            return
+        self._open_window()
+
+    def _begin_startup(self):
+        self._startup_state='checking'
+        if self.server_manager is None:
+            from .server_manager import ServerManager
+            self.server_manager=ServerManager()
+        if self._startup_pool is None:
+            self._startup_pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='umutron-startup')
+            self.connect('shutdown',self._shutdown_startup)
+        self.hold();self._startup_hold=True
+        gate=Adw.ApplicationWindow(application=self,title=APP_NAME,default_width=500,default_height=330,resizable=False)
+        gate.set_deletable(False)
+        page=Adw.StatusPage(title='Connecting to UmuTron Server',description='Checking the local FastAPI server…',icon_name='network-server-symbolic')
+        spinner=Gtk.Spinner(spinning=True,halign=Gtk.Align.CENTER)
+        page.set_child(spinner)
+        gate.set_content(page)
+        style_surface(gate)
+        self._startup_gate=gate;self._startup_page=page
+        gate.present()
+        future=self._startup_pool.submit(self.server_manager.health)
+        future.add_done_callback(lambda done:GLib.idle_add(self._startup_health_done,done))
+
+    def _set_startup_description(self,text):
+        if self._startup_page is not None:self._startup_page.set_description(text)
+        return False
+
+    def _startup_progress(self,text):
+        GLib.idle_add(self._set_startup_description,text)
+
+    def _startup_health_done(self,future):
+        if self._startup_gate is None:return False
+        try:healthy=bool(future.result())
+        except Exception:healthy=False
+        if healthy:
+            self.server_manager.activate_local()
+            self._startup_state='ready'
+            self._close_startup_gate()
+            self._open_window()
+        else:
+            self._show_start_prompt()
+        return False
+
+    def _show_start_prompt(self):
+        if self._startup_gate is None:return
+        self._startup_state='prompt'
+        body=('UmuTron uses its own FastAPI server on this computer for Store, catalog and '
+              'download sources. Start it with Docker now? You can add Twitch/IGDB credentials '
+              'later in Settings → Server.')
+        if not self.server_manager.docker_available():
+            body+='\n\nDocker was not detected. Install Docker and start its daemon, then retry.'
+        dialog=Adw.MessageDialog.new(self._startup_gate,'Local server is not running',body)
+        style_surface(dialog,self._startup_gate)
+        dialog.add_response('quit','Quit')
+        dialog.add_response('offline','Open Offline')
+        dialog.add_response('start','Install & Start')
+        dialog.set_response_appearance('start',Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_default_response('start')
+        dialog.set_close_response('quit')
+        dialog.connect('response',self._startup_prompt_response)
+        self._startup_dialog=dialog
+        dialog.present()
+
+    def _startup_prompt_response(self,dialog,response):
+        if dialog is self._startup_dialog:self._startup_dialog=None
+        dialog.destroy()
+        if response=='quit':
+            self._close_startup_gate()
+            self._release_startup_hold()
+            self._startup_state='quit'
+            self.quit()
+            return
+        if response=='offline':
+            self.server_manager.activate_local()
+            self._startup_state='ready'
+            self._close_startup_gate()
+            self._open_window()
+            return
+        if response=='start':
+            self._begin_server_start()
+
+    def _begin_server_start(self):
+        if self._startup_gate is None:return
+        self._startup_state='starting'
+        if self._startup_page is not None:
+            self._startup_page.set_title('Starting UmuTron Server')
+            self._startup_page.set_description('Preparing the local Docker server…')
+        future=self._startup_pool.submit(self.server_manager.install_and_start,progress=self._startup_progress)
+        future.add_done_callback(lambda done:GLib.idle_add(self._startup_start_done,done))
+
+    def _startup_start_done(self,future):
+        if self._startup_gate is None:return False
+        try:
+            future.result()
+        except Exception as error:
+            self._startup_state='prompt'
+            self._show_start_failure(error)
+            return False
+        self._startup_state='ready'
+        self._close_startup_gate()
+        self._open_window()
+        return False
+
+    def _show_start_failure(self,error):
+        if self._startup_gate is None:return
+        dialog=Adw.MessageDialog.new(
+            self._startup_gate,
+            'Local server could not start',
+            str(error)[:4000] or 'The Docker server did not start.',
+        )
+        style_surface(dialog,self._startup_gate)
+        dialog.add_response('quit','Quit')
+        dialog.add_response('offline','Open Offline')
+        dialog.add_response('retry','Retry')
+        dialog.set_response_appearance('retry',Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_default_response('retry')
+        dialog.set_close_response('quit')
+        def response(target,choice):
+            if target is self._startup_dialog:self._startup_dialog=None
+            target.destroy()
+            if choice=='quit':
+                self._close_startup_gate();self._release_startup_hold();self._startup_state='quit';self.quit()
+            elif choice=='offline':
+                self.server_manager.activate_local();self._startup_state='ready'
+                self._close_startup_gate();self._open_window()
+            elif choice=='retry':
+                self._begin_server_start()
+        dialog.connect('response',response)
+        self._startup_dialog=dialog
+        dialog.present()
+
+    def _close_startup_gate(self):
+        if self._startup_dialog is not None:
+            self._startup_dialog.destroy();self._startup_dialog=None
+        if self._startup_gate is not None:
+            self._startup_gate.destroy();self._startup_gate=None
+        self._startup_page=None
+
+    def _release_startup_hold(self):
+        if self._startup_hold:
+            self._startup_hold=False;self.release()
+
+    def _open_window(self):
         window=getattr(self,'window',None)
         if not window:
             try:
@@ -1564,7 +1809,8 @@ class Application(Adw.Application):
                     from .demo import prepare_demo
                     library=prepare_demo()
                 else: library=Library()
-                window=Window(self,library,self.demo)
+                if not self.demo:self.server_manager.activate_local()
+                window=Window(self,library,self.demo,server_manager=self.server_manager)
             except Exception as e:
                 window=Adw.ApplicationWindow(application=self,title='Library could not be opened')
                 window.set_content(Adw.StatusPage(title='Could not open your library',description=str(e),icon_name='dialog-error-symbolic'))
@@ -1580,7 +1826,10 @@ class Application(Adw.Application):
             self.tray=Tray(self.activate_window,window.explicit_exit,availability,lambda:switch_mode(True),lambda:switch_mode(False),lambda:desktop_action(window.open_settings),mode=window.is_fullscreen)
             window.connect('notify::fullscreened',self.tray.sync_mode)
         window.present()
+        self._release_startup_hold()
         if isinstance(window,Window) and window.editor:window.editor.present()
+        if self._open_fullscreen and isinstance(window,Window):
+            self._open_fullscreen=False;window.set_tv_mode(True)
 
 
 def main():

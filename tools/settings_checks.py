@@ -6,6 +6,12 @@ import tempfile
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from headless import ensure_headless
+    ensure_headless()
+except ImportError:
+    pass
 from fullscreen_preview import settle
 from game_library.app import Application, Window
 from game_library.demo import prepare_demo

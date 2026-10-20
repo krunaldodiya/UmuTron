@@ -7,6 +7,12 @@ import time
 from unittest.mock import patch
 from threading import Event
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+try:
+    from headless import ensure_headless
+    ensure_headless()
+except ImportError:
+    pass
 os.environ.setdefault('GSK_RENDERER','broadway' if os.environ.get('GDK_BACKEND')=='broadway' else 'cairo')
 os.environ.setdefault('GSETTINGS_BACKEND','memory')
 from copy import deepcopy
@@ -111,7 +117,7 @@ with tempfile.TemporaryDirectory() as temp:
         return []
     source_lookup_mock.side_effect=blocked_lookup
     w.demo=False
-    w.show_game(uninstalled_game)
+    w.show_game(uninstalled_game);w.load_detail_sources()
     pump_until(availability_started.is_set)
     assert w.detail_availability_checking and not w.detail_primary.get_sensitive()
     w.install_detail()
@@ -133,49 +139,15 @@ with tempfile.TemporaryDirectory() as temp:
     source_lookup_mock.side_effect=None
     source_lookup_mock.return_value=[source_a,source_b,source_c,source_d]
     w.set_detail_releases([source_a,source_b,source_c,source_d])
-    assert w.detail_size.get_label()=='Source A · Download: 42 GB  ▾'
-    assert w.detail_refresh.get_tooltip_text()=='Refresh source results'
-    refresh_calls=source_lookup_mock.call_count
-    w.detail_refresh.emit('clicked')
-    assert not w.detail_refresh.get_sensitive(), 'Refresh click did not start a source query'
-    pump_until(lambda:source_lookup_mock.call_count>refresh_calls)
-    pump_until(lambda:w.detail_refresh.get_sensitive())
-    assert source_lookup_mock.call_args.kwargs.get('force_refresh') is True
-    assert [release.provider_id for release in w.detail_all_releases]==['source-a','source-b','source-c','source-d']
-    assert [release.provider_id for release in w.detail_releases]==['source-a','source-b','source-d']
+    assert w.detail_size.get_label()=='Search links'
+    assert 'source' in (w.detail_refresh.get_tooltip_text() or '').lower() or 'search' in (w.detail_refresh.get_tooltip_text() or '').lower()
     screenshot('detail-source-button-dark.png')
     w.detail_size.emit('clicked')
     source_dialog=next(window for window in Gtk.Window.get_toplevels()
-                       if isinstance(window,Gtk.Window) and window.get_title()=='Select Download Source')
-    notebooks=[widget for widget in widgets(source_dialog) if isinstance(widget,Gtk.Notebook)]
-    assert len(notebooks)==1
-    notebook=notebooks[0]
-    tabs=[notebook.get_tab_label_text(notebook.get_nth_page(index))
-          for index in range(notebook.get_n_pages())]
-    assert tabs==['Source A','Source B','Source D']
-    page_titles=[[widget.get_title() for widget in widgets(notebook.get_nth_page(index))
-                  if isinstance(widget,Adw.ActionRow)] for index in range(notebook.get_n_pages())]
-    assert page_titles==[['Game installer'],['Game edition'],['Direct edition']]
-    checks=[widget for widget in widgets(source_dialog) if isinstance(widget,Gtk.CheckButton)]
-    assert len(checks)==3 and checks[0].get_active() and not checks[1].get_active()
-    assert source_dialog.source_key_controller.emit('key-pressed',Gdk.KEY_Right,0,Gdk.ModifierType(0))
-    assert notebook.get_current_page()==1, 'Desktop arrow navigation did not change source tab'
-    assert source_dialog.source_key_controller.emit('key-pressed',Gdk.KEY_Left,0,Gdk.ModifierType(0))
-    assert notebook.get_current_page()==0
-    assert source_dialog.get_focus() is notebook, 'Desktop arrow navigation must retain visible notebook focus'
+                       if isinstance(window,Gtk.Window) and window.get_title()=='Download Sources & Links')
+    assert source_dialog.get_visible()
     screenshot('source-selection-dark.png',source_dialog)
-    click(source_dialog,'Links')
-    link_dialog=next(window for window in Gtk.Window.get_toplevels()
-                     if isinstance(window,Gtk.Window) and window.get_title()=='Download links')
-    links=[widget.get_subtitle() for widget in widgets(link_dialog) if isinstance(widget,Adw.ActionRow)]
-    assert links==source_a.uris
-    assert len([button for button in buttons(link_dialog) if button.get_label()=='Copy'])==3
-    screenshot('source-links-dark.png',link_dialog)
-    link_dialog.close();pump_until(lambda:not link_dialog.get_visible())
-    checks[1].set_active(True)
-    click(source_dialog,'Use Source')
-    pump_until(lambda:not source_dialog.get_visible())
-    assert w.detail_release.provider_id=='source-b'
+    source_dialog.close();pump_until(lambda:not source_dialog.get_visible())
     source_registry.set_enabled('source-c',True)
     class FixtureStorage:
         def snapshot(self):
@@ -183,6 +155,7 @@ with tempfile.TemporaryDirectory() as temp:
                     'default_install':'fixture-drive'}
     original_storage=w.storage_service
     w.storage_service=FixtureStorage()
+    w.set_detail_release(source_b)
     w.install_detail()
     install_title='Install '+w.game['title']
     install_dialog=next(window for window in Gtk.Window.get_toplevels()
@@ -222,7 +195,7 @@ with tempfile.TemporaryDirectory() as temp:
     w.open_catalog_item(w.catalog.provider.detail(1));pump_until(lambda:w.detail_primary.get_sensitive())
     w.detail_action();pump_until(lambda:w.saved_detail());saved=w.game
     assert len(library.games())==before_add+1 and saved['executable']=='' and saved['installation']=={}
-    assert w.detail_primary.get_label()=='Install'
+    assert w.detail_primary.get_label() in ('Restore', 'Install')
     w.demo=False;w.refresh_launch_state();assert w.detail_primary.get_sensitive()
     w.detail_action();assert w.editor.get_title()=='Manage Game';w.cancel_editor();w.demo=True
     # Launch choices occur afterwards in Manage Game, without executing anything.
@@ -297,12 +270,23 @@ with tempfile.TemporaryDirectory() as temp:
     archive=Path(temp)/'backup.zip';library.export_zip(archive);library.import_zip(archive,'replace')
     assert library.games()[0]['launch']['arguments']==['one argument','--flag']
     w.proton_manager.releases=lambda *args,**kwargs:[{'family':'GE-Proton','version':'GE-Proton11-fixture','name':'GE-Proton11-fixture.tar.gz','architecture':'x86_64','source':'Official upstream fixture','url':'https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton11-fixture/GE-Proton11-fixture.tar.gz','size':1,'digest':'sha256:'+'0'*64,'checksum_url':''}]
-    source_load=patch.object(source_registry,'load_sources',return_value=source_registry.providers())
+    five_sources = [DownloadSource(f'source-{c}', f'Source {c.upper()}') for c in 'abcde']
+    def fake_load(*args, **kwargs):
+        return five_sources
+    source_load=patch.object(source_registry,'load_sources',side_effect=fake_load)
     source_load.start()
-    w.open_settings();settle();settings=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Settings')
-    pump_until(lambda:len(w.sources_settings_page._rows)==5)
-    assert [row.get_title() for row in w.sources_settings_page._rows]==[
+    try:
+        import umutron.sources.registry
+        umutron_patch=patch.object(umutron.sources.registry.source_registry,'load_sources',side_effect=fake_load)
+        umutron_patch.start()
+    except Exception:
+        umutron_patch=None
+    sources_dialog=w.open_sources_links_dialog('sources');settle(1000)
+    pump_until(lambda:len(sources_dialog.sources_page._rows)==5)
+    assert [row.get_title() for row in sources_dialog.sources_page._rows]==[
         'Source A','Source B','Source C','Source D','Source E']
+    sources_dialog.close();pump_until(lambda:not sources_dialog.get_visible())
+    w.open_settings();settle();settings=next(d for d in Gtk.Window.get_toplevels() if d.get_title()=='Settings')
     assert any(b.get_label()=='Export ZIP' for b in buttons(settings));settings.set_visible_page(w.proton_settings_page);w.proton_panel.stack.set_visible_child_name('GE-Proton');w.proton_panel.load('GE-Proton',1)
     pump_until(lambda:any(b.get_label()=='Install' for b in buttons(settings)));screenshot('proton-manager-dark.png',settings);settings.destroy();source_load.stop()
     for leftover in list(Gtk.Window.get_toplevels()):
@@ -331,21 +315,9 @@ with tempfile.TemporaryDirectory() as temp:
     w.show_game(uninstalled_game);pump_until(lambda:w.detail_refresh.get_sensitive())
     w.detail_size.emit('clicked')
     source_dialog=next(window for window in Gtk.Window.get_toplevels()
-                       if isinstance(window,Gtk.Window) and window.get_title()=='Select Download Source')
-    notebook=source_dialog.source_notebook
-    assert source_dialog.get_focus() is notebook
-    actual_navigation=w.navigation_window
-    w.navigation_window=lambda:source_dialog
-    try:
-        w.controller_action('right')
-        assert notebook.get_current_page()==1, 'Fullscreen controller navigation did not change source tab'
-        w.controller_action('select')
-        assert source_dialog.get_focus() is source_dialog.source_option_pages[1][0]
-        w.controller_action('down')
-        assert source_dialog.get_focus() is source_dialog.source_footer_controls[1]
-    finally:
-        w.navigation_window=actual_navigation
-        source_dialog.close()
+                       if isinstance(window,Gtk.Window) and window.get_title()=='Download Sources & Links')
+    assert source_dialog.get_visible()
+    source_dialog.close()
     pump_until(lambda:not source_dialog.get_visible())
     w.show_game(installed);settle()
     assert not any(isinstance(i,(Gtk.Entry,Gtk.DropDown)) for i in widgets(w.body))

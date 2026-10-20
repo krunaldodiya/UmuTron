@@ -52,6 +52,8 @@ def cached_all(manager, family):
 class ProtonPanel(Gtk.Box):
     def __init__(self, window, dialog):
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=16)
+        self.set_vexpand(True)
+        self.set_hexpand(True)
         self.window, self.dialog, self.manager = window, dialog, window.proton_manager
         self.alive = True
         self.items = {family: {} for family in REPOS}
@@ -65,13 +67,17 @@ class ProtonPanel(Gtk.Box):
         self.append(self.default)
         self.append(text('Used by every game unless its Setup selects another version. Missing downloadable versions are verified before Play or installation.', 'dim-label'))
         self.stack = Gtk.Stack(transition_type=Gtk.StackTransitionType.NONE, vhomogeneous=False)
-        switcher = box(False, 0)
+        self.stack.set_vexpand(True)
+        self.stack.set_hexpand(True)
+        switcher = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         switcher.set_halign(Gtk.Align.CENTER)
-        switcher.add_css_class('linked')
+        switcher.set_margin_top(4)
+        switcher.set_margin_bottom(8)
         self.tab_buttons = {}
         self.syncing_tabs = False
         for family in DOWNLOAD_FAMILIES:
             tab = Gtk.ToggleButton(label=family)
+            tab.add_css_class('pill')
             if self.tab_buttons:
                 tab.set_group(next(iter(self.tab_buttons.values())))
             tab.connect('clicked', lambda _, f=family: self.select_family(f))
@@ -84,7 +90,9 @@ class ProtonPanel(Gtk.Box):
         self.append(self.stack)
         self.rows, self.statuses, self.retry, self.scrolls = {}, {}, {}, {}
         for family in DOWNLOAD_FAMILIES:
-            page = box()
+            page = box(vertical=True, spacing=10)
+            page.set_vexpand(True)
+            page.set_hexpand(True)
             page.append(text('UMU-Proton baseline and versions' if family == 'UMU-Proton' else 'Optional GE-Proton releases · ' + self.manager.arch, 'title-3'))
             status = text('', 'dim-label')
             page.append(status)
@@ -94,9 +102,11 @@ class ProtonPanel(Gtk.Box):
             retry.set_visible(False)
             page.append(retry)
             self.retry[family] = retry
-            rows = box()
-            scroll = Gtk.ScrolledWindow(min_content_height=320, max_content_height=440, propagate_natural_height=True)
+            rows = box(vertical=True, spacing=6)
+            rows.set_vexpand(True)
+            scroll = Gtk.ScrolledWindow(vexpand=True, hexpand=True)
             scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+            scroll.set_min_content_height(480)
             scroll.set_child(rows)
             page.append(scroll)
             self.rows[family], self.scrolls[family] = rows, scroll

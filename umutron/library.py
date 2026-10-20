@@ -108,6 +108,8 @@ class Library:
             self._migrate_from_launcher(legacy_root, default_root)
         self.root = Path(root or (default_root if default_root.exists() else legacy_root))
         self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        try: self.root.chmod(0o700)
+        except OSError: pass
         self.art_dir = self.root/'artwork'; self.art_dir.mkdir(exist_ok=True)
         self.path = self.root/'library.json'
         if root is None and not self.path.exists():

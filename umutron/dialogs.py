@@ -219,3 +219,14 @@ def dialog_footer():
     # An expanding spacer aligns actions while the separator spans the body.
     footer.append(Gtk.Box(hexpand=True))
     return footer
+
+
+def expand_clamps(widget, max_width=1600):
+    """Expand internal Adw.Clamp widgets so preferences dialogs take full available width."""
+    if isinstance(widget, Adw.Clamp):
+        widget.set_maximum_size(max_width)
+        widget.set_tightening_threshold(int(max_width * 0.8))
+    child = widget.get_first_child()
+    while child:
+        expand_clamps(child, max_width)
+        child = child.get_next_sibling()

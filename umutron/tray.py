@@ -1,7 +1,55 @@
 """GTK4-compatible StatusNotifierItem and mode-switching DBusMenu, using Gio only."""
+from pathlib import Path
 from gi.repository import Gio, GLib
 from . import APP_NAME, ICON_NAME
 
+
+def _load_icon_pixmaps():
+    candidates = [
+        Path(__file__).resolve().parents[1] / 'assets/umutron.svg',
+        Path.home() / '.local/share/icons/hicolor/scalable/apps/umutron.svg',
+        Path.home() / '.local/share/icons/hicolor/scalable/apps/game-library-launcher.svg',
+    ]
+    svg_path = next((p for p in candidates if p.is_file()), None)
+    if not svg_path:
+        return []
+    try:
+        import gi
+        gi.require_version('GdkPixbuf', '2.0')
+        from gi.repository import GdkPixbuf
+        pixmaps = []
+        for s in (16, 22, 24, 32, 48):
+            pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(svg_path), s, s, True)
+            w, h = pb.get_width(), pb.get_height()
+            pixels = pb.get_pixels()
+            stride = pb.get_rowstride()
+            n_ch = pb.get_n_channels()
+            has_a = pb.get_has_alpha()
+            argb = bytearray(w * h * 4)
+            dst = 0
+            for y in range(h):
+                row_start = y * stride
+                for x in range(w):
+                    off = row_start + x * n_ch
+                    argb[dst] = pixels[off + 3] if has_a else 255
+                    argb[dst + 1] = pixels[off]
+                    argb[dst + 2] = pixels[off + 1]
+                    argb[dst + 3] = pixels[off + 2]
+                    dst += 4
+            pixmaps.append((w, h, bytes(argb)))
+        return pixmaps
+    except Exception:
+        return []
+
+
+_ICON_PIXMAPS = None
+
+
+def get_icon_pixmaps():
+    global _ICON_PIXMAPS
+    if _ICON_PIXMAPS is None:
+        _ICON_PIXMAPS = _load_icon_pixmaps()
+    return _ICON_PIXMAPS
 ITEM_XML='''<node><interface name="org.kde.StatusNotifierItem">
 <method name="Activate"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
 <method name="SecondaryActivate"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
@@ -84,10 +132,12 @@ class Tray:
     def property(self,connection,sender,path,interface,name):
         if interface=='com.canonical.dbusmenu':
             return {'Version':GLib.Variant('u',3),'TextDirection':GLib.Variant('s','ltr'),'Status':GLib.Variant('s','normal'),'IconThemePath':GLib.Variant('as',[])}.get(name)
+        pixmaps = get_icon_pixmaps()
+        theme_path = str(Path.home() / '.local/share/icons/hicolor')
         values={'Category':('s','ApplicationStatus'),'Id':('s','game-library-launcher'),'Title':('s',APP_NAME),'Status':('s','Active'),
-                'IconName':('s',ICON_NAME),'IconThemePath':('s',''),'AttentionIconName':('s',''),'OverlayIconName':('s',''),
-                'IconPixmap':('a(iiay)',[]),'AttentionIconPixmap':('a(iiay)',[]),'OverlayIconPixmap':('a(iiay)',[]),
-                'Menu':('o','/Menu'),'ItemIsMenu':('b',False),'WindowId':('u',0),'ToolTip':('(sa(iiay)ss)',(ICON_NAME,[],APP_NAME,'Show '+APP_NAME+' or Exit'))}
+                'IconName':('s',ICON_NAME),'IconThemePath':('s',theme_path),'AttentionIconName':('s',''),'OverlayIconName':('s',''),
+                'IconPixmap':('a(iiay)',pixmaps),'AttentionIconPixmap':('a(iiay)',[]),'OverlayIconPixmap':('a(iiay)',[]),
+                'Menu':('o','/Menu'),'ItemIsMenu':('b',False),'WindowId':('u',0),'ToolTip':('(sa(iiay)ss)',(ICON_NAME,pixmaps,APP_NAME,'Show '+APP_NAME+' or Exit'))}
         return GLib.Variant(*values[name]) if name in values else None
 
     def event(self,item,event):

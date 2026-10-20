@@ -38,6 +38,7 @@ fi
 
 export APP_BASE_URL="$API_URL"
 export UMUTRON_ALLOW_LOOPBACK_HTTP=1
+export UMUTRON_API_DIR="$API_DIR"
 export INTERNAL_API_KEY
 # Compatibility adapters read this name; the main desktop paths use the
 # public source/catalog routes and do not transmit the key to remote hosts.
