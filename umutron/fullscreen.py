@@ -8,6 +8,7 @@ from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
 CSS = b'''
 .tv-mode { background: #0b101a; color: #f3f6ff; font-size: 18px; }
 .tv-mode button { min-height: 40px; padding: 10px 20px; border-radius: 12px; font-weight: 600; }
+.tv-mode button.collection-card { padding: 7px; }
 .tv-mode .tv-controls { margin: 0; padding: 20px 40px; background: alpha(#0b101a, .72); }
 .tv-mode .tv-controls button { min-height: 32px; padding: 8px 18px; }
 .tv-mode .tv-brand { font-size: 23px; font-weight: 800; margin-right: 34px; }
@@ -48,6 +49,7 @@ CSS = b'''
 .tv-mode .control-focused, .tv-mode button:focus-visible { outline: 3px solid #b3ffe9; outline-offset: 3px; box-shadow: 0 0 0 6px alpha(#0b101a,.72); }
 .tv-mode .collection-card:focus, .tv-mode .collection-card.control-focused { outline: none; outline-offset: 0; box-shadow: none; }
 .tv-mode.tv-compact button { min-height: 30px; padding: 8px 16px; }
+.tv-mode.tv-compact button.collection-card { padding: 7px; }
 .tv-mode.tv-compact .tv-play { min-width: 112px; }
 .tv-mode.tv-compact .tv-controls { padding: 12px 28px; }
 .tv-mode.tv-compact .tv-brand { margin-right: 18px; font-size: 20px; }

@@ -20,6 +20,8 @@ CSS = b'''
 .collection-page { padding: 24px 32px; }
 .collection-heading { font-size: 30px; font-weight: 800; }
 .collection-card { padding: 7px; border-radius: 12px; background: alpha(@window_fg_color,.045); border: 2px solid transparent; outline: none; }
+button.collection-card { padding: 7px; }
+.collection-flow flowboxchild { padding: 0; }
 .collection-card:hover { background: alpha(@accent_color,.12); border-color: alpha(#85efd4,.5); }
 .collection-card:focus, .collection-card.control-focused { border-color: #85efd4; outline: none; }
 .collection-card.game-ready { border: 2px solid transparent; }
@@ -174,15 +176,21 @@ class CatalogUI:
         self.init_catalog()
         self.show_collection()
 
-    def collection_card_dimensions(self):
-        if hasattr(self, 'console_dimensions'):
-            return self.console_dimensions()
+    def collection_grid_inset(self):
         scale=getattr(self,'ui_scale_factor',lambda:1.0)()
-        w=self.get_width() if hasattr(self,'get_width') and self.get_width()>0 else 1920
-        if w>=2400:base_w=180
-        elif w<1200:base_w=136
-        else:base_w=152
-        return (int(base_w*scale),int(base_w*1.5*scale))
+        return 64 if scale>1.55 else 48 if scale>1.15 or self.tv_mode else 32
+
+    def collection_card_dimensions(self):
+        scale=getattr(self,'ui_scale_factor',lambda:1.0)()
+        width=self.get_width() if self.get_width()>0 else 1920
+        inset=self.collection_grid_inset()
+        gap=20 if self.tv_mode else 16
+        card_chrome=18  # Card padding and border around its art/title column.
+        minimum_cover=(144 if self.tv_mode else 130)*scale
+        available=max(1,width-inset*2)
+        columns=min(12,max(1,int((available+gap)//(minimum_cover+card_chrome+gap))))
+        cover_width=max(96,int((available-(columns-1)*gap)/columns)-card_chrome)
+        return cover_width,int(cover_width*1.5)
 
     def catalog_cancel(self):
         self.catalog_generation+=1
@@ -261,8 +269,7 @@ class CatalogUI:
             if short:self.collection_flow.add_css_class('collection-short')
             else:self.collection_flow.remove_css_class('collection-short')
             scale=getattr(self,'ui_scale_factor',lambda:1.0)()
-            inset=64 if scale>1.55 else 48 if scale>1.15 or self.tv_mode else 32
-            self.collection_flow.set_margin_start(inset);self.collection_flow.set_margin_end(inset)
+            inset=self.collection_grid_inset()
             card_w,card_h=self.collection_card_dimensions()
             card_key=(card_w,card_h,short)
             for _,tile in self.tv_tiles:
@@ -287,6 +294,7 @@ class CatalogUI:
         is_tv = getattr(self, 'tv_mode', False)
         self.collection_flow=Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE,homogeneous=True,min_children_per_line=1,max_children_per_line=12,column_spacing=20 if is_tv else 16,row_spacing=24 if is_tv else 20)
         self.collection_flow.set_valign(Gtk.Align.START)
+        self.collection_flow.add_css_class('collection-flow')
         self.collection_flow.set_halign(Gtk.Align.START)
         self.collection_flow.set_margin_start(48 if is_tv else 24);self.collection_flow.set_margin_end(48 if is_tv else 24)
         # Let the heading/search scroll with the cards. A fixed toolbar can

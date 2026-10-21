@@ -242,8 +242,8 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             resize=getattr(self,'detail_responsive',None)
             if resize:resize(widget,clock)
             return True
-        size=self.console_dimensions()
         if self.route in ('library','store'):
+            size=self.collection_card_dimensions()
             if size!=getattr(self,'collection_card_size',None):
                 self.collection_card_size=size
                 for tile in getattr(self,'collection_tiles',{}).values():
@@ -254,6 +254,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                     if hasattr(tile,'console_title'):
                         tile.console_title.set_size_request(size[0],int(48*scale))
             return True
+        size=self.console_dimensions()
         if self.route!='home':return True
         self.console_size=size
         if hasattr(self,'tv_scroll'):self.tv_scroll.set_min_content_height(size[1]+int(48*scale)+48)
