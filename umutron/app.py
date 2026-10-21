@@ -1172,6 +1172,9 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                                 our_docs.parent.mkdir(parents=True,exist_ok=True)
                                 shutil.copytree(steam_docs,our_docs,symlinks=True)
                             except OSError:pass
+                from .game_assets import regenerate_manifest
+                try:updated=regenerate_manifest(updated)
+                except Exception:pass
                 saved=self.library.save_setup(updated)
                 self.game=saved
                 self.show_game(saved)

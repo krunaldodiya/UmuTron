@@ -222,16 +222,33 @@ def regenerate_manifest(game: dict[str, Any]) -> dict[str, Any]:
     if detected and not updated_game.get("metadata_app_id"):
         try:updated_game["metadata_app_id"] = int(detected)
         except ValueError:updated_game["metadata_app_id"] = detected
-    base = None
-    if root.parent.name == "common" and root.parent.parent.name == "umuapps":
-        base = root.parent.parent
-    else:
-        old_m = installation.get("manifest")
-        if old_m and Path(old_m).is_file():
-            base = Path(old_m).parent
-    if not base:
-        raise ValueError("Regenerating appmanifest is only supported for games installed in an UmuLibrary.")
     prefix_str = installation.get("prefix") or game.get("launch", {}).get("prefix")
+    base = None
+    if prefix_str:
+        pfx = Path(prefix_str).expanduser().resolve()
+        if pfx.parent.name == "compatdata" and pfx.parent.parent.name == "umuapps":
+            base = pfx.parent.parent
+    if not base and root.parent.name == "common" and root.parent.parent.name == "umuapps":
+        base = root.parent.parent
+    old_m = installation.get("manifest")
+    if not base and old_m:
+        old_path = Path(old_m).expanduser().resolve()
+        if old_path.parent.is_dir() and old_path.parent.name == "umuapps":
+            base = old_path.parent
+    if not base:
+        for p in [root, *root.parents]:
+            cand = p / "UmuLibrary" / "umuapps"
+            if cand.is_dir():
+                base = cand
+                break
+    if not base:
+        for mnt in list(Path("/mnt").glob("*/UmuLibrary/umuapps")) + list(Path("/media").glob("*/UmuLibrary/umuapps")):
+            if mnt.is_dir():
+                base = mnt
+                break
+    if not base:
+        base = Path.home() / ".local" / "share" / "umutron" / "umuapps"
+        base.mkdir(parents=True, exist_ok=True)
     prefix = Path(prefix_str) if prefix_str else base / "compatdata" / _safe_folder(updated_game["title"])
     try:rel_exe = exe.relative_to(root)
     except ValueError:rel_exe = Path(exe.name)

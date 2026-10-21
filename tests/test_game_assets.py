@@ -166,5 +166,31 @@ class ManagedGameAssetsTests(unittest.TestCase):
         self.assertTrue(Path(linked_game['executable']).is_file())
         self.assertFalse(Path(linked_game['installation']['manifest']).exists())
 
+    def test_regenerate_manifest_external_game(self):
+        from umutron.game_assets import regenerate_manifest
+        external_drive = self.root / 'external_drive'
+        external_drive.mkdir()
+        external_game_root = external_drive / 'CustomGames' / 'MyExtGame'
+        external_game_root.mkdir(parents=True)
+        exe = external_game_root / 'game.exe'
+        exe.write_text('bin')
+        managed_base = self.drive / 'UmuLibrary' / 'umuapps'
+        prefix = managed_base / 'compatdata' / 'MyExtGame'
+        prefix.mkdir(parents=True)
+        game = {
+            'id': 'test-uuid-1234',
+            'title': 'MyExtGame',
+            'metadata_app_id': 12345,
+            'executable': str(exe),
+            'working_dir': str(external_game_root),
+            'launch': {'prefix': str(prefix), 'proton': str(self.proton)},
+            'installation': {'root': str(external_game_root), 'prefix': str(prefix)},
+        }
+        updated = regenerate_manifest(game)
+        manifest_path = Path(updated['installation']['manifest'])
+        self.assertTrue(manifest_path.is_file())
+        self.assertEqual(manifest_path.name, 'appmanifest_12345.json')
+        self.assertEqual(manifest_path.parent, managed_base)
+
 if __name__ == '__main__':
     unittest.main()
