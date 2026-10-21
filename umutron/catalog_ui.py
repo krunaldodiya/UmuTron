@@ -38,7 +38,7 @@ CSS = b'''
 .detail-primary.suggested-action { background: #82e9d0; color: #102a29; }
 .tv-mode .collection-heading { font-size: 36px; }
 .tv-mode .collection-title { font-size: 18px; }
-.tv-mode .collection-page { padding: 24px 42px; }
+.tv-mode .collection-page { padding: 24px 48px; }
 .tv-mode .shared-detail { background: alpha(#0e1422,.94); }
 .tv-mode .detail-title { font-size: 42px; }
 .tv-mode .shared-detail { background: alpha(#0d1523,.86); border: 1px solid alpha(#b4c7e5,.10); padding: 30px; }
@@ -247,9 +247,9 @@ class CatalogUI:
         filters=box(False,12);toolbar.append(filters)
         def resize_toolbar(widget,clock):
             if self.collection_toolbar is not filters or self.route!=route:return False
-            compact=self.get_width()<1000
+            compact=self.get_width()<1180 or (self.tv_mode and self.get_width()<1440)
             toolbar.set_orientation(Gtk.Orientation.VERTICAL if compact else Gtk.Orientation.HORIZONTAL)
-            filters.set_halign(Gtk.Align.END)
+            filters.set_halign(Gtk.Align.START if compact else Gtk.Align.END)
             short=self.get_height()<700
             subtitle.set_visible(not short);page.set_spacing(10 if short else 16)
             if short:page.add_css_class('collection-compact')
@@ -259,8 +259,10 @@ class CatalogUI:
                 else:self.remove_css_class('tv-compact')
             if short:self.collection_flow.add_css_class('collection-short')
             else:self.collection_flow.remove_css_class('collection-short')
-            card_w,card_h=self.collection_card_dimensions()
             scale=getattr(self,'ui_scale_factor',lambda:1.0)()
+            inset=64 if scale>1.55 else 48 if scale>1.15 or self.tv_mode else 32
+            self.collection_flow.set_margin_start(inset);self.collection_flow.set_margin_end(inset)
+            card_w,card_h=self.collection_card_dimensions()
             card_key=(card_w,card_h,short)
             for _,tile in self.tv_tiles:
                 if getattr(tile,'collection_card_state',None)==card_key:continue
@@ -417,6 +419,7 @@ class CatalogUI:
 
     def restore_collection(self,navigation_revision=None):
         state=self.routes[self.route];generation=self.catalog_generation;focused=False;scroll=state['scroll']
+        saved_focus=state['focus']
         revision=None;selected=None
         if navigation_revision is None:navigation_revision=getattr(self,'browse_navigation_revision',0)
         def restore(widget,clock):
@@ -432,7 +435,7 @@ class CatalogUI:
             # Apply saved position after GTK's focus-driven scrolling/layout.
             if selected is not None and self.focused_control(self) is selected:
                 self.collection_scroll.get_vadjustment().set_value(scroll)
-                self.reveal_browse_control(selected)
+                if saved_focus is not None or scroll>0:self.reveal_browse_control(selected)
             return False
         self.collection_flow.add_tick_callback(restore)
 

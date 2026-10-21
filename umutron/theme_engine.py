@@ -420,9 +420,10 @@ notebook.source-picker-tabs:focus {
 
 
 class ThemeEngine:
-    def __init__(self, custom_themes_dir: Path | str | None = None):
+    def __init__(self, custom_themes_dir: Path | str | None = None, application_css: str | bytes = ''):
         self.custom_dir = Path(custom_themes_dir or (Path.home() / '.config' / 'umutron' / 'themes')).expanduser().resolve()
         self.custom_dir.mkdir(parents=True, exist_ok=True)
+        self.application_css = application_css.decode('utf-8') if isinstance(application_css, bytes) else application_css
         self.provider = Gtk.CssProvider()
         self._provider_installed = False
         self.active_theme_id: str = 'steamos-dark'
@@ -504,7 +505,7 @@ You can override palette variables and optionally add custom CSS in `style.css`.
         token_lines = [f"  {k}: {v};" for k, v in tokens.items()]
         root_block = ":root {\n" + "\n".join(token_lines) + "\n}\n"
         
-        css = root_block + BASE_STYLESHEET
+        css = root_block + BASE_STYLESHEET + '\n/* Route and dialog layouts */\n' + self.application_css
         
         # If user custom theme provides extra style.css, append it
         if theme.get('custom_path'):

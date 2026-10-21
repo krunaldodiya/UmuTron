@@ -104,10 +104,29 @@ CSS = b'''
 '''
 
 
-# Home shares its cinematic composition in desktop and fullscreen modes.
-# Compact state lives on the window; the Home surface is its descendant.
-# Keep the original fullscreen rules intact and scope this adaptation to desktop.
-CSS += CSS.replace(b'.tv-mode.tv-compact', b'.desktop-mode.tv-compact .home-surface').replace(b'.tv-mode', b'.home-surface')
+CSS += b'''
+/* Desktop Home deliberately shares the art-led hierarchy, not the fullscreen
+   control sizing. The local hero remains visible when the overlay scene is
+   inactive in a decorated window. */
+.desktop-mode .home-surface .home-hero { min-height: 380px; background: #111b29; }
+.desktop-mode .home-surface .home-hero-art { opacity: .76; }
+.desktop-mode .home-surface .tv-summary { margin: 28px 40px; }
+.desktop-mode .home-surface .tv-title { font-size: 44px; font-weight: 800; letter-spacing: -1px; line-height: 1.08; color: #f3f6ff; }
+.desktop-mode .home-surface .tv-eyebrow { color: #85efd4; font-size: 13px; font-weight: 700; letter-spacing: 1.6px; }
+.desktop-mode .home-surface .tv-description { color: #d5ddea; font-size: 17px; line-height: 1.4; }
+.desktop-mode .home-surface .tv-meta { color: #acb9ce; font-size: 15px; }
+.desktop-mode .home-surface .tv-play { min-width: 124px; background: #85efd4; color: #092b2c; font-weight: 800; }
+.desktop-mode .home-surface .tv-collection { background: #0b101a; padding-top: 18px; }
+.desktop-mode .home-surface .tv-section-heading { font-size: 21px; font-weight: 700; margin: 0 40px 6px; }
+.desktop-mode .home-surface .tv-counter { color: #acb9ce; margin-right: 40px; }
+.desktop-mode .home-surface .tv-card { padding: 8px; border: 2px solid transparent; background: #141d2b; border-radius: 12px; outline: none; }
+.desktop-mode .home-surface .tv-card:hover, .desktop-mode .home-surface .tv-card:focus, .desktop-mode .home-surface .tv-card.selected-game { border-color: #85efd4; background: #223349; }
+.desktop-mode .home-surface .tv-card-title { font-size: 16px; font-weight: 600; color: #edf3ff; }
+.desktop-mode .home-surface .tv-cover { background: #202b3c; border-radius: 7px; }
+.desktop-mode .home-surface .home-setups { padding: 28px 40px 40px; background: #0b101a; }
+.desktop-mode .home-surface .home-setups .tv-section-heading { margin: 0; }
+.desktop-mode .home-surface .home-setup-state { color: #acb9ce; font-size: 14px; min-height: 34px; }
+'''
 
 
 @lru_cache(maxsize=24)

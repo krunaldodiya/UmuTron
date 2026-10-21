@@ -80,7 +80,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         self.add_css_class('desktop-mode')
         self.sync_desktop_palette()
         self.library=library
-        self.theme_engine=ThemeEngine(custom_themes_dir=library.root.parent / 'themes' if demo else None)
+        self.theme_engine=ThemeEngine(custom_themes_dir=library.root.parent / 'themes' if demo else None,application_css=CATALOG_CSS+FULLSCREEN_CSS+DIALOG_CSS)
         self.apply_theme()
         self.demo=demo;self.tv_mode=False;self.tv_selected_id=None;self.tv_tiles=[];self.tv_section='library'
         self.launcher=Launcher(library.root); self.proton_manager=ProtonManager(library.root/'proton-manager',umu_root=library.root/'demo-umu-runners' if demo else None); self.launch_fields={}; self.play_buttons={}; self.installations=Installations(library,self.launcher);self.editor=None;self.editor_kind=None;self.exiting=False
@@ -362,8 +362,9 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         self.tv_page.set_vexpand(True);self.body.append(self.tv_page)
         self.home_stage=box(spacing=0);tv_content.append(self.home_stage)
         scale=self.ui_scale_factor()
-        hero=box(spacing=0);hero.set_vexpand(True);hero.set_size_request(-1,max(180,int(180*scale)));self.home_stage.append(hero)
-        summary=box(spacing=max(8,int(8*scale)));summary.add_css_class('tv-summary');summary.set_valign(Gtk.Align.END);summary.set_vexpand(True);summary_limit=Adw.Clamp(maximum_size=min(int(790*scale),max(790,self.get_width()-48)),tightening_threshold=min(int(790*scale),max(790,self.get_width()-48)));summary_limit.set_halign(Gtk.Align.START);summary_limit.set_child(summary);hero.append(summary_limit)
+        hero=Gtk.Overlay();hero.add_css_class('home-hero');hero.set_vexpand(True);hero.set_size_request(-1,max(380,int(380*scale)));self.home_stage.append(hero)
+        self.home_hero_art=CoverPicture(content_fit=Gtk.ContentFit.COVER,can_shrink=True,hexpand=True,vexpand=True,opacity=.76);self.home_hero_art.add_css_class('home-hero-art');self.home_hero_art.set_can_target(False);hero.set_child(self.home_hero_art)
+        summary=box(spacing=max(8,int(8*scale)));summary.add_css_class('tv-summary');summary.set_valign(Gtk.Align.END);summary.set_vexpand(True);summary_limit=Adw.Clamp(maximum_size=min(int(790*scale),max(790,self.get_width()-48)),tightening_threshold=min(int(790*scale),max(790,self.get_width()-48)));summary_limit.set_halign(Gtk.Align.START);summary_limit.set_child(summary);hero.add_overlay(summary_limit)
         self.tv_eyebrow=label('RECENTLY PLAYED','tv-eyebrow',xalign=0);summary.append(self.tv_eyebrow)
         self.tv_title=label('','tv-title',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END,max_width_chars=25,halign=Gtk.Align.START);self.tv_title.set_size_request(-1,74 if self.console_dimensions()[0]<152 else 116);summary.append(self.tv_title)
         self.tv_related=label('','tv-meta',xalign=0,ellipsize=Pango.EllipsizeMode.END);self.tv_related.set_size_request(-1,24);summary.append(self.tv_related)
@@ -407,7 +408,12 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         self.restrict_tv_focus(self.body)
         section=getattr(self,'home_focus_section','recent')
         for _,tile in self.home_setup_tiles:tile.set_focusable(True)
-        if return_id and section=='setup':
+        if self.tv_mode:
+            # Home always opens at its hero. Moving down from the Home tab
+            # intentionally focuses and reveals the selected rail card.
+            for _,tile in self.tv_tiles:tile.set_focusable(True)
+            self.focus_browse_route()
+        elif return_id and section=='setup':
             for _,tile in self.tv_tiles:tile.set_focusable(True)
             self.focus_tv_card(False)
         elif self.tv_tiles:self.finish_tv_library_focus()
@@ -601,7 +607,9 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                 tile.add_css_class('selected-game')
             else:tile.remove_css_class('selected-game')
         name=game['artwork'].get('hero') or game['artwork'].get('landscape')
-        set_art(self.backdrop,self.library.art_dir/name if name else None)
+        path=self.library.art_dir/name if name else None
+        set_art(self.backdrop,path)
+        if self.route=='home' and hasattr(self,'home_hero_art'):set_art(self.home_hero_art,path)
         self.backdrop.set_opacity(.38 if self.tv_section=='library' else 1)
         if self.tv_section=='library':return
         if self.route=='home':
