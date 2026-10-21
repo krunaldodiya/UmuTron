@@ -149,6 +149,9 @@ class LinkGameTests(unittest.TestCase):
                     yield from widgets(child)
                     child = child.get_next_sibling()
             settings = window.game_settings_dialog
+            link_stack=next(widget for widget in widgets(settings) if isinstance(widget, Gtk.Stack) and widget.get_child_by_name('link'))
+            link_stack.set_visible_child_name('link')
+            self.assertEqual(link_stack.get_visible_child_name(),'link')
             entries = [widget for widget in widgets(settings) if isinstance(widget, Gtk.Entry)]
             next(entry for entry in entries if entry.get_text() == str(old_root)).set_text(str(new_root))
             next(entry for entry in entries if entry.get_text() == str(old_launcher)).set_text(str(new_launcher))
