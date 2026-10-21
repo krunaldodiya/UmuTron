@@ -1411,6 +1411,30 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         files=box(spacing=16);files.append(label('Installed Files','title-2',xalign=0))
         root_path=self.game.get('installation',{}).get('root')
         is_installed=bool(root_path and Path(root_path).is_dir())
+        if self.game.get('installation',{}).get('mode')=='installed':
+            link_card=box(spacing=8)
+            link_card.append(label('Linked game location','heading',xalign=0))
+            link_card.append(label('Correct the game folder or launcher if the wrong files were linked. This never moves, copies, or deletes game files.','dim-label',xalign=0,wrap=True))
+            linked_root=Gtk.Entry(hexpand=True)
+            linked_root.set_text(root_path or '')
+            link_card.append(linked_root)
+            link_card.append(button('Choose linked game folder…',lambda:self.choose_file('Choose installed game folder',lambda path:linked_root.set_text(str(path)),folder=True,parent=dialog)))
+            linked_launcher=Gtk.Entry(hexpand=True)
+            linked_launcher.set_text(self.game.get('executable',''))
+            link_card.append(linked_launcher)
+            link_card.append(button('Choose linked launcher…',lambda:self.choose_file('Choose main game launcher',lambda path:linked_launcher.set_text(str(path)),start_folder=Path(linked_root.get_text()) if linked_root.get_text() else None,parent=dialog,launcher=True)))
+            save_link=button('Save linked location',lambda:None,'suggested-action')
+            link_card.append(save_link)
+            def apply_link(*_):
+                try:
+                    if self.launcher.active():raise RuntimeError('Finish the active game or installer before changing its linked files.')
+                    from .game_assets import relink_installed_game
+                    updated=relink_installed_game(self.game,root=linked_root.get_text().strip(),launcher=linked_launcher.get_text().strip(),games=self.library.games())
+                    self.library.save(updated);self.game=updated;self.show_game(updated)
+                    self.notify('Linked game location updated.')
+                except Exception as error:self.error(error,parent=dialog)
+            save_link.connect('clicked',apply_link)
+            files.append(link_card)
         if is_installed:
             from .game_uninstall import folder_summary
             resolved_root=Path(root_path).resolve()

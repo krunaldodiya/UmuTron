@@ -118,6 +118,46 @@ class LinkGameTests(unittest.TestCase):
             window.pool.shutdown(wait=False)
             window.destroy()
 
+    def test_linked_game_location_can_be_corrected_from_game_settings(self):
+        window = Window(self.app, self.library, demo=True)
+        try:
+            old_root = self.root / 'old-game'
+            old_root.mkdir()
+            old_launcher = old_root / 'old.exe'
+            old_launcher.write_text('old')
+            new_root = self.root / 'correct-game'
+            new_root.mkdir()
+            new_launcher = new_root / 'correct.exe'
+            new_launcher.write_text('new')
+            prefix = self.root / 'prefix'
+            prefix.mkdir()
+            game = self.library.new_game()
+            game.update(title='Correctable Game', executable=str(old_launcher), working_dir=str(old_root),
+                        launch={'prefix': str(prefix), 'proton': 'UMU-Latest'},
+                        installation={'mode': 'installed', 'root': str(old_root), 'prefix': str(prefix), 'confirmed': True})
+            self.library.save(game)
+            window.show_game(game)
+            window.open_game_settings()
+            from gi.repository import Gtk
+            def widgets(widget):
+                yield widget
+                child = widget.get_first_child()
+                while child:
+                    yield from widgets(child)
+                    child = child.get_next_sibling()
+            settings = window.game_settings_dialog
+            entries = [widget for widget in widgets(settings) if isinstance(widget, Gtk.Entry)]
+            next(entry for entry in entries if entry.get_text() == str(old_root)).set_text(str(new_root))
+            next(entry for entry in entries if entry.get_text() == str(old_launcher)).set_text(str(new_launcher))
+            next(widget for widget in widgets(settings) if isinstance(widget, Gtk.Button) and widget.get_label() == 'Save linked location').emit('clicked')
+            self.assertEqual(window.game['installation']['root'], str(new_root.resolve()))
+            self.assertEqual(window.game['executable'], str(new_launcher.resolve()))
+            saved = next(item for item in self.library.games() if item['id'] == game['id'])
+            self.assertEqual(saved['working_dir'], str(new_root.resolve()))
+        finally:
+            window.pool.shutdown(wait=False)
+            window.destroy()
+
 
 if __name__ == '__main__':
     unittest.main()

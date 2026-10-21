@@ -276,6 +276,36 @@ def regenerate_manifest(game: dict[str, Any]) -> dict[str, Any]:
     updated_game["installation"] = {**installation, "proton": proton, "manifest": str(new_manifest_path)}
     return updated_game
 
+
+def relink_installed_game(game: dict[str, Any], *, root: str | Path, launcher: str | Path,
+                          games: list[dict[str, Any]] = ()) -> dict[str, Any]:
+    """Correct an external game's root and launcher without touching its files."""
+    installation = game.get("installation", {})
+    if installation.get("mode") != "installed":
+        raise ValueError("Only externally linked game folders can be changed here.")
+    if not str(root).strip() or not str(launcher).strip():
+        raise ValueError("Choose both the installed game folder and its main launcher executable.")
+    source, executable, _relative = _validate_source(root, launcher)
+    for other in games:
+        if other.get("id") == game.get("id"):
+            continue
+        paths = (other.get("installation", {}).get("root"), other.get("executable"))
+        for value in paths:
+            if not value:
+                continue
+            try:
+                used = Path(value).expanduser().resolve(strict=True)
+            except OSError:
+                continue
+            if used == source or used.is_relative_to(source) or source.is_relative_to(used):
+                raise ValueError("Another library game already uses this installation folder.")
+    updated = deepcopy(game)
+    updated.update(executable=str(executable), working_dir=str(executable.parent))
+    updated["installation"] = {**installation, "root": str(source), "confirmed": True}
+    if installation.get("manifest"):
+        updated = regenerate_manifest(updated)
+    return updated
+
 def _linked_paths(game: dict[str, Any]) -> tuple[Path, Path, Path]:
     installation = game.get("installation", {})
     root = Path(installation.get("root", "")).expanduser().resolve(strict=True)

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from umutron.game_assets import BackupCancelled, backup_game, link_game, move_game_installation, regenerate_manifest, restore_game, set_game_launch_options, set_game_proton, unlink_game
+from umutron.game_assets import BackupCancelled, backup_game, link_game, move_game_installation, regenerate_manifest, relink_installed_game, restore_game, set_game_launch_options, set_game_proton, unlink_game
 from umutron.library import Library
 
 
@@ -221,6 +221,54 @@ class ManagedGameAssetsTests(unittest.TestCase):
         self.assertTrue(manifest_path.is_file())
         self.assertEqual(manifest_path.name, 'appmanifest_12345.json')
         self.assertEqual(manifest_path.parent, managed_base)
+
+
+    def test_relink_external_game_updates_root_launcher_and_manifest_without_moving_files(self):
+        old_root = self.root / 'old-game'
+        old_root.mkdir()
+        old_launcher = old_root / 'old.exe'
+        old_launcher.write_text('old')
+        new_root = self.root / 'new-game'
+        (new_root / 'bin').mkdir(parents=True)
+        new_launcher = new_root / 'bin' / 'correct.exe'
+        new_launcher.write_text('new')
+        prefix = self.drive / 'UmuLibrary' / 'umuapps' / 'compatdata' / 'External Game'
+        prefix.mkdir(parents=True)
+        game = {
+            'id': 'test-uuid-relink', 'title': 'External Game', 'metadata_app_id': 77778,
+            'executable': str(old_launcher), 'working_dir': str(old_root),
+            'launch': {'prefix': str(prefix), 'proton': str(self.proton)},
+            'installation': {'mode': 'installed', 'root': str(old_root), 'prefix': str(prefix)},
+        }
+        linked = regenerate_manifest(game)
+        updated = relink_installed_game(linked, root=new_root, launcher=new_launcher, games=[linked])
+        self.assertEqual(updated['installation']['root'], str(new_root.resolve()))
+        self.assertEqual(updated['executable'], str(new_launcher.resolve()))
+        self.assertEqual(updated['working_dir'], str(new_launcher.parent.resolve()))
+        self.assertTrue(old_launcher.is_file())
+        self.assertTrue(new_launcher.is_file())
+        manifest = json.loads(Path(updated['installation']['manifest']).read_text())
+        self.assertEqual(manifest['launcher_relative_path'], 'bin/correct.exe')
+
+    def test_relink_external_game_rejects_another_library_game_folder(self):
+        root = self.root / 'first-game'
+        root.mkdir()
+        launcher = root / 'first.exe'
+        launcher.write_text('first')
+        other_root = self.root / 'other-game'
+        other_root.mkdir()
+        other_launcher = other_root / 'other.exe'
+        other_launcher.write_text('other')
+        game = {
+            'id': 'test-uuid-relink-first', 'title': 'First Game', 'metadata_app_id': None,
+            'executable': str(launcher), 'working_dir': str(root),
+            'launch': {'prefix': str(self.root / 'prefix'), 'proton': str(self.proton)},
+            'installation': {'mode': 'installed', 'root': str(root), 'prefix': str(self.root / 'prefix')},
+        }
+        other = {**game, 'id': 'test-uuid-relink-second', 'executable': str(other_launcher),
+                 'working_dir': str(other_root), 'installation': {'mode': 'installed', 'root': str(other_root)}}
+        with self.assertRaisesRegex(ValueError, 'Another library game'):
+            relink_installed_game(game, root=other_root, launcher=other_launcher, games=[game, other])
 
     def test_external_game_proton_selection_updates_manifest_and_survives_regeneration(self):
         cachyos = self.root / 'proton-cachyos'
