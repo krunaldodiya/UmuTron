@@ -40,7 +40,7 @@ CSS = b'''
 .tv-mode .home-setups { padding: 32px 48px 48px; background: #0b101a; }
 .tv-mode .home-setups .tv-section-heading { margin: 0; }
 .tv-mode .home-setup-state { font-size: 14px; color: #acb9ce; min-height: 34px; }
-.tv-mode .home-setups flowboxchild { padding: 6px; }
+.tv-mode .home-setup-scrollbar { margin: 0 0 10px; }
 .tv-mode .tv-hints { font-size: 14px; color: #aab9cf; margin: 10px 40px 14px; }
 .tv-mode .tv-detail-panel { background: alpha(#0d1523,.86); border: 1px solid alpha(#b4c7e5,.10); border-radius: 20px; padding: 30px; }
 .tv-mode .tv-detail-panel .tv-title { font-size: 46px; }
@@ -130,6 +130,7 @@ CSS += b'''
 .desktop-mode .home-surface .tv-cover { background: #202b3c; border-radius: 7px; }
 .desktop-mode .home-surface .home-setups { padding: 28px 40px 40px; background: #0b101a; }
 .desktop-mode .home-surface .home-setups .tv-section-heading { margin: 0; }
+.desktop-mode .home-surface .home-setup-scrollbar { margin: 0 0 10px; }
 .desktop-mode .home-surface .home-setup-state { color: #acb9ce; font-size: 14px; min-height: 34px; }
 '''
 

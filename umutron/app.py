@@ -354,8 +354,8 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         from .play_history import recent,revision
         self.home_history_revision=revision(self.library.root)
         from .setup_history import groups
-        dated,_=groups(self.library);self.home_setup_games=dated
-        self.tv_games=recent(self.library)[:24];self.tv_tiles=[]
+        dated,undated=groups(self.library);self.home_setup_games=dated+undated
+        self.tv_games=recent(self.library);self.tv_tiles=[]
         if not self.tv_games and not self.home_setup_games:
             empty=Adw.StatusPage(title='Your next adventure starts here',description='Browse Store to save a game, then connect its files in Setup. Your recent plays and completed setups will appear here.',icon_name=ICON_NAME);self.body.append(empty);(self.tv_home_tab if self.tv_mode else self.home_nav).grab_focus();return
         tv_content=box(spacing=0);tv_content.set_vexpand(True)
@@ -393,19 +393,26 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             empty=label('Your recent plays will appear here after you start a game.','tv-meta',xalign=0,wrap=True);margins(empty,32);collection.append(empty)
         self.home_setup_section=box(spacing=18);self.home_setup_section.add_css_class('home-setups');tv_content.append(self.home_setup_section)
         self.home_setup_section.append(label('Recently ready to play','tv-section-heading',xalign=0))
-        self.home_setup_section.append(label('Your latest completed setups, newest first.','tv-meta',xalign=0,wrap=True))
-        if not dated:self.home_setup_section.append(label('Newly completed setups will appear here. Saving metadata does not count as setup.','tv-meta',xalign=0,wrap=True))
-        if dated:
-            grid=Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE,homogeneous=True,min_children_per_line=1,max_children_per_line=12,column_spacing=20,row_spacing=24)
-            grid.set_valign(Gtk.Align.START);grid.set_halign(Gtk.Align.START)
-            self.home_setup_section.append(grid)
-            for entry in dated:
+        self.home_setup_section.append(label('Your ready games, newest completed setups first.','tv-meta',xalign=0,wrap=True))
+        if not self.home_setup_games:self.home_setup_section.append(label('Completed setups will appear here. Saving metadata does not count as setup.','tv-meta',xalign=0,wrap=True))
+        if self.home_setup_games:
+            self.home_setup_rail=box(False,20);margins(self.home_setup_rail,12);self.home_setup_rail.set_margin_start(0);self.home_setup_rail.set_margin_end(0)
+            self.home_setup_scroll=Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.EXTERNAL,vscrollbar_policy=Gtk.PolicyType.NEVER);self.home_setup_scroll.set_child(self.home_setup_rail);self.home_setup_scroll.get_child().set_hscroll_policy(Gtk.ScrollablePolicy.NATURAL);self.home_setup_section.append(self.home_setup_scroll)
+            adjustment=self.home_setup_scroll.get_hadjustment()
+            self.home_setup_scrollbar=Gtk.Scrollbar(orientation=Gtk.Orientation.HORIZONTAL,adjustment=adjustment);self.home_setup_scrollbar.add_css_class('tv-rail-scrollbar');self.home_setup_scrollbar.add_css_class('home-setup-scrollbar');self.home_setup_scrollbar.set_visible(False);self.home_setup_section.append(self.home_setup_scrollbar)
+            def update_setup_rail(adjustment):
+                self.home_setup_scrollbar.set_visible(adjustment.get_upper()>adjustment.get_page_size()+1)
+                return False
+            adjustment.connect('changed',lambda adjustment:GLib.idle_add(update_setup_rail,adjustment))
+            for entry in self.home_setup_games:
                 tile=self.tv_tile(entry,grid=True);tile.home_section='setup';tile.add_css_class('home-setup-card')
                 state=setup_state(entry)
                 status='Ready to play' if state['ready'] else 'Files unavailable' if entry.get('executable') and not Path(entry['executable']).is_file() else 'Setup needed'
-                tile.set_tooltip_text(entry['title']+' · '+status+' · Setup completed '+datetime.fromtimestamp(entry['setup_completed_at']).strftime('%d %b %Y'))
+                completed=entry.get('setup_completed_at')
+                detail=' · Setup completed '+datetime.fromtimestamp(completed).strftime('%d %b %Y') if completed else ''
+                tile.set_tooltip_text(entry['title']+' · '+status+detail)
                 caption=label(status,'home-setup-state',xalign=0,wrap=True,lines=2,ellipsize=Pango.EllipsizeMode.END,width_chars=1,max_width_chars=1)
-                tile.get_child().append(caption);grid.append(tile);self.home_setup_tiles.append((entry['id'],tile))
+                tile.get_child().append(caption);self.home_setup_rail.append(tile);self.home_setup_tiles.append((entry['id'],tile))
         self.tv_hints=label('','tv-hints',xalign=0,ellipsize=Pango.EllipsizeMode.END);self.body.append(self.tv_hints)
         choices=self.tv_games+self.home_setup_games
         game=next((g for g in choices if g['id']==return_id),choices[0])
