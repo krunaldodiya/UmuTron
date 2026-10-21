@@ -71,6 +71,53 @@ class LinkGameTests(unittest.TestCase):
             window.pool.shutdown(wait=False)
             window.destroy()
 
+    def test_link_game_with_steam_save_migration(self):
+        window = Window(self.app, self.library, demo=True)
+        try:
+            window.game = None
+            window.detail_item = {
+                'id': 75235,
+                'title': 'Ghost of Tsushima',
+                'images': {},
+            }
+            runner_dir = self.root / 'fake-proton'
+            runner_dir.mkdir(exist_ok=True)
+            (runner_dir / 'proton').write_text('#!/bin/sh\n')
+            window.proton_manager.installed = MagicMock(return_value=[str(runner_dir)])
+
+            game_folder = self.root / 'SteamLibrary' / 'steamapps' / 'common' / 'Ghost of Tsushima'
+            game_folder.mkdir(parents=True, exist_ok=True)
+            exe = game_folder / 'GhostOfTsushima.exe'
+            exe.write_text('fake binary')
+            (game_folder / 'steam_appid.txt').write_text('2215430\n')
+
+            steam_docs = self.root / 'SteamLibrary' / 'steamapps' / 'compatdata' / '2215430' / 'pfx' / 'drive_c' / 'users' / 'steamuser' / 'Documents'
+            steam_docs.mkdir(parents=True)
+            (steam_docs / 'save.dat').write_text('save data')
+
+            window.open_add_installed_game()
+            from gi.repository import Gtk
+            def widgets(w):
+                yield w
+                c = w.get_first_child()
+                while c:
+                    yield from widgets(c)
+                    c = c.get_next_sibling()
+            all_entries = [w for w in widgets(window.add_installed_dialog) if isinstance(w, Gtk.Entry)]
+            all_entries[0].set_text(str(game_folder))
+            all_entries[1].set_text(str(exe))
+            buttons = [w for w in widgets(window.add_installed_dialog) if isinstance(w, Gtk.Button) and w.get_label() == 'Link a game']
+            buttons[0].emit('clicked')
+
+            self.assertIsNotNone(window.game)
+            prefix = Path(window.game['launch']['prefix'])
+            our_save = prefix / 'drive_c' / 'users' / 'steamuser' / 'Documents' / 'save.dat'
+            self.assertTrue(our_save.is_file())
+            self.assertEqual(our_save.read_text(), 'save data')
+        finally:
+            window.pool.shutdown(wait=False)
+            window.destroy()
+
 
 if __name__ == '__main__':
     unittest.main()

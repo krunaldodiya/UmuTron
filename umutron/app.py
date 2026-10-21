@@ -5,6 +5,7 @@ from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 import shlex
+import shutil
 import sys
 import gi
 
@@ -1123,7 +1124,9 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                 from .game_assets import layout_root, _safe_folder
                 game_title = target_game.get('title') or (self.detail_item.get('title') if self.detail_item else source_root.name)
                 folder_name=_safe_folder(game_title)
-                if target_drive:
+                if self.demo:
+                    prefix=Path(self.library.root)/'prefixes'/folder_name
+                elif target_drive:
                     prefix=layout_root(target_drive['root'])/'compatdata'/folder_name
                 else:
                     found_compatdata=None
@@ -1441,6 +1444,20 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             import_saves_btn=button('Import saves…',lambda:self.import_game_saves(parent=dialog))
             import_saves_btn.set_hexpand(True);save_btn_row.append(import_saves_btn)
             save_card.append(save_btn_row);files.append(save_card)
+            manifest_card=box(spacing=4)
+            manifest_card.append(label('Regenerate appmanifest JSON with the detected Steam App ID and launcher paths.','dim-label',xalign=0,wrap=True))
+            def on_regen_manifest():
+                from .game_assets import regenerate_manifest
+                try:
+                    updated=regenerate_manifest(self.game)
+                    self.library.save(updated)
+                    self.game=updated
+                    m_path=Path(updated['installation']['manifest'])
+                    self.notify(f"Regenerated app manifest: {m_path.name}")
+                except Exception as err:
+                    self.error(err,parent=dialog)
+            regen_btn=button('Regenerate app manifest',on_regen_manifest)
+            manifest_card.append(regen_btn);files.append(manifest_card)
         else:
             files.append(label('This game is not currently installed.','dim-label',xalign=0,wrap=True))
             files.append(button('Link a game…',self.open_add_installed_game))

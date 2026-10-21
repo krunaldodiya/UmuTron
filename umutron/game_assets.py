@@ -1,6 +1,7 @@
 """Steam-like managed game layout, linking, and per-game backups."""
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 import hashlib
 import os
@@ -205,6 +206,49 @@ def set_game_launch_options(game: dict[str, Any], arguments: list[str]) -> list[
     _write_manifest(manifest,data)
     return arguments
 
+
+def regenerate_manifest(game: dict[str, Any]) -> dict[str, Any]:
+    """Regenerate and modernize the appmanifest JSON for a managed or installed game."""
+    installation = game.get("installation", {})
+    root_str = installation.get("root") or game.get("working_dir")
+    exe_str = game.get("executable")
+    if not root_str or not exe_str or not Path(root_str).is_dir() or not Path(exe_str).is_file():
+        raise ValueError("Cannot regenerate manifest: game root or executable is missing.")
+    root = Path(root_str).expanduser().resolve()
+    exe = Path(exe_str).expanduser().resolve()
+    from .launcher import detect_steam_appid
+    detected = detect_steam_appid(exe)
+    updated_game = deepcopy(game)
+    if detected and not updated_game.get("metadata_app_id"):
+        try:updated_game["metadata_app_id"] = int(detected)
+        except ValueError:updated_game["metadata_app_id"] = detected
+    base = None
+    if root.parent.name == "common" and root.parent.parent.name == "umuapps":
+        base = root.parent.parent
+    else:
+        old_m = installation.get("manifest")
+        if old_m and Path(old_m).is_file():
+            base = Path(old_m).parent
+    if not base:
+        raise ValueError("Regenerating appmanifest is only supported for games installed in an UmuLibrary.")
+    prefix_str = installation.get("prefix") or game.get("launch", {}).get("prefix")
+    prefix = Path(prefix_str) if prefix_str else base / "compatdata" / _safe_folder(updated_game["title"])
+    try:rel_exe = exe.relative_to(root)
+    except ValueError:rel_exe = Path(exe.name)
+    proton = installation.get("proton") or game.get("launch", {}).get("proton") or "GE-Latest"
+    old_manifest_str = installation.get("manifest")
+    old_manifest = Path(old_manifest_str) if old_manifest_str else None
+    new_manifest_key = manifest_key(updated_game)
+    new_manifest_path = base / f"{_MANIFEST_PREFIX}{new_manifest_key}.json"
+    manifest_data = _manifest(updated_game, root, prefix, rel_exe, proton)
+    if "arguments" in updated_game.get("launch", {}):
+        manifest_data["launch_options"] = updated_game["launch"]["arguments"]
+    _write_manifest(new_manifest_path, manifest_data)
+    if old_manifest and old_manifest.is_file() and old_manifest != new_manifest_path:
+        try:old_manifest.unlink()
+        except OSError:pass
+    updated_game["installation"]["manifest"] = str(new_manifest_path)
+    return updated_game
 
 def _linked_paths(game: dict[str, Any]) -> tuple[Path, Path, Path]:
     installation = game.get("installation", {})
