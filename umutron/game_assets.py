@@ -247,11 +247,6 @@ def regenerate_manifest(game: dict[str, Any]) -> dict[str, Any]:
                 base = cand
                 break
     if not base:
-        for mnt in list(Path("/mnt").glob("*/UmuLibrary/umuapps")) + list(Path("/media").glob("*/UmuLibrary/umuapps")):
-            if mnt.is_dir():
-                base = mnt
-                break
-    if not base:
         base = Path.home() / ".local" / "share" / "umutron" / "umuapps"
         base.mkdir(parents=True, exist_ok=True)
     prefix = Path(prefix_str) if prefix_str else base / "compatdata" / _safe_folder(updated_game["title"])

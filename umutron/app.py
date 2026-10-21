@@ -1135,11 +1135,6 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                         if cand.is_dir():
                             found_compatdata=cand
                             break
-                    if not found_compatdata:
-                        for mnt in Path('/mnt').glob('*/UmuLibrary/umuapps/compatdata'):
-                            if mnt.is_dir():
-                                found_compatdata=mnt
-                                break
                     if found_compatdata:
                         prefix=found_compatdata/folder_name
                     else:
