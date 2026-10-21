@@ -1951,10 +1951,41 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         self.default_mode_choice.connect('notify::selected',lambda choice,_:self.library.set_default_display_mode('fullscreen' if choice.get_selected()==1 else 'desktop'))
         from .launcher import gamemode_binary
         gm_available=gamemode_binary() is not None
-        gm_row=Adw.ActionRow(title='Feral GameMode',subtitle='Automatically optimize CPU governor, GPU performance, and process priorities while gaming, then revert on exit.' if gm_available else 'GameMode not installed (gamemoderun not found).')
+        gm_subtitle_on='Automatically optimize CPU governor, GPU performance, and process priorities while gaming, then revert on exit.'
+        gm_subtitle_off='GameMode not installed. Toggle on to install automatically.'
+        gm_row=Adw.ActionRow(title='Feral GameMode',subtitle=gm_subtitle_on if gm_available else gm_subtitle_off)
         gm_switch=Gtk.Switch(active=bool(self.library.data.get('settings',{}).get('gamemode',True) and gm_available),valign=Gtk.Align.CENTER)
-        gm_switch.set_sensitive(gm_available)
-        gm_switch.connect('notify::active',lambda switch,_:self.library.set_gamemode(switch.get_active()))
+        gm_updating={'flag':False}
+        def on_gamemode_toggle(switch,_):
+            if gm_updating['flag']:return
+            active=switch.get_active()
+            if not active:
+                self.library.set_gamemode(False)
+                return
+            if gamemode_binary() is not None:
+                self.library.set_gamemode(True)
+                gm_row.set_subtitle(gm_subtitle_on)
+                return
+            def cancel_install():
+                gm_updating['flag']=True
+                switch.set_active(False)
+                gm_updating['flag']=False
+            def do_install():
+                def run():
+                    from .gamemode_install import install_system_gamemode
+                    install_system_gamemode()
+                def done(_):
+                    gm_updating['flag']=True
+                    switch.set_active(True)
+                    gm_updating['flag']=False
+                    self.library.set_gamemode(True)
+                    gm_row.set_subtitle(gm_subtitle_on)
+                    self.notify('Feral GameMode installed and enabled successfully.')
+                self.async_job('Installing Feral GameMode…',run,done)
+            self.confirm('Install Feral GameMode?',
+                         'Feral GameMode is not currently installed on your system.\n\nWould you like to install GameMode (gamemode, lib32-gamemode) automatically using your system package manager?',
+                         'Install GameMode',do_install,destructive=False,parent=dialog,cancel=cancel_install)
+        gm_switch.connect('notify::active',on_gamemode_toggle)
         gm_row.add_suffix(gm_switch);modes.add(gm_row)
         page.add(Adw.PreferencesGroup(title=APP_NAME+' '+__version__,description='Standalone UMU/Proton game and installer library.'))
         appearance=Adw.PreferencesGroup(title='Appearance',description='Choose how the app looks.'); page.add(appearance)
