@@ -4,8 +4,10 @@ from threading import Event
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
+import os
 import shlex
 import shutil
+import subprocess
 import sys
 import gi
 
