@@ -68,7 +68,8 @@ def capture(widget,path):
 
 parser=argparse.ArgumentParser();parser.add_argument('--output',type=Path,required=True);args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
 with tempfile.TemporaryDirectory(prefix='umutron-proton-ui-') as temp:
-    os.environ['XDG_CACHE_HOME']=temp
+    os.environ['XDG_CACHE_HOME'] = temp
+    os.environ['XDG_DATA_HOME'] = temp
     library=prepare_demo(True)
     app=Application(demo=True);app.set_flags(Gio.ApplicationFlags.NON_UNIQUE);app.register(None)
     with patch('game_library.app.Controller') as controller:
@@ -93,9 +94,20 @@ with tempfile.TemporaryDirectory(prefix='umutron-proton-ui-') as temp:
         assert manager.installed()==[] and not fresh.items['GE-Proton']
         assert library.path.read_bytes()==fresh_before
         fresh_settings.close();settle()
-    def payload(family,page):
-        tags=[f'GE-Proton11-{i}' for i in (range(7,3,-1) if page==1 else range(3,0,-1))] if family=='GE-Proton' else [family+'-'+v for v in (('10.0-4','9.0-4e','9.0-4','9.0-3') if page==1 else ('9.0-2','9.0-1','9.0-0'))]
-        return [dict(tag_name=version,assets=[dict(name=version+'.tar.gz',size=archive.stat().st_size,digest='sha256:'+hashlib.sha256(archive.read_bytes()).hexdigest(),browser_download_url='https://github.com/'+REPOS[family]+'/releases/download/'+version+'/'+version+'.tar.gz')]) for version in tags]
+    def payload(family, page):
+        if family == 'GE-Proton':
+            tags = [f'GE-Proton11-{i}' for i in (range(7, 3, -1) if page == 1 else range(3, 0, -1))]
+        elif family == 'UMU-Proton':
+            tags = [family + '-' + v for v in (('10.0-4', '9.0-4e', '9.0-4', '9.0-3') if page == 1 else ('9.0-2', '9.0-1', '9.0-0'))]
+        else:
+            tags = [f'cachyos-11.0-202610{day:02d}-slr' for day in (15, 14, 13, 12) if page == 1]
+        def asset(version):
+            name = f'proton-{version}-x86_64.tar.xz' if family == 'Proton-CachyOS' else version + '.tar.gz'
+            return dict(
+                name=name, size=archive.stat().st_size, digest='sha256:' + hashlib.sha256(archive.read_bytes()).hexdigest(),
+                browser_download_url='https://github.com/' + REPOS[family] + '/releases/download/' + version + '/' + name,
+            )
+        return [dict(tag_name=version, assets=[asset(version)]) for version in tags]
     for family in REPOS:
         (manager.root/f'releases-{family}-1.json').write_text(json.dumps(payload(family,1)))
     umu=manager.umu_tools/'UMU-Latest';umu.mkdir(parents=True);(umu/'proton').write_text('inert');(umu/'version').write_text('1774856027 UMU-Proton-10.0-4\n')
@@ -128,8 +140,8 @@ with tempfile.TemporaryDirectory(prefix='umutron-proton-ui-') as temp:
     window.open_settings();settle()
     settings=next(w for w in Gtk.Window.get_toplevels() if w.get_title()=='Settings' and w.get_visible())
     settings.set_visible_page(window.proton_settings_page);panel=window.proton_panel
-    assert panel.stack.get_pages().get_n_items()==2
-    assert [panel.stack.get_pages().get_item(i).get_title() for i in range(2)]==['GE-Proton','UMU-Proton']
+    assert panel.stack.get_pages().get_n_items()==3
+    assert [panel.stack.get_pages().get_item(i).get_title() for i in range(3)]==['GE-Proton','UMU-Proton','Proton-CachyOS']
     assert panel.stack.get_visible_child_name()=='GE-Proton'
     assert not any(isinstance(w,Gtk.Button) and w.get_label() in ('Refresh','Load older versions','Refresh installed','Choose local Proton folder') for w in widgets(panel))
     panel.stack.set_visible_child_name('GE-Proton');settle()
@@ -257,8 +269,8 @@ with tempfile.TemporaryDirectory(prefix='umutron-proton-ui-') as temp:
     panel.stack.set_visible_child_name('UMU-Proton');settle();capture(settings,args.output/'proton-umu.png')
     assert_family(panel,'UMU-Proton')
     key_on_tab(panel,'UMU-Proton',Gdk.KEY_Home);assert_family(panel,'GE-Proton')
-    key_on_tab(panel,'GE-Proton',Gdk.KEY_End);assert_family(panel,'UMU-Proton')
-    capture(settings,args.output/'proton-umu-keyboard.png');assert_family(panel,'UMU-Proton')
+    key_on_tab(panel,'GE-Proton',Gdk.KEY_End);assert_family(panel,'Proton-CachyOS')
+    key_on_tab(panel,'Proton-CachyOS',Gdk.KEY_Left);assert_family(panel,'UMU-Proton')
     adjustment=panel.scrolls['UMU-Proton'].get_vadjustment();adjustment.set_value(300);settle()
     capture(settings,args.output/'proton-umu-available.png');assert_family(panel,'UMU-Proton')
     adjustment.set_value(0)
@@ -300,5 +312,4 @@ with tempfile.TemporaryDirectory(prefix='umutron-proton-ui-') as temp:
     assert library.path.read_bytes()==before
     capture(window.editor,args.output/'proton-game-setup.png')
     window.cancel_editor();manager.releases=original_releases
-    window.controller.close();window.destroy();window.pool.shutdown(wait=True)
-print('PASS: rendered checked/accent headers match content through rapid clicks, keyboard, background refresh and reopen; UMU catalog/pagination/installed actions restored with baseline once; exact selectors and receipt boundaries preserved; no implicit downloads; GE/UMU defaults/install/guards/offline; stale Setup cancellation; no live data or execution')
+print('PASS: rendered checked/accent headers match content through rapid clicks, keyboard, background refresh and reopen; GE, UMU, and CachyOS catalogs preserve exact selectors and receipt boundaries; UMU baseline/default/install guards/offline behavior; stale Setup cancellation; no live data or execution')

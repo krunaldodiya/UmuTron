@@ -1,4 +1,4 @@
-"""GE/UMU Proton browsing and ordinary per-game runner selection."""
+"""GE, UMU, and CachyOS Proton management and per-game selection."""
 from pathlib import Path
 from .dialogs import message_dialog
 from gi.repository import Gdk, GLib, Gtk
@@ -32,6 +32,8 @@ def choice_label(value):
 
 def family_of(path):
     name = (Path(path).name + ' ' + runner_label(path)).lower()
+    if 'cachyos' in name:
+        return 'Proton-CachyOS'
     if 'ge-proton' in name or 'proton-ge' in name:
         return 'GE-Proton'
     if 'umu-proton' in name:
@@ -93,7 +95,11 @@ class ProtonPanel(Gtk.Box):
             page = box(vertical=True, spacing=10)
             page.set_vexpand(True)
             page.set_hexpand(True)
-            page.append(text('UMU-Proton baseline and versions' if family == 'UMU-Proton' else 'Optional GE-Proton releases · ' + self.manager.arch, 'title-3'))
+            title = 'UMU-Proton baseline and versions' if family == 'UMU-Proton' else (
+                'CachyOS Proton releases · ' + self.manager.arch if family == 'Proton-CachyOS' else
+                'Optional GE-Proton releases · ' + self.manager.arch
+            )
+            page.append(text(title, 'title-3'))
             status = text('', 'dim-label')
             page.append(status)
             self.statuses[family] = status

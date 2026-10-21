@@ -17,7 +17,7 @@ class RunnerSelectionTests(unittest.TestCase):
             manager=ProtonManager(library.root/'proton-manager',umu_root=root/'umu',create=False)
             self.assertEqual(global_selector(library.root),'UMU-Latest')
             self.assertEqual(effective_selector(library.new_game(),global_selector(library.root)),'UMU-Latest')
-            self.assertEqual(manager.installed(),[])
+            self.assertFalse(any(manager.managed(path) for path in manager.installed()))
             self.assertFalse(manager.tools.exists())
             self.assertEqual(library.data,before)
             self.assertFalse(library.path.exists())
@@ -25,7 +25,8 @@ class RunnerSelectionTests(unittest.TestCase):
     def test_existing_explicit_default_survives_library_reopen(self):
         with tempfile.TemporaryDirectory() as temp:
             library=Library(Path(temp)/'library')
-            for value in ('release:GE-Proton:GE-Proton11-7','release:UMU-Proton:UMU-Proton-10.0-4','/custom/UMU-Proton-10.0-4','GE-Latest'):
+            for value in ('release:GE-Proton:GE-Proton11-7', 'release:UMU-Proton:UMU-Proton-10.0-4',
+                          'release:Proton-CachyOS:cachyos-11.0-20261015-slr', '/custom/UMU-Proton-10.0-4', 'GE-Latest'):
                 library.set_default_proton(value);before=library.path.read_bytes()
                 reopened=Library(library.root)
                 self.assertEqual(global_selector(reopened.root),value)
@@ -54,11 +55,17 @@ class RunnerSelectionTests(unittest.TestCase):
             self.assertEqual(game['launch']['proton'], value)
 
     def test_exact_release_selector_roundtrip_and_validation(self):
-        release = {'family': 'GE-Proton', 'version': 'GE-Proton11-7'}
-        selected = release_selector(release)
-        self.assertEqual(parse_release(selected), ('GE-Proton', 'GE-Proton11-7'))
+        releases = (
+            {'family': 'GE-Proton', 'version': 'GE-Proton11-7'},
+            {'family': 'Proton-CachyOS', 'version': 'cachyos-11.0-20261015-slr'},
+        )
+        for release in releases:
+            with self.subTest(release=release):
+                selected = release_selector(release)
+                self.assertEqual(parse_release(selected), (release['family'], release['version']))
         self.assertIsNone(parse_release('/custom/Proton'))
         for value in ('release:Other:1', 'release:GE-Proton:../escape',
-                      'release:UMU-Proton:', 'release:GE-Proton:.', 'release:GE-Proton:x/y'):
+                      'release:Proton-CachyOS:Proton-CachyOS-11.0', 'release:UMU-Proton:',
+                      'release:GE-Proton:.', 'release:GE-Proton:x/y'):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 parse_release(value)

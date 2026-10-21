@@ -119,3 +119,33 @@ class ProtonTests(unittest.TestCase):
         self.assertEqual(len(values),3)
         self.assertEqual(values[2],str(alias))
         self.assertEqual(len(set(labels)),3)
+
+    def test_cachyos_xz_release_is_verified_and_installed(self):
+        archive = self.root / 'source.tar.xz'
+        tag = 'cachyos-11.0-20261015-slr'
+        name = f'proton-{tag}-x86_64.tar.xz'
+        with tarfile.open(archive, 'w:xz') as output:
+            data = b'#!/bin/sh\nexit 0\n'
+            item = tarfile.TarInfo('proton-cachyos-11.0-20261015-slr-x86_64/proton')
+            item.size, item.mode = len(data), 0o755
+            output.addfile(item, io.BytesIO(data))
+        release = {
+            'family': 'Proton-CachyOS', 'version': tag, 'name': name, 'architecture': 'x86_64',
+            'url': f'https://github.com/CachyOS/proton-cachyos/releases/download/{tag}/{name}',
+            'size': archive.stat().st_size, 'digest': 'sha256:' + hashlib.sha256(archive.read_bytes()).hexdigest(),
+            'checksum_url': '',
+        }
+        payload = [dict(tag_name=tag, assets=[{
+            'name': name, 'size': release['size'], 'digest': release['digest'],
+            'browser_download_url': release['url'],
+        }])]
+        self.assertEqual(release_items(payload, 'Proton-CachyOS', 'x86_64'), [{**release, 'source': 'https://github.com/CachyOS/proton-cachyos'}])
+        def download(url, destination, limit, cancel, progress):
+            Path(destination).write_bytes(archive.read_bytes())
+            progress(archive.stat().st_size)
+        manager = ProtonManager(self.root / 'manager', downloader=download)
+        manager.install(release)
+        self.wait(manager)
+        self.assertEqual(manager.status(release)['state'], 'Installed')
+        self.assertTrue((manager.target(release) / 'proton').is_file())
+

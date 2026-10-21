@@ -72,7 +72,7 @@ The Gio application ID enforces one instance. Close hides the window only after 
 Explicit Exit presents a cancellable warning. Active game/installer continues under its independent supervisor after Exit; reopening reconnects. No operation is silently stopped. Runner and destructive maintenance jobs must finish before Exit; catalog callbacks are canceled on explicit Exit and outstanding network reads remain timeout-bounded. Dialog drafts are discarded only after explicitly confirmed Exit.
 
 ## Runners and storage
-Proton Manager retains official release paging/cache/architecture selection, installed/default/per-game choices, checksum verification, safe extraction, staging, cancellation/retry and no runner overwrite/removal. App updates never modify game files, saves or prefixes.
+Proton Manager retains GE-Proton, UMU-Proton, and CachyOS Proton release paging/cache/architecture selection, installed/default/per-game choices, checksum verification, safe extraction, staging, cancellation/retry and no runner overwrite/removal. It fetches only verified GitHub releases and has no Steam client, service, protocol, or install-location dependency. App updates never modify game files, saves or prefixes.
 
 Version-1 libraries/ZIPs accept optional validated installation and launch settings. Metadata/artwork and historical identities remain readable. ZIPs exclude executable binaries, prefixes, saves, credentials, runner downloads and operation/installation journals. Restore/relink file paths explicitly; backup game saves/prefixes separately.
 

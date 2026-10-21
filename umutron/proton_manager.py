@@ -1,4 +1,4 @@
-"""Official GE/UMU releases, staged checksum-verified runner installation."""
+"""Verified GE/UMU/CachyOS runners plus direct local tool discovery."""
 import fcntl
 import hashlib
 import json
@@ -18,8 +18,13 @@ from .library import atomic_write
 from .runner_selection import AUTOMATIC, effective_selector, parse_release, release_selector
 from . import runner_guard
 
-REPOS={'GE-Proton':'GloriousEggroll/proton-ge-custom','UMU-Proton':'Open-Wine-Components/umu-proton'}
-HOSTS={'api.github.com','github.com','objects.githubusercontent.com','release-assets.githubusercontent.com'}
+REPOS = {
+    'GE-Proton': 'GloriousEggroll/proton-ge-custom',
+    'UMU-Proton': 'Open-Wine-Components/umu-proton',
+    'Proton-CachyOS': 'CachyOS/proton-cachyos',
+}
+HOSTS = {'api.github.com', 'github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com'}
+ARCHIVE_SUFFIXES = ('.tar.gz', '.tar.xz')
 MAX_DOWNLOAD=2*1024**3
 MAX_EXPANDED=8*1024**3
 
@@ -42,6 +47,32 @@ def fetch(url):
     return json.loads(data)
 
 
+def archive_stem(name):
+    for suffix in ARCHIVE_SUFFIXES:
+        if name.endswith(suffix):
+            return name.removesuffix(suffix)
+    raise ValueError('Unsupported runner archive type.')
+
+
+def archive_names(family, tag, arch):
+    if family == 'Proton-CachyOS':
+        return {f'proton-{tag}-{arch}.tar.xz'}
+    names = {tag + '.tar.gz', tag + '-' + arch + '.tar.gz'}
+    return names - ({tag + '.tar.gz'} if arch == 'aarch64' else set())
+
+
+def local_proton_paths(umu_tools):
+    """Discover direct UMU-managed compatible tools without client integration."""
+    found = set()
+    try:
+        for path in islice(Path(umu_tools).iterdir(), 256):
+            if path.name.startswith(('UMU-', 'GE-')) and path.is_dir() and (path / 'proton').is_file():
+                found.add(path.resolve())
+    except OSError:
+        pass
+    return found
+
+
 def validate_release(release, arch):
     family = release.get('family')
     repo = REPOS.get(family)
@@ -53,14 +84,13 @@ def validate_release(release, arch):
     architecture = release.get('architecture')
     if architecture != arch or arch not in ('x86_64', 'aarch64'):
         raise ValueError('Runner architecture does not match this host.')
-    allowed = {tag + '.tar.gz', tag + '-' + arch + '.tar.gz'}
-    if name not in allowed or (arch == 'aarch64' and name == tag + '.tar.gz'):
+    if name not in archive_names(family, tag, arch):
         raise ValueError('Invalid runner release archive name.')
     base = 'https://github.com/' + repo + '/releases/download/' + tag + '/'
     if release.get('url') != base + name:
         raise ValueError('Runner URL does not identify this exact official release.')
     checksum = release.get('checksum_url', '')
-    if checksum and checksum != base + name.removesuffix('.tar.gz') + '.sha512sum':
+    if checksum and checksum != base + archive_stem(name) + '.sha512sum':
         raise ValueError('Unexpected checksum source.')
     digest = release.get('digest', '')
     if digest and not re.fullmatch(r'sha256:[a-f0-9]{64}', digest):
@@ -84,10 +114,12 @@ def release_items(payload, family, arch):
         assets = release.get('assets', [])
         for asset in assets:
             name = asset.get('name', '')
-            if not name.endswith('.tar.gz'):
+            try:
+                stem = archive_stem(name)
+            except ValueError:
                 continue
             architecture = 'aarch64' if 'aarch64' in name or 'arm64' in name else 'x86_64'
-            checks = next((a for a in assets if a.get('name') == name.removesuffix('.tar.gz') + '.sha512sum'), None)
+            checks = next((a for a in assets if a.get('name') == stem + '.sha512sum'), None)
             item = {'family': family, 'version': tag, 'architecture': architecture, 'name': name,
                     'url': asset.get('browser_download_url', ''), 'size': asset.get('size', 0),
                     'digest': asset.get('digest') or '', 'checksum_url': checks.get('browser_download_url', '') if checks else '',
@@ -114,7 +146,7 @@ def download(url,destination,limit,cancel,progress):
 
 def extract(archive,destination,cancel):
     destination=Path(destination)
-    with tarfile.open(archive,'r:gz') as tar:
+    with tarfile.open(archive,'r:*') as tar:
         members=[];total=0;roots=set();seen=set()
         for item in tar:
             if cancel.is_set():raise InterruptedError('Installation cancelled.')
@@ -198,23 +230,26 @@ class ProtonManager:
         self.lock, self.jobs = threading.Lock(), {}
 
     def installed(self):
-        # Bounded direct UMU discovery, never a recursive/client-library scan.
-        paths = {str(p) for p in self.tools.iterdir() if not p.is_symlink() and p.is_dir() and (p / 'proton').is_file() and not p.name.startswith('.')} if self.tools.is_dir() else set()
-        try:
-            for path in islice(self.umu_tools.iterdir(), 256):
-                if path.name.startswith(('UMU-', 'GE-')) and path.is_dir() and (path / 'proton').is_file():
-                    paths.add(str(path.absolute()))
-        except OSError:
-            pass
+        """Discover direct runner folders owned by this app, UMU, or CachyOS."""
+        paths = {
+            str(p.resolve()) for p in self.tools.iterdir()
+            if not p.is_symlink() and p.is_dir() and (p / 'proton').is_file() and not p.name.startswith('.')
+        } if self.tools.is_dir() else set()
+        paths.update(str(path) for path in local_proton_paths(self.umu_tools))
         try:
             data = self._library_data()
             values = [data.get('settings', {}).get('default_proton', '')]
             for game in data.get('games', []):
                 values.extend(game.get(key, {}).get('proton', '') for key in ('launch', 'installation'))
-            paths.update(v for v in values if isinstance(v, str) and Path(v).is_absolute() and (Path(v) / 'proton').is_file())
+            paths.update(
+                str(Path(value).expanduser()) for value in values
+                if isinstance(value, str) and Path(value).expanduser().is_absolute()
+                and (Path(value).expanduser() / 'proton').is_file()
+            )
         except (OSError, ValueError):
             pass
         return sorted(paths)
+
 
     def _library_data(self):
         path = self.root.parent / 'library.json'
@@ -281,7 +316,7 @@ class ProtonManager:
 
     def target(self, release):
         validate_release(release, self.arch)
-        return self.tools / release['name'].removesuffix('.tar.gz')
+        return self.tools / archive_stem(release['name'])
 
     def installed_release(self, selector):
         """Local-only resolution; receipt proves which exact archive was installed."""
@@ -321,8 +356,8 @@ class ProtonManager:
                 'error': 'An existing installation occupies this destination. It is preserved; this release cannot be downloaded into the same folder.' if collision else ''}
 
     def local_origin(self, path):
-        path = Path(path).absolute()
-        if path.parent == self.umu_tools.absolute():
+        path = Path(path).resolve()
+        if path.parent == self.umu_tools.resolve():
             return 'UMU-managed folder · not removable here'
         if self.managed(path):
             receipt=path/'umutron-release.json'

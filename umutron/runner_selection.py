@@ -3,7 +3,7 @@ import re
 
 INHERIT = 'default'
 AUTOMATIC = {'UMU-Latest': 'UMU-Proton', 'GE-Latest': 'GE-Proton'}
-DOWNLOAD_FAMILIES = ('GE-Proton', 'UMU-Proton')
+DOWNLOAD_FAMILIES = ('GE-Proton', 'UMU-Proton', 'Proton-CachyOS')
 
 
 def parse_release(value):
@@ -13,7 +13,8 @@ def parse_release(value):
     if len(parts) != 3 or parts[1] not in DOWNLOAD_FAMILIES:
         raise ValueError('Unknown Proton release selection.')
     family, tag = parts[1:]
-    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,99}', tag) or not tag.startswith(family):
+    prefix = 'cachyos-' if family == 'Proton-CachyOS' else family
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,99}', tag) or not tag.startswith(prefix):
         raise ValueError('Invalid Proton release version.')
     return family, tag
 
