@@ -2082,9 +2082,11 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         return dialog
 
     def pick_and_run_global_installer(self):
+        umu_bin=shutil.which('umu-run')
+        protons=[p for p in self.proton_manager.installed() if (Path(p)/'proton').is_file()]
         wine_bin=shutil.which('wine')
-        if not wine_bin:
-            self.error(RuntimeError('System Wine (/usr/bin/wine) is not installed.\n\nInstall wine on your system to run standalone Windows installers.'))
+        if not umu_bin and not wine_bin:
+            self.error(RuntimeError('Neither umu-run nor system Wine is available to launch installers.'))
             return
         def selected(path):
             if not path or not Path(path).is_file():return
@@ -2092,14 +2094,30 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             if p.suffix.lower() not in ('.exe','.msi','.bat','.cmd') and not os.access(p,os.X_OK):
                 self.notify('Choose an executable installer (.exe).')
                 return
-            system_prefix=Path(os.environ.get('WINEPREFIX',Path.home()/'.wine')).expanduser().resolve()
-            system_prefix.mkdir(parents=True,exist_ok=True)
+            from .launcher import MARKER
+            shared_prefix=Path(self.library.root)/'prefixes'/'global-installer'
+            shared_prefix.mkdir(parents=True,exist_ok=True,mode=0o700)
+            marker=shared_prefix/MARKER
+            if not marker.exists():
+                try:marker.write_text("game=global-installer\n")
+                except OSError:pass
             env=dict(os.environ)
-            env['WINEPREFIX']=str(system_prefix)
-            cmd=[wine_bin,str(p)] if p.suffix.lower()!='.msi' else [wine_bin,'msiexec','/i',str(p)]
+            env['WINEPREFIX']=str(shared_prefix)
+            env['WINEDEBUG']='-all'
+            env['WINE_LARGE_ADDRESS_AWARE']='1'
+            if umu_bin and protons:
+                proton_path=protons[0]
+                env['PROTONPATH']=str(proton_path)
+                env['GAMEID']='umu-default'
+                env['UMU_LOG']='debug'
+                cmd=[umu_bin,str(p)]
+                runner_name=f"Proton ({Path(proton_path).name})"
+            else:
+                cmd=[wine_bin,str(p)] if p.suffix.lower()!='.msi' else [wine_bin,'msiexec','/i',str(p)]
+                runner_name="system Wine"
             try:
                 subprocess.Popen(cmd,cwd=str(p.parent),env=env,start_new_session=True)
-                self.notify(f'Launched {p.name} with system Wine in {system_prefix.name}.')
+                self.notify(f'Launched {p.name} with {runner_name} in {shared_prefix.name}.')
             except Exception as e:
                 self.error(e)
         self.choose_file('Select game installer (.exe)',selected)
