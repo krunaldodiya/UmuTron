@@ -101,6 +101,7 @@ CSS = b'''
 .desktop-mode.desktop-dark .control-focused, .desktop-mode.desktop-dark button:focus-visible,
 .desktop-mode.desktop-dark .collection-page .browse-search.control-focused { outline-color: #a6f5df; }
 .desktop-mode .home-surface .control-focused, .desktop-mode .home-surface button:focus-visible { outline-color: #b3ffe9; }
+.desktop-mode .collection-card:focus, .desktop-mode .collection-card.control-focused { outline: none; outline-offset: 0; box-shadow: none; }
 .desktop-mode .shared-detail { background: alpha(#f5f8fa,.96); border: 1px solid alpha(#29465b,.12); }
 .desktop-mode.desktop-dark .shared-detail { background: alpha(#101b29,.94); border-color: alpha(#b4c7e5,.12); }
 .desktop-mode .detail-meta { opacity: 1; color: #506373; }

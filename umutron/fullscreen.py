@@ -46,6 +46,7 @@ CSS = b'''
 .tv-mode .tv-detail-logo { margin-bottom: 10px; }
 .tv-mode .tv-secondary { background: alpha(#becde4,.10); }
 .tv-mode .control-focused, .tv-mode button:focus-visible { outline: 3px solid #b3ffe9; outline-offset: 3px; box-shadow: 0 0 0 6px alpha(#0b101a,.72); }
+.tv-mode .collection-card:focus, .tv-mode .collection-card.control-focused { outline: none; outline-offset: 0; box-shadow: none; }
 .tv-mode.tv-compact button { min-height: 30px; padding: 8px 16px; }
 .tv-mode.tv-compact .tv-play { min-width: 112px; }
 .tv-mode.tv-compact .tv-controls { padding: 12px 28px; }
