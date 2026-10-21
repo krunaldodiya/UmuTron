@@ -1261,12 +1261,34 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         def apply_args(*_):
             try:arguments=shlex.split(launch_args.get_text())
             except ValueError:self.error(ValueError('Launch options have unmatched quotes.'));return
-            updated=deepcopy(self.game);updated['launch']={**updated.get('launch',{}),'arguments':arguments}
+            updated=deepcopy(self.game)
+            updated['launch']={**updated.get('launch',{}),'arguments':arguments,
+                               'mangohud':mango_switch.get_active(),
+                               'gamescope':gs_switch.get_active(),
+                               'gamescope_fsr':gs_switch.get_active()}
             if updated.get('installation',{}).get('mode')=='linked':
                 from .game_assets import set_game_launch_options
                 set_game_launch_options(updated,arguments)
-            self.library.save(updated);self.game=updated;self.notify('Launch options updated.')
+            self.library.save(updated);self.game=updated;self.notify('General settings updated.')
         save_args.connect('clicked',apply_args)
+        perf_group=box(spacing=10)
+        perf_group.append(label('Performance & overlays','heading',xalign=0))
+        perf_group.append(label('Tweak overlays and compositing for this game.','dim-label',xalign=0,wrap=True))
+        mango_row=box(False,10)
+        mango_info=box(spacing=2);mango_info.set_hexpand(True)
+        mango_info.append(label('MangoHud overlay','heading',xalign=0))
+        mango_info.append(label('Display real-time FPS, frame times, and hardware temperatures.','dim-label',xalign=0,wrap=True))
+        mango_row.append(mango_info)
+        mango_switch=Gtk.Switch(active=bool(self.game.get('launch',{}).get('mangohud',False)),valign=Gtk.Align.CENTER)
+        mango_row.append(mango_switch);perf_group.append(mango_row)
+        gs_row=box(False,10)
+        gs_info=box(spacing=2);gs_info.set_hexpand(True)
+        gs_info.append(label('Gamescope micro-compositor & FSR','heading',xalign=0))
+        gs_info.append(label('Isolate game in micro-compositor with AMD FSR spatial upscaling.','dim-label',xalign=0,wrap=True))
+        gs_row.append(gs_info)
+        gs_switch=Gtk.Switch(active=bool(self.game.get('launch',{}).get('gamescope',False)),valign=Gtk.Align.CENTER)
+        gs_row.append(gs_switch);perf_group.append(gs_row)
+        general.append(perf_group)
         stack.add_titled(general,'general','General')
         compatibility=box(spacing=12);compatibility.append(label('Compatibility','title-2',xalign=0))
         protons=[path for path in self.proton_manager.installed() if (Path(path)/'proton').is_file()]
@@ -1278,6 +1300,42 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                 selected=set_game_proton(self.game,protons[choice.get_selected()]);updated=deepcopy(self.game);updated['launch']={**updated.get('launch',{}),'proton':selected};self.library.save(updated);self.game=updated;self.notify('Proton compatibility layer updated.')
             save.connect('clicked',apply)
         else:compatibility.append(label('Install a Proton version in Settings → Proton Manager first.','dim-label',xalign=0,wrap=True))
+        overrides_box=box(spacing=6)
+        overrides_box.append(label('DLL overrides (WINEDLLOVERRIDES)','heading',xalign=0))
+        overrides_box.append(label('Override specific Windows libraries for mods or ReShade (e.g. dinput8=n,b;dxgi=n,b). Separate multiple entries with semicolons.','dim-label',xalign=0,wrap=True))
+        dll_entry=Gtk.Entry(hexpand=True,placeholder_text='dinput8=n,b;dxgi=n,b')
+        dll_entry.set_text(self.game.get('launch',{}).get('dll_overrides',''))
+        overrides_box.append(dll_entry)
+        save_dll=button('Save DLL overrides',lambda:None,'suggested-action')
+        overrides_box.append(save_dll)
+        def apply_dll(*_):
+            val=dll_entry.get_text().strip()
+            if val:
+                from .launcher import validate_settings
+                try:validate_settings({'runner':'','proton':'','prefix':'','arguments':[],'dll_overrides':val})
+                except ValueError as err:self.error(err,parent=dialog);return
+            updated=deepcopy(self.game);updated['launch']={**updated.get('launch',{}),'dll_overrides':val}
+            self.library.save(updated);self.game=updated;self.notify('DLL overrides updated.')
+        save_dll.connect('clicked',apply_dll)
+        compatibility.append(overrides_box)
+        has_prefix=bool(self.game.get('executable') and (self.game.get('launch',{}).get('prefix') or self.game.get('installation',{}).get('prefix')))
+        if has_prefix:
+            prefix_group=box(spacing=10)
+            prefix_group.append(label('Prefix tools','heading',xalign=0))
+            prefix_group.append(label('Run mod installers, trainers, or Wine configuration utilities inside this game’s prefix.','dim-label',xalign=0,wrap=True))
+            p_row1=box(False,10);p_row1.set_homogeneous(True);p_row1.set_hexpand(True)
+            run_exe_btn=button('Run EXE in prefix…',lambda:self.run_exe_in_game_prefix(parent=dialog))
+            run_exe_btn.set_hexpand(True);p_row1.append(run_exe_btn)
+            winecfg_btn=button('Wine configuration (winecfg)',lambda:self.run_tool_in_game_prefix('winecfg'))
+            winecfg_btn.set_hexpand(True);p_row1.append(winecfg_btn)
+            prefix_group.append(p_row1)
+            p_row2=box(False,10);p_row2.set_homogeneous(True);p_row2.set_hexpand(True)
+            regedit_btn=button('Registry editor (regedit)',lambda:self.run_tool_in_game_prefix('regedit'))
+            regedit_btn.set_hexpand(True);p_row2.append(regedit_btn)
+            open_c_btn=button('Open C: drive in file manager',self.open_game_c_drive)
+            open_c_btn.set_hexpand(True);p_row2.append(open_c_btn)
+            prefix_group.append(p_row2)
+            compatibility.append(prefix_group)
         stack.add_titled(compatibility,'compatibility','Compatibility')
         files=box(spacing=16);files.append(label('Installed Files','title-2',xalign=0))
         root_path=self.game.get('installation',{}).get('root')
@@ -1322,6 +1380,14 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             uninstall_btn.set_hexpand(True)
             btn_row.append(uninstall_btn)
             manage_card.append(btn_row);files.append(manage_card)
+            save_card=box(spacing=6)
+            save_card.append(label('Export or restore campaign saves and checkpoints from this game’s prefix.','dim-label',xalign=0,wrap=True))
+            save_btn_row=box(False,10);save_btn_row.set_homogeneous(True);save_btn_row.set_hexpand(True)
+            export_saves_btn=button('Export saves…',lambda:self.export_game_saves(parent=dialog))
+            export_saves_btn.set_hexpand(True);save_btn_row.append(export_saves_btn)
+            import_saves_btn=button('Import saves…',lambda:self.import_game_saves(parent=dialog))
+            import_saves_btn.set_hexpand(True);save_btn_row.append(import_saves_btn)
+            save_card.append(save_btn_row);files.append(save_card)
         else:
             files.append(label('This game is not currently installed.','dim-label',xalign=0,wrap=True))
             files.append(button('Link a game…',self.open_add_installed_game))
@@ -1347,6 +1413,72 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         self.confirm('Unlink?',
                      f'Unlink "{game["title"]}" from its installed folder?\n\nNo files will be deleted from disk. The game remains in your library so you can link or restore it again later.',
                      'Unlink',unlink,destructive=True)
+
+    def run_exe_in_game_prefix(self, parent=None):
+        if not self.game:return
+        owner=parent or getattr(self,'game_settings_dialog',None) or self
+        def selected(path):
+            if not path or not Path(path).is_file():return
+            from .launcher import build_command
+            try:
+                cmd,cwd,env=build_command(self.game,self.library.root)
+                umu_idx=next((i for i,c in enumerate(cmd) if 'umu-run' in c),len(cmd)-2)
+                target_idx=umu_idx+1
+                exec_cmd=cmd[:target_idx]+[str(path)]
+                subprocess.Popen(exec_cmd,cwd=str(Path(path).parent),env=env,start_new_session=True)
+                self.notify(f'Running {Path(path).name} in game prefix…')
+            except Exception as error:self.error(error,parent=owner)
+        self.choose_file('Select executable to run in prefix',selected,launcher=True,parent=owner)
+
+    def run_tool_in_game_prefix(self, tool_name):
+        if not self.game:return
+        from .launcher import build_command
+        try:
+            cmd,cwd,env=build_command(self.game,self.library.root)
+            umu_idx=next((i for i,c in enumerate(cmd) if 'umu-run' in c),len(cmd)-2)
+            target_idx=umu_idx+1
+            tool_cmd=cmd[:target_idx]+[tool_name]
+            subprocess.Popen(tool_cmd,cwd=str(cwd),env=env,start_new_session=True)
+            self.notify(f'Launching {tool_name} in game prefix…')
+        except Exception as error:self.error(error)
+
+    def open_game_c_drive(self):
+        if not self.game:return
+        prefix_str=self.game.get('launch',{}).get('prefix') or self.game.get('installation',{}).get('prefix')
+        if not prefix_str:
+            self.error(ValueError('No prefix path configured for this game.'))
+            return
+        drive_c=Path(prefix_str).expanduser().resolve()/'drive_c'
+        drive_c.mkdir(parents=True,exist_ok=True)
+        Gio.AppInfo.launch_default_for_uri(drive_c.as_uri(),None)
+
+    def export_game_saves(self, parent=None):
+        if not self.game:return
+        owner=parent or getattr(self,'game_settings_dialog',None) or self
+        from datetime import datetime
+        from .game_assets import _safe_folder
+        safe_name=_safe_folder(self.game['title'])
+        default_name=f"{safe_name}_Saves_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        def chosen(path):
+            if not path:return
+            from .save_manager import export_saves
+            try:
+                count=export_saves(self.game,Path(path))
+                self.notify(f'Exported {count} save files to {Path(path).name}.')
+            except Exception as error:self.error(error,parent=owner)
+        self.choose_file('Export Save Game Snapshot',chosen,save=True,filename=default_name,parent=owner)
+
+    def import_game_saves(self, parent=None):
+        if not self.game:return
+        owner=parent or getattr(self,'game_settings_dialog',None) or self
+        def chosen(path):
+            if not path or not Path(path).is_file():return
+            from .save_manager import import_saves
+            try:
+                count=import_saves(self.game,Path(path))
+                self.notify(f'Imported {count} save files into game prefix.')
+            except Exception as error:self.error(error,parent=owner)
+        self.choose_file('Import Save Game Snapshot (.zip)',chosen,parent=owner)
     def move_install_folder(self, parent=None):
         if not self.game:return
         if getattr(self,'archive_future',None) and not self.archive_future.done():
@@ -1880,48 +2012,27 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         return dialog
 
     def pick_and_run_global_installer(self):
-        if self.demo:
-            self.notify('Installer execution is disabled in the demo.')
-            return
-        if self.busy or self.launcher.active():
-            self.notify('Another game or installer is currently running. Finish it first.')
+        wine_bin=shutil.which('wine')
+        if not wine_bin:
+            self.error(RuntimeError('System Wine (/usr/bin/wine) is not installed.\n\nInstall wine on your system to run standalone Windows installers.'))
             return
         def selected(path):
-            if not path or not Path(path).is_file():
-                return
-            p = Path(path).resolve()
-            if p.suffix.lower() not in ('.exe', '.msi', '.bat', '.cmd') and not os.access(p, os.X_OK):
+            if not path or not Path(path).is_file():return
+            p=Path(path).resolve()
+            if p.suffix.lower() not in ('.exe','.msi','.bat','.cmd') and not os.access(p,os.X_OK):
                 self.notify('Choose an executable installer (.exe).')
                 return
-            shared_prefix = Path(self.library.root) / 'prefixes' / 'global-installer'
-            shared_prefix.mkdir(parents=True, exist_ok=True)
-            from .launcher import MARKER
-            (shared_prefix / MARKER).touch(exist_ok=True)
-            game = {
-                'id': 'global-installer',
-                'title': p.stem or 'Game Installer',
-                'executable': str(p),
-                'working_dir': str(p.parent),
-                'launch': {
-                    'runner': '',
-                    'proton': '',
-                    'prefix': str(shared_prefix),
-                    'arguments': [],
-                    'dll_overrides': '',
-                },
-                'installation': {
-                    'mode': 'installer',
-                    'installer': str(p),
-                    'prefix': str(shared_prefix),
-                }
-            }
+            system_prefix=Path(os.environ.get('WINEPREFIX',Path.home()/'.wine')).expanduser().resolve()
+            system_prefix.mkdir(parents=True,exist_ok=True)
+            env=dict(os.environ)
+            env['WINEPREFIX']=str(system_prefix)
+            cmd=[wine_bin,str(p)] if p.suffix.lower()!='.msi' else [wine_bin,'msiexec','/i',str(p)]
             try:
-                self.launcher.start(game, operation='installer')
-                self.notify(f'Launching installer: {p.name}')
+                subprocess.Popen(cmd,cwd=str(p.parent),env=env,start_new_session=True)
+                self.notify(f'Launched {p.name} with system Wine in {system_prefix.name}.')
             except Exception as e:
                 self.error(e)
-
-        self.choose_file('Select game installer (.exe)', selected)
+        self.choose_file('Select game installer (.exe)',selected)
 
     def open_settings(self,section=None):
         if self.tv_mode and section!='storage':self.notify('Switch to desktop mode to manage settings.');return

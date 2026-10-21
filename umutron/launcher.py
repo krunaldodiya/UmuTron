@@ -14,7 +14,7 @@ from uuid import UUID
 from .runner_selection import effective_selector, global_selector, parse_release
 from .installer_identity import is_installer_executable
 
-FIELDS={'runner','proton','prefix','arguments','dll_overrides'}
+FIELDS={'runner','proton','prefix','arguments','dll_overrides','mangohud','gamescope','gamescope_w','gamescope_h','gamescope_output_w','gamescope_output_h','gamescope_fsr','gamescope_sharpness'}
 ACTIVE={'Preparing','Downloading runtime','Running','Stopping'}
 MARKER='.metadata-manager-prefix'
 
@@ -46,6 +46,10 @@ def validate_settings(settings):
     args=settings.get('arguments',[])
     if not isinstance(args,list) or len(args)>128 or any(not isinstance(a,str) or len(a)>8192 or '\x00' in a or '\n' in a or '\r' in a for a in args):
         raise ValueError('Direct arguments must be a list of at most 128 single-line strings.')
+    for bool_key in ('mangohud','gamescope','gamescope_fsr'):
+        if bool_key in settings and not isinstance(settings[bool_key], bool):raise ValueError('Invalid '+bool_key+' setting.')
+    for int_key in ('gamescope_w','gamescope_h','gamescope_output_w','gamescope_output_h','gamescope_sharpness'):
+        if int_key in settings and settings[int_key] is not None and (type(settings[int_key]) is not int or settings[int_key]<0):raise ValueError('Invalid '+int_key+' setting.')
 
 
 def discover(home=None):
@@ -92,7 +96,15 @@ def defaults(game,root):
     return {'runner':settings.get('runner') or found['runner'],
             'proton':effective_selector(game,global_selector(root)),
             'prefix':settings.get('prefix') or installed.get('prefix') or str(Path(root)/'prefixes'/game['id']),
-            'arguments':arguments,'dll_overrides':overrides}
+            'arguments':arguments,'dll_overrides':overrides,
+            'mangohud':bool(settings.get('mangohud',False)),
+            'gamescope':bool(settings.get('gamescope',False)),
+            'gamescope_w':settings.get('gamescope_w'),
+            'gamescope_h':settings.get('gamescope_h'),
+            'gamescope_output_w':settings.get('gamescope_output_w'),
+            'gamescope_output_h':settings.get('gamescope_output_h'),
+            'gamescope_fsr':bool(settings.get('gamescope_fsr',False)),
+            'gamescope_sharpness':settings.get('gamescope_sharpness')}
 
 def build_command(game,root,inherited=None,allow_prepare=False,gamemode=None):
     settings=defaults(game,root)
@@ -126,6 +138,20 @@ def build_command(game,root,inherited=None,allow_prepare=False,gamemode=None):
     if gamemode is None:gamemode=is_gamemode_enabled(root)
     cmd=[str(runner),str(exe),*settings['arguments']]
     if gamemode and gamemode_binary():cmd=[gamemode_binary(),*cmd]
+    if settings.get('mangohud') and shutil.which('mangohud'):
+        cmd=['mangohud',*cmd]
+    if settings.get('gamescope') and shutil.which('gamescope'):
+        gs=['gamescope']
+        if settings.get('gamescope_w') and settings.get('gamescope_h'):
+            gs+=['-w',str(settings['gamescope_w']),'-h',str(settings['gamescope_h'])]
+        if settings.get('gamescope_output_w') and settings.get('gamescope_output_h'):
+            gs+=['-W',str(settings['gamescope_output_w']),'-H',str(settings['gamescope_output_h'])]
+        if settings.get('gamescope_fsr'):
+            gs+=['-F','fsr']
+            if settings.get('gamescope_sharpness') is not None:
+                gs+=['--sharpness',str(settings['gamescope_sharpness'])]
+        gs+=['--']
+        cmd=gs+cmd
     return cmd,str(cwd),env
 
 
