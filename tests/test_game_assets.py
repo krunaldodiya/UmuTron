@@ -220,5 +220,31 @@ class ManagedGameAssetsTests(unittest.TestCase):
         self.assertEqual(manifest_path.name, 'appmanifest_12345.json')
         self.assertEqual(manifest_path.parent, managed_base)
 
+    def test_unlink_external_game_removes_manifest(self):
+        from umutron.game_assets import regenerate_manifest
+        external_drive = self.root / 'external_drive_unlink'
+        external_drive.mkdir()
+        ext_root = external_drive / 'CustomGames' / 'MyExtUnlink'
+        ext_root.mkdir(parents=True)
+        exe = ext_root / 'game.exe'
+        exe.write_text('bin')
+        managed_base = self.drive / 'UmuLibrary' / 'umuapps'
+        prefix = managed_base / 'compatdata' / 'MyExtUnlink'
+        prefix.mkdir(parents=True)
+        game = {
+            'id': 'test-uuid-unlink-external',
+            'title': 'MyExtUnlink',
+            'metadata_app_id': 99999,
+            'executable': str(exe),
+            'working_dir': str(ext_root),
+            'launch': {'prefix': str(prefix), 'proton': str(self.proton)},
+            'installation': {'root': str(ext_root), 'prefix': str(prefix)},
+        }
+        updated = regenerate_manifest(game)
+        manifest = Path(updated['installation']['manifest'])
+        self.assertTrue(manifest.is_file())
+        unlink_game(updated)
+        self.assertFalse(manifest.exists())
+
 if __name__ == '__main__':
     unittest.main()

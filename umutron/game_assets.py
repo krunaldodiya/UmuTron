@@ -188,9 +188,7 @@ def unlink_game(game: dict[str, Any]) -> None:
         manifest = Path(manifest_path_str).expanduser().resolve(strict=True)
     except OSError:
         return
-    base = manifest.parent
-    root = Path(installation.get("root", "")).expanduser().resolve()
-    if root.parent == base / "common" and manifest.name == f"{_MANIFEST_PREFIX}{manifest_key(game)}.json":
+    if manifest.is_file() and manifest.name.startswith(_MANIFEST_PREFIX):
         manifest.unlink()
 def set_game_proton(game: dict[str, Any], proton: str | Path) -> str:
     """Persist an installed Proton choice in the managed manifest."""

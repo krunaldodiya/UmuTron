@@ -179,7 +179,7 @@ def build_command(game,root,inherited=None,allow_prepare=False,gamemode=None):
         try:
             appid_file = cwd / 'steam_appid.txt'
             if not appid_file.exists():
-                appid_file.write_text(f"{app_id_str}\n")
+                appid_file.write_text(f"{app_id_clean}\n")
         except OSError:
             pass
     if gamemode is None:gamemode=is_gamemode_enabled(root)
