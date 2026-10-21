@@ -105,6 +105,16 @@ class ProtonTests(unittest.TestCase):
         (first/'version').write_bytes(b'x'*5000)
         self.assertEqual(runner_label(str(first)),'Proton — installed')
 
+    def test_runner_choices_merge_duplicate_known_versions_and_keep_selected_path(self):
+        from game_library.proton_manager import runner_choices
+        first=self.root/'umu'/'GE-Latest';second=self.root/'manager'/'GE-Proton11-11'
+        for path in (first,second):
+            path.mkdir(parents=True);(path/'proton').write_text('fixture')
+            (path/'version').write_text('1792432585 GE-Proton11-11\n')
+        values,labels=runner_choices([str(first),str(second)],str(second))
+        self.assertEqual(values,['UMU-Latest','GE-Latest',str(second)])
+        self.assertEqual(labels,['UMU-Proton — automatic latest','GE-Proton — automatic latest','GE-Proton11-11 — installed'])
+
     def test_canonical_discovery_dedupes_without_changing_saved_symlink_selection(self):
         from game_library.proton_manager import runner_choices
         from game_library.library import Library

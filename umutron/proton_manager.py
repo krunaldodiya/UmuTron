@@ -203,13 +203,23 @@ def runner_label(value):
 
 
 def runner_choices(paths,selected):
-    """Dedupe real installations while retaining the exact stored selection value."""
+    """Dedupe equivalent installed releases while retaining a saved selection."""
+    from .prefix_inventory import runner_version
     installed={str(Path(path).expanduser().resolve()):str(Path(path).expanduser().resolve()) for path in paths}
+    selected_canonical=''
     if selected and selected not in ('UMU-Latest','GE-Latest'):
-        canonical=str(Path(selected).expanduser().resolve())
+        selected_canonical=str(Path(selected).expanduser().resolve())
         # Keep a saved symlink/custom spelling attached to its existing canonical item.
-        installed[canonical]=selected
-    values=['UMU-Latest','GE-Latest',*[installed[path] for path in sorted(installed)]]
+        installed[selected_canonical]=selected
+    choices={}
+    for canonical,value in installed.items():
+        version=runner_version(canonical)
+        # Unreadable versions are not assumed equivalent merely because their
+        # folders share a name.
+        key=('version',version.casefold()) if not version.startswith('Unknown') else ('path',canonical)
+        current=choices.get(key)
+        if current is None or canonical==selected_canonical:choices[key]=(canonical,value)
+    values=['UMU-Latest','GE-Latest',*[value for _,value in sorted(choices.values())]]
     labels=[runner_label(value) for value in values]
     labels=[text+' · '+value if labels.count(text)>1 else text for text,value in zip(labels,values)]
     return values,labels
