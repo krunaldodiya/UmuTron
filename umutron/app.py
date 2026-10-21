@@ -16,7 +16,7 @@ gi.require_version('Adw','1')
 from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, Gtk, Pango
 from .library import description_excerpt, Library
 from .launcher import preparation_progress, Launcher, defaults, build_command
-from .proton_manager import ProtonManager
+from .proton_manager import ProtonManager, runner_choices
 from .setup_state import setup_state
 from .installations import Installations
 from .tray import Tray, close_action
@@ -1347,13 +1347,18 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         general.append(perf_group)
         stack.add_titled(general,'general','General')
         compatibility=box(spacing=12);compatibility.append(label('Compatibility','title-2',xalign=0))
-        protons=[path for path in self.proton_manager.installed() if (Path(path)/'proton').is_file()]
+        installed=self.proton_manager.installed()
+        current=self.game.get('launch',{}).get('proton','')
+        protons,labels=runner_choices(installed,current)
         if protons:
-            choice=Gtk.DropDown.new_from_strings([Path(path).name for path in protons]);current=self.game.get('launch',{}).get('proton','');choice.set_selected(protons.index(current) if current in protons else 0);compatibility.append(choice)
+            choice=Gtk.DropDown.new_from_strings(labels);choice.set_selected(protons.index(current) if current in protons else 0);compatibility.append(choice)
             save=button('Save Proton',lambda:None,'suggested-action');compatibility.append(save)
             def apply(*_):
                 from .game_assets import set_game_proton
-                selected=set_game_proton(self.game,protons[choice.get_selected()]);updated=deepcopy(self.game);updated['launch']={**updated.get('launch',{}),'proton':selected};self.library.save(updated);self.game=updated;self.notify('Proton compatibility layer updated.')
+                selected=protons[choice.get_selected()];updated=deepcopy(self.game)
+                updated['launch']={**updated.get('launch',{}),'proton':selected}
+                if updated.get('installation'):updated['installation']={**updated['installation'],'proton':selected}
+                set_game_proton(updated,selected);self.library.save(updated);self.game=updated;self.notify('Proton compatibility layer updated.')
             save.connect('clicked',apply)
         else:compatibility.append(label('Install a Proton version in Settings → Proton Manager first.','dim-label',xalign=0,wrap=True))
         overrides_box=box(spacing=6)

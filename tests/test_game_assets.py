@@ -1,10 +1,12 @@
+import json
+
 import tarfile
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
-from umutron.game_assets import BackupCancelled, backup_game, link_game, move_game_installation, restore_game, set_game_launch_options, unlink_game
+from umutron.game_assets import BackupCancelled, backup_game, link_game, move_game_installation, regenerate_manifest, restore_game, set_game_launch_options, set_game_proton, unlink_game
 from umutron.library import Library
 
 
@@ -219,6 +221,38 @@ class ManagedGameAssetsTests(unittest.TestCase):
         self.assertTrue(manifest_path.is_file())
         self.assertEqual(manifest_path.name, 'appmanifest_12345.json')
         self.assertEqual(manifest_path.parent, managed_base)
+
+    def test_external_game_proton_selection_updates_manifest_and_survives_regeneration(self):
+        cachyos = self.root / 'proton-cachyos'
+        cachyos.mkdir()
+        (cachyos / 'proton').write_text('#!/bin/sh\n')
+        external_drive = self.root / 'external-proton-drive'
+        external_root = external_drive / 'Games' / 'External Game'
+        external_root.mkdir(parents=True)
+        executable = external_root / 'game.exe'
+        executable.write_text('bin')
+        base = self.drive / 'UmuLibrary' / 'umuapps'
+        prefix = base / 'compatdata' / 'External Game'
+        prefix.mkdir(parents=True)
+        game = {
+            'id': 'test-uuid-external-proton', 'title': 'External Game', 'metadata_app_id': 77777,
+            'executable': str(executable), 'working_dir': str(external_root),
+            'launch': {'prefix': str(prefix), 'proton': str(self.proton)},
+            'installation': {'mode': 'installed', 'root': str(external_root), 'prefix': str(prefix)},
+        }
+        generated = regenerate_manifest(game)
+        updated = {**generated, 'launch': {**generated['launch'], 'proton': str(cachyos)},
+                   'installation': {**generated['installation'], 'proton': str(cachyos)}}
+        self.assertEqual(set_game_proton(updated, cachyos), str(cachyos.resolve()))
+        manifest = Path(updated['installation']['manifest'])
+        self.assertEqual(json.loads(manifest.read_text())['proton'], str(cachyos.resolve()))
+        regenerated = regenerate_manifest(updated)
+        self.assertEqual(regenerated['installation']['proton'], str(cachyos))
+        self.assertEqual(json.loads(manifest.read_text())['proton'], str(cachyos))
+        updated['launch']['proton'] = 'UMU-Latest'
+        updated['installation']['proton'] = 'UMU-Latest'
+        self.assertEqual(set_game_proton(updated, 'UMU-Latest'), 'UMU-Latest')
+        self.assertEqual(json.loads(manifest.read_text())['proton'], 'UMU-Latest')
 
     def test_unlink_external_game_removes_manifest(self):
         from umutron.game_assets import regenerate_manifest
