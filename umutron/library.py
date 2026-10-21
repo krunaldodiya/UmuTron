@@ -199,9 +199,13 @@ class Library:
             self.data=previous; raise
 
     def set_theme(self, theme):
-        if theme not in ('system','light','dark'): raise ValueError('Unknown theme.')
-        self.data['settings']['theme']=theme; self._write()
+        if not isinstance(theme, str) or not theme.strip(): raise ValueError('Unknown theme.')
+        self.data['settings']['theme']=theme
+        self.data['settings']['theme_id']=theme
+        self._write()
 
+    def set_theme_id(self, theme_id):
+        self.set_theme(theme_id)
     def set_default_display_mode(self,mode):
         if mode not in ('desktop','fullscreen'):raise ValueError('Invalid default display mode.')
         self.data['settings']['default_display_mode']=mode;self._write()

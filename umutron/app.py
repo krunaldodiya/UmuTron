@@ -24,6 +24,7 @@ from .storage_access import DemoStorage, configured_storage
 from .storage_ui import StoragePage
 from .dialogs import CSS as DIALOG_CSS, message_dialog, modal_window, dialog_body, dialog_footer, style_surface
 from .fullscreen import CSS as FULLSCREEN_CSS, cover as console_cover, set_art, CoverLayout, CoverPicture
+from .theme_engine import ThemeEngine
 from . import APP_ID, APP_NAME, ICON_NAME, __version__
 
 
@@ -75,11 +76,11 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         self.maximize()
         self.add_css_class('desktop-mode')
         self.sync_desktop_palette()
-        css=Gtk.CssProvider()
-        css.load_from_data(DIALOG_CSS + FULLSCREEN_CSS + CATALOG_CSS + b'.control-focused, button:focus { outline: 3px solid #82bcff; outline-offset: 2px; } .collection-card, .collection-card:focus, .collection-card.control-focused, .tv-card, .tv-card:focus, .tv-card.control-focused { outline: none; outline-offset: 0; } .art-frame { background: alpha(@window_fg_color, 0.055); border-radius: 12px; padding: 8px; } .game-card { padding: 10px; } .game-card:hover { background: alpha(@accent_color, 0.09); }')
-        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(),css,Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        self.library=library
+        self.theme_engine=ThemeEngine(custom_themes_dir=library.root.parent / 'themes' if demo else None)
+        self.apply_theme()
         self.demo=demo;self.tv_mode=False;self.tv_selected_id=None;self.tv_tiles=[];self.tv_section='library'
-        self.library=library; self.launcher=Launcher(library.root); self.proton_manager=ProtonManager(library.root/'proton-manager',umu_root=library.root/'demo-umu-runners' if demo else None); self.launch_fields={}; self.play_buttons={}; self.installations=Installations(library,self.launcher);self.editor=None;self.editor_kind=None;self.exiting=False
+        self.launcher=Launcher(library.root); self.proton_manager=ProtonManager(library.root/'proton-manager',umu_root=library.root/'demo-umu-runners' if demo else None); self.launch_fields={}; self.play_buttons={}; self.installations=Installations(library,self.launcher);self.editor=None;self.editor_kind=None;self.exiting=False
         self.storage_service=storage_service if storage_service is not None else DemoStorage() if demo else configured_storage(library.root)
         self.settings_dialog=None
         self.init_catalog(catalog_provider)
@@ -873,12 +874,18 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         else:self.remove_css_class('desktop-dark')
 
     def apply_theme(self):
-        mode=self.library.data['settings'].get('theme','system')
-        Adw.StyleManager.get_default().set_color_scheme({'system':Adw.ColorScheme.DEFAULT,'light':Adw.ColorScheme.FORCE_LIGHT,'dark':Adw.ColorScheme.FORCE_DARK}[mode])
+        saved=self.library.data['settings'].get('theme_id') or self.library.data['settings'].get('theme','steamos-dark')
+        theme_map={'system':'steamos-dark','dark':'steamos-dark','light':'clean-slate-light'}
+        theme_id=theme_map.get(saved,saved)
+        self.theme_engine.apply_theme(theme_id)
 
     def theme_changed(self,*_):
         try:
-            self.library.set_theme(['system','light','dark'][self.theme.get_selected()]); self.apply_theme()
+            themes=self.theme_engine.list_themes()
+            idx=self.theme.get_selected()
+            if 0<=idx<len(themes):
+                self.library.set_theme(themes[idx]['id'])
+                self.apply_theme()
         except Exception as e: self.error(e)
 
     def async_job(self,message,work,done):
@@ -2100,11 +2107,27 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         gm_row.add_suffix(gm_switch);modes.add(gm_row)
         page.add(Adw.PreferencesGroup(title=APP_NAME+' '+__version__,description='Standalone UMU/Proton game and installer library.'))
         appearance=Adw.PreferencesGroup(title='Appearance',description='Choose how the app looks.'); page.add(appearance)
-        theme_row=Adw.ActionRow(title='Theme')
-        theme=Gtk.DropDown.new_from_strings(['Follow system','Light','Dark']); theme.set_valign(Gtk.Align.CENTER)
-        theme.set_selected(self.theme.get_selected())
-        theme.connect('notify::selected',lambda dropdown,_:self.theme.set_selected(dropdown.get_selected()))
-        theme_row.add_suffix(theme); appearance.add(theme_row)
+        themes=self.theme_engine.list_themes()
+        theme_labels=[f"{t['name']}"+(' (Custom)' if t.get('custom_path') else '') for t in themes]
+        theme_ids=[t['id'] for t in themes]
+        theme_row=Adw.ActionRow(title='Theme',subtitle='Switch between built-in and user custom themes.')
+        theme_dropdown=Gtk.DropDown.new_from_strings(theme_labels); theme_dropdown.set_valign(Gtk.Align.CENTER)
+        cur_saved=self.library.data['settings'].get('theme_id') or self.library.data['settings'].get('theme','steamos-dark')
+        cur_id={'system':'steamos-dark','dark':'steamos-dark','light':'clean-slate-light'}.get(cur_saved,cur_saved)
+        theme_dropdown.set_selected(theme_ids.index(cur_id) if cur_id in theme_ids else 0)
+        def on_theme_change(dropdown,_):
+            idx=dropdown.get_selected()
+            if 0<=idx<len(theme_ids):
+                sel_id=theme_ids[idx]
+                self.library.set_theme(sel_id)
+                self.apply_theme()
+                self.notify(f"Theme switched to {themes[idx]['name']}.")
+        theme_dropdown.connect('notify::selected',on_theme_change)
+        theme_row.add_suffix(theme_dropdown); appearance.add(theme_row)
+        folder_row=Adw.ActionRow(title='Custom Themes',subtitle=f'Drop custom theme folders into {self.theme_engine.custom_dir.name}/')
+        open_folder_btn=button('Open themes folder…',lambda:Gio.AppInfo.launch_default_for_uri(self.theme_engine.custom_dir.as_uri(),None))
+        open_folder_btn.set_valign(Gtk.Align.CENTER);folder_row.add_suffix(open_folder_btn)
+        appearance.add(folder_row)
         scale_row=Adw.ActionRow(title='UI Scale',subtitle='Adjust interface sizing for desktop monitors vs large 55\" 4K TVs.')
         scale_labels=['Auto (Recommended)','100% (Standard Monitor)','125%','150% (55\" TV Recommended)','175%','200% (4K TV Large)']
         scale_values=['auto','100','125','150','175','200']
