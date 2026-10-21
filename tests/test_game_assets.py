@@ -250,6 +250,21 @@ class ManagedGameAssetsTests(unittest.TestCase):
         manifest = json.loads(Path(updated['installation']['manifest']).read_text())
         self.assertEqual(manifest['launcher_relative_path'], 'bin/correct.exe')
 
+    def test_relink_managed_game_to_external_folder_keeps_former_folder_and_detaches_record(self):
+        linked = self._linked_game()
+        former_root = Path(linked['installation']['root'])
+        new_root = self.root / 'correct-external-game'
+        new_root.mkdir()
+        new_launcher = new_root / 'correct.exe'
+        new_launcher.write_text('new')
+        updated = relink_installed_game(linked, root=new_root, launcher=new_launcher, games=[linked])
+        self.assertEqual(updated['installation']['mode'], 'installed')
+        self.assertNotIn('link_mode', updated['installation'])
+        self.assertEqual(updated['installation']['root'], str(new_root.resolve()))
+        self.assertTrue(former_root.is_dir())
+        manifest = json.loads(Path(updated['installation']['manifest']).read_text())
+        self.assertEqual(manifest['launcher_relative_path'], 'correct.exe')
+
     def test_relink_external_game_rejects_another_library_game_folder(self):
         root = self.root / 'first-game'
         root.mkdir()

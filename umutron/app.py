@@ -1411,10 +1411,10 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         files=box(spacing=16);files.append(label('Installed Files','title-2',xalign=0))
         root_path=self.game.get('installation',{}).get('root')
         is_installed=bool(root_path and Path(root_path).is_dir())
-        if self.game.get('installation',{}).get('mode')=='installed':
+        if self.game.get('installation',{}).get('mode') in ('installed','linked'):
             link_card=box(spacing=8)
             link_card.append(label('Linked game location','heading',xalign=0))
-            link_card.append(label('Correct the game folder or launcher if the wrong files were linked. This never moves, copies, or deletes game files.','dim-label',xalign=0,wrap=True))
+            link_card.append(label('Correct the game folder or launcher if the wrong files were linked. This never moves, copies, or deletes game files. Choosing a different folder keeps the former managed folder untouched.','dim-label',xalign=0,wrap=True))
             linked_root=Gtk.Entry(hexpand=True)
             linked_root.set_text(root_path or '')
             link_card.append(linked_root)

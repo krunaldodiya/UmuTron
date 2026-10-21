@@ -279,10 +279,10 @@ def regenerate_manifest(game: dict[str, Any]) -> dict[str, Any]:
 
 def relink_installed_game(game: dict[str, Any], *, root: str | Path, launcher: str | Path,
                           games: list[dict[str, Any]] = ()) -> dict[str, Any]:
-    """Correct an external game's root and launcher without touching its files."""
+    """Correct a linked game's root and launcher without touching game files."""
     installation = game.get("installation", {})
-    if installation.get("mode") != "installed":
-        raise ValueError("Only externally linked game folders can be changed here.")
+    if installation.get("mode") not in ("installed", "linked"):
+        raise ValueError("This game has no linked installation folder to change.")
     if not str(root).strip() or not str(launcher).strip():
         raise ValueError("Choose both the installed game folder and its main launcher executable.")
     source, executable, _relative = _validate_source(root, launcher)
@@ -299,9 +299,17 @@ def relink_installed_game(game: dict[str, Any], *, root: str | Path, launcher: s
                 continue
             if used == source or used.is_relative_to(source) or source.is_relative_to(used):
                 raise ValueError("Another library game already uses this installation folder.")
+    try:previous_root=Path(installation.get("root", "")).expanduser().resolve(strict=True)
+    except OSError:previous_root=None
     updated = deepcopy(game)
     updated.update(executable=str(executable), working_dir=str(executable.parent))
-    updated["installation"] = {**installation, "root": str(source), "confirmed": True}
+    updated_installation = {**installation, "root": str(source), "confirmed": True}
+    if installation.get("mode") == "linked" and source != previous_root:
+        # The former managed folder remains untouched; this record now points
+        # at user-owned external files, so it must not retain managed ownership.
+        updated_installation.pop("link_mode", None)
+        updated_installation["mode"] = "installed"
+    updated["installation"] = updated_installation
     if installation.get("manifest"):
         updated = regenerate_manifest(updated)
     return updated
