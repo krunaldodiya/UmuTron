@@ -14,11 +14,12 @@ class SelectedGameEvidenceTests(unittest.TestCase):
         self.other=self.root/'Other'/'game.exe';self.other.parent.mkdir();self.other.write_bytes(b'other')
         self.process(101,1,'12345','supervisor');self.process(102,101,'12346',str(self.selected))
 
-    def process(self,pid,parent,start,arg):
+    def process(self,pid,parent,start,arg,comm=None):
         folder=self.proc/str(pid);folder.mkdir(exist_ok=True)
         fields=['S',str(parent)]+['0']*17+[start]
         (folder/'stat').write_text(f'{pid} (fixture) '+ ' '.join(fields))
         (folder/'cmdline').write_bytes(arg.encode()+b'\0')
+        if comm is not None:(folder/'comm').write_text(comm+'\n')
 
     def evidence(self):return selected_game_evidence(101,'12345',self.selected,self.prefix,self.proc)
 
@@ -31,6 +32,12 @@ class SelectedGameEvidenceTests(unittest.TestCase):
         token=self.evidence();self.assertEqual(token[:2],(102,'12346'))
         (self.prefix/'dosdevices'/'c:').symlink_to(self.root,target_is_directory=True)
         self.process(102,101,'12346',r'C:\Selected\game.exe');self.assertEqual(self.evidence(),token)
+
+    def test_renamed_wine_process_counts_but_launcher_wrapper_does_not(self):
+        self.process(102,101,'12346','wine64-preloader\0/runtime',comm='game')
+        self.assertEqual(self.evidence()[:2],(102,'12346'))
+        self.process(102,101,'12346','umu-run\0'+str(self.selected),comm='game')
+        self.assertIsNone(self.evidence())
 
     def test_unrelated_process_duplicate_candidate_and_pid_reuse_do_not_count(self):
         self.process(102,1,'12346',str(self.selected));self.assertIsNone(self.evidence())

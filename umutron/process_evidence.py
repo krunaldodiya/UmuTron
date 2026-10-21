@@ -1,7 +1,7 @@
 """Conservative local evidence for recent-play history, separate from UI status.
 
-argv[0] must resolve to the selected file through an absolute Unix path or an
-explicit Wine drive mapping. A basename, wrapper argument or log is insufficient.
+The selected executable must be argv[0] through a Unix/Wine path, or a
+renamed Wine game process. Basenames, launcher arguments and logs do not count.
 """
 import os
 from pathlib import Path
@@ -23,6 +23,15 @@ def _file(arg,prefix):
     parts=match[2].replace('\\','/').split('/')
     if any(part in ('.','..') for part in parts):return None
     return drive.resolve(strict=True).joinpath(*parts).resolve(strict=True)
+
+def _wine_game_process(args, comm, selected):
+    """Recognize Wine's renamed game process, never its launcher wrapper."""
+    if not args:return False
+    runtime=Path(args[0].replace('\\','/')).name.casefold()
+    if runtime not in ('wine','wine64','wine-preloader','wine64-preloader'):return False
+    name=comm.strip().casefold().rstrip('.')
+    expected=selected.stem.casefold()
+    return name==expected or len(name)>=8 and expected.startswith(name)
 
 
 def selected_game_evidence(supervisor_pid,supervisor_start,executable,prefix,proc=Path('/proc')):
@@ -49,14 +58,20 @@ def selected_game_evidence(supervisor_pid,supervisor_start,executable,prefix,pro
             try:
                 with (proc/str(pid)/'cmdline').open('rb') as stream:raw=stream.read(8193)
                 if b'\0' not in raw or len(raw)>8192:continue
-                arg=os.fsdecode(raw.split(b'\0',1)[0]);path=_file(arg,prefix)
-                if path is None:continue
-                current=path.stat()
+                args=[os.fsdecode(arg) for arg in raw.split(b'\0') if arg]
+                if not args:continue
+                path=_file(args[0],prefix)
+                matched=False
+                if path is not None:
+                    current=path.stat()
+                    matched=(current.st_dev,current.st_ino)==selected_identity
+                elif _wine_game_process(args,(proc/str(pid)/'comm').read_text(),selected):
+                    matched=True
             except (OSError,RuntimeError,ValueError):
                 # A helper may exit or name a path visible only inside Proton's
                 # runtime. It is not evidence, but must not veto a verified game.
                 continue
-            if (current.st_dev,current.st_ino)!=selected_identity:continue
+            if not matched:continue
             # Recheck the whole chain, not just the leaf, to reject PID reuse.
             ancestor=pid
             for _ in range(100):
