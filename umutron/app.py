@@ -1091,86 +1091,93 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         footer.append(button('Cancel',dialog.close))
         submit=button('Link a game',lambda:None,'suggested-action');footer.append(submit)
         def submit_add(*_):
-            root_str=game_root.get_text().strip();launcher_str=launcher.get_text().strip()
-            if not root_str or not launcher_str:
-                self.error(ValueError('Choose both the installed game folder and its main launcher executable.'));return
-            source_root=Path(root_str).expanduser().resolve()
-            launcher_path=Path(launcher_str).expanduser().resolve()
-            if not source_root.is_dir():
-                self.error(ValueError('The selected game folder does not exist.'));return
-            if not launcher_path.is_file():
-                self.error(ValueError('The selected launcher executable does not exist.'));return
             try:
-                launcher_path.relative_to(source_root)
-            except ValueError:
-                self.error(ValueError('The launcher executable must be inside the selected game folder.'));return
-            selected_proton=protons[proton_choice.get_selected()]
-            from .launcher import detect_steam_appid, MARKER
-            detected_appid = detect_steam_appid(launcher_path)
-            drives=self._managed_drives()
-            target_drive=None
-            if drives:
-                for d in drives:
-                    d_root=Path(d['root']).resolve()
-                    if source_root==d_root or source_root.is_relative_to(d_root):
-                        target_drive=d;break
-                if not target_drive:
-                    target_drive=drives[0]
-            from .game_assets import layout_root, _safe_folder
-            folder_name=_safe_folder(self.game['title'])
-            if target_drive:
-                prefix=layout_root(target_drive['root'])/'compatdata'/folder_name
-            else:
-                found_compatdata=None
-                for p in [source_root,*source_root.parents]:
-                    cand=p/'UmuLibrary'/'umuapps'/'compatdata'
-                    if cand.is_dir():
-                        found_compatdata=cand
-                        break
-                if not found_compatdata:
-                    for mnt in Path('/mnt').glob('*/UmuLibrary/umuapps/compatdata'):
-                        if mnt.is_dir():
-                            found_compatdata=mnt
-                            break
-                if found_compatdata:
-                    prefix=found_compatdata/folder_name
+                root_str=game_root.get_text().strip();launcher_str=launcher.get_text().strip()
+                if not root_str or not launcher_str:
+                    self.error(ValueError('Choose both the installed game folder and its main launcher executable.'),parent=dialog);return
+                source_root=Path(root_str).expanduser().resolve()
+                launcher_path=Path(launcher_str).expanduser().resolve()
+                if not source_root.is_dir():
+                    self.error(ValueError('The selected game folder does not exist.'),parent=dialog);return
+                if not launcher_path.is_file():
+                    self.error(ValueError('The selected launcher executable does not exist.'),parent=dialog);return
+                try:
+                    launcher_path.relative_to(source_root)
+                except ValueError:
+                    self.error(ValueError('The launcher executable must be inside the selected game folder.'),parent=dialog);return
+                target_game = self.ensure_saved_game()
+                if not target_game:
+                    self.error(ValueError('Could not initialize library entry for this game.'),parent=dialog);return
+                selected_proton=protons[proton_choice.get_selected()]
+                from .launcher import detect_steam_appid, MARKER
+                detected_appid = detect_steam_appid(launcher_path)
+                drives=self._managed_drives()
+                target_drive=None
+                if drives:
+                    for d in drives:
+                        d_root=Path(d['root']).resolve()
+                        if source_root==d_root or source_root.is_relative_to(d_root):
+                            target_drive=d;break
+                    if not target_drive:
+                        target_drive=drives[0]
+                from .game_assets import layout_root, _safe_folder
+                game_title = target_game.get('title') or (self.detail_item.get('title') if self.detail_item else source_root.name)
+                folder_name=_safe_folder(game_title)
+                if target_drive:
+                    prefix=layout_root(target_drive['root'])/'compatdata'/folder_name
                 else:
-                    prefix=Path(self.library.root)/'prefixes'/folder_name
-            prefix.mkdir(parents=True,exist_ok=True,mode=0o700)
-            marker=prefix/MARKER
-            if not marker.exists():
-                try:marker.write_text(f"game={self.game['id']}\n")
-                except OSError:pass
-            updated=deepcopy(self.ensure_saved_game())
-            updated.update(executable=str(launcher_path),working_dir=str(launcher_path.parent))
-            if detected_appid and not updated.get('metadata_app_id'):
-                try:updated['metadata_app_id']=int(detected_appid)
-                except ValueError:updated['metadata_app_id']=detected_appid
-            updated['launch']={**updated.get('launch',{}),'prefix':str(prefix),'proton':selected_proton}
-            updated['installation']={'mode':'installed','root':str(source_root),'prefix':str(prefix),'confirmed':True}
-            if detected_appid:
-                steam_compat=None
-                for p in launcher_path.parents:
-                    if p.name=='common' and p.parent.name=='steamapps':
-                        cand=p.parent/'compatdata'/str(detected_appid)/'pfx'
+                    found_compatdata=None
+                    for p in [source_root,*source_root.parents]:
+                        cand=p/'UmuLibrary'/'umuapps'/'compatdata'
                         if cand.is_dir():
-                            steam_compat=cand
+                            found_compatdata=cand
                             break
-                if steam_compat:
-                    steam_docs=steam_compat/'drive_c'/'users'/'steamuser'/'Documents'
-                    our_docs=prefix/'drive_c'/'users'/'steamuser'/'Documents'
-                    if steam_docs.is_dir() and not our_docs.is_dir():
-                        try:
-                            our_docs.parent.mkdir(parents=True,exist_ok=True)
-                            shutil.copytree(steam_docs,our_docs,symlinks=True)
-                        except OSError:pass
-            saved=self.library.save_setup(updated)
-            self.game=saved
-            self.show_game(saved)
-            dialog.close()
-            if getattr(self,'game_settings_dialog',None):
-                self.game_settings_dialog.close()
-            self.notify(f"Linked {saved['title']} to your library.")
+                    if not found_compatdata:
+                        for mnt in Path('/mnt').glob('*/UmuLibrary/umuapps/compatdata'):
+                            if mnt.is_dir():
+                                found_compatdata=mnt
+                                break
+                    if found_compatdata:
+                        prefix=found_compatdata/folder_name
+                    else:
+                        prefix=Path(self.library.root)/'prefixes'/folder_name
+                prefix.mkdir(parents=True,exist_ok=True,mode=0o700)
+                marker=prefix/MARKER
+                if not marker.exists():
+                    try:marker.write_text(f"game={target_game['id']}\n")
+                    except OSError:pass
+                updated=deepcopy(target_game)
+                updated.update(executable=str(launcher_path),working_dir=str(launcher_path.parent))
+                if detected_appid and not updated.get('metadata_app_id'):
+                    try:updated['metadata_app_id']=int(detected_appid)
+                    except ValueError:updated['metadata_app_id']=detected_appid
+                updated['launch']={**updated.get('launch',{}),'prefix':str(prefix),'proton':selected_proton}
+                updated['installation']={'mode':'installed','root':str(source_root),'prefix':str(prefix),'confirmed':True}
+                if detected_appid:
+                    steam_compat=None
+                    for p in launcher_path.parents:
+                        if p.name=='common' and p.parent.name=='steamapps':
+                            cand=p.parent/'compatdata'/str(detected_appid)/'pfx'
+                            if cand.is_dir():
+                                steam_compat=cand
+                                break
+                    if steam_compat:
+                        steam_docs=steam_compat/'drive_c'/'users'/'steamuser'/'Documents'
+                        our_docs=prefix/'drive_c'/'users'/'steamuser'/'Documents'
+                        if steam_docs.is_dir() and not our_docs.is_dir():
+                            try:
+                                our_docs.parent.mkdir(parents=True,exist_ok=True)
+                                shutil.copytree(steam_docs,our_docs,symlinks=True)
+                            except OSError:pass
+                saved=self.library.save_setup(updated)
+                self.game=saved
+                self.show_game(saved)
+                dialog.close()
+                if getattr(self,'game_settings_dialog',None):
+                    self.game_settings_dialog.close()
+                self.notify(f"Linked {saved['title']} to your library.")
+            except Exception as error:
+                self.error(error,parent=dialog)
         submit.connect('clicked',submit_add)
         dialog.present()
     def backup_current_game(self, parent=None):

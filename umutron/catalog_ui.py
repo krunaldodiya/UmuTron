@@ -897,6 +897,15 @@ class CatalogUI:
             except Exception:
                 pass
         from uuid import UUID
+        from .library import Library
+        if not self.game:
+            self.game = Library.new_game()
+            if self.detail_item:
+                for k in ('title', 'description', 'release_date', 'genres', 'developers', 'publishers',
+                          'metadata_app_id', 'metadata_source'):
+                    if self.detail_item.get(k):
+                        self.game[k] = deepcopy(self.detail_item[k])
+            return self.game
         game_id = self.game.get('id', '')
         try:
             UUID(game_id)
