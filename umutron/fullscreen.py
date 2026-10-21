@@ -26,6 +26,7 @@ CSS = b'''
 .tv-mode .tv-collection { background: alpha(#0b101a,.88); padding-top: 14px; }
 .tv-mode .tv-section-heading { font-size: 22px; font-weight: 700; margin: 0 48px 4px; }
 .tv-mode .tv-counter { color: #acb9ce; font-size: 15px; margin-right: 48px; }
+.tv-mode .tv-rail-scrollbar { min-height: 12px; margin: 0 48px 10px; }
 .tv-mode .tv-card { padding: 7px; border: 2px solid transparent; background: #141d2b; border-radius: 12px; outline: none; }
 .tv-mode .tv-card:hover { background: #223349; border-color: alpha(#85efd4,.5); }
 .tv-mode .tv-card:focus, .tv-mode .tv-card.control-focused, .tv-mode .tv-card.selected-game { border-color: #85efd4; outline: none; }
@@ -122,6 +123,7 @@ CSS += b'''
 .desktop-mode .home-surface .tv-collection { background: #0b101a; padding-top: 18px; }
 .desktop-mode .home-surface .tv-section-heading { font-size: 21px; font-weight: 700; margin: 0 40px 6px; }
 .desktop-mode .home-surface .tv-counter { color: #acb9ce; margin-right: 40px; }
+.desktop-mode .home-surface .tv-rail-scrollbar { min-height: 12px; margin: 0 40px 10px; }
 .desktop-mode .home-surface .tv-card { padding: 8px; border: 2px solid transparent; background: #141d2b; border-radius: 12px; outline: none; }
 .desktop-mode .home-surface .tv-card:hover, .desktop-mode .home-surface .tv-card:focus, .desktop-mode .home-surface .tv-card.selected-game { border-color: #85efd4; background: #223349; }
 .desktop-mode .home-surface .tv-card-title { font-size: 16px; font-weight: 600; color: #edf3ff; }

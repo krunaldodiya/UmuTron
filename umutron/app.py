@@ -378,7 +378,13 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         heading=box(False);heading.append(label('Recently played','tv-section-heading',xalign=0,hexpand=True));self.tv_counter=label('','tv-counter');heading.append(self.tv_counter);collection.append(heading)
         self.tv_rail=box(False,20);margins(self.tv_rail,12);self.tv_rail.set_margin_start(48);self.tv_rail.set_margin_end(48)
         self.tv_scroll=Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.EXTERNAL,vscrollbar_policy=Gtk.PolicyType.NEVER);self.tv_scroll.set_child(self.tv_rail);self.tv_scroll.get_child().set_hscroll_policy(Gtk.ScrollablePolicy.NATURAL);collection.append(self.tv_scroll)
-        self.tv_scroll.get_hadjustment().connect('changed',lambda adjustment:GLib.idle_add(self.pad_tv_rail,adjustment))
+        adjustment=self.tv_scroll.get_hadjustment()
+        self.tv_rail_scrollbar=Gtk.Scrollbar(orientation=Gtk.Orientation.HORIZONTAL,adjustment=adjustment);self.tv_rail_scrollbar.add_css_class('tv-rail-scrollbar');self.tv_rail_scrollbar.set_visible(False);collection.append(self.tv_rail_scrollbar)
+        def update_rail(adjustment):
+            self.pad_tv_rail(adjustment)
+            self.tv_rail_scrollbar.set_visible(adjustment.get_upper()>adjustment.get_page_size()+1)
+            return False
+        adjustment.connect('changed',lambda adjustment:GLib.idle_add(update_rail,adjustment))
         for game in self.tv_games:
             tile=self.tv_tile(game);self.tv_rail.append(tile);self.tv_tiles.append((game['id'],tile))
         self.tv_rail_end=Gtk.Box();self.tv_rail.append(self.tv_rail_end)
