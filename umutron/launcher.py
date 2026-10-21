@@ -166,10 +166,11 @@ def build_command(game,root,inherited=None,allow_prepare=False,gamemode=None):
     if settings['dll_overrides']:env['WINEDLLOVERRIDES']=settings['dll_overrides']
     app_id = game.get('metadata_app_id') or detect_steam_appid(exe)
     if app_id:
-        app_id_str = str(app_id)
-        env['GAMEID'] = app_id_str
-        env['SteamAppId'] = app_id_str
-        env['SteamGameId'] = app_id_str
+        app_id_clean = str(app_id).replace('umu-', '')
+        env['GAMEID'] = f"umu-{app_id_clean}"
+        env['SteamAppId'] = app_id_clean
+        env['SteamGameId'] = app_id_clean
+        env['STEAM_COMPAT_APP_ID'] = app_id_clean
         env['STEAM_COMPAT_DATA_PATH'] = str(prefix)
         for sp in (Path.home() / '.local/share/Steam', Path.home() / '.steam/steam', Path.home() / '.steam/root'):
             if sp.is_dir():
