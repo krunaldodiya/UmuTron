@@ -122,8 +122,15 @@ def link_game(
     source, _launcher, executable_relative = _validate_source(source_root, launcher)
     proton_path = _validate_proton(proton)
     base, destination, prefix, manifest_path = _managed_paths(drive_root, game)
-    if destination.exists() or manifest_path.exists() or (prefix.exists() and not prefix.is_dir()):
+    if destination.exists() or (prefix.exists() and not prefix.is_dir()):
         raise ValueError("This game already has managed content on the selected drive.")
+    if manifest_path.exists():
+        try:
+            existing = json.loads(manifest_path.read_bytes())
+            if existing.get("game_id") != game.get("id"):
+                raise ValueError("This game already has managed content on the selected drive.")
+        except (json.JSONDecodeError, UnicodeDecodeError, OSError):
+            raise ValueError("This game already has managed content on the selected drive.")
     if destination == source or destination.is_relative_to(source) or source.is_relative_to(destination):
         raise ValueError("The managed library must be separate from the selected game root.")
     base.mkdir(parents=True, exist_ok=True)

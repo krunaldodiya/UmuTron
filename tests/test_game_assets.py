@@ -146,6 +146,34 @@ class ManagedGameAssetsTests(unittest.TestCase):
         self.assertFalse(Path(linked_game['installation']['root']).exists())
         self.assertFalse(Path(linked_game['installation']['manifest']).exists())
 
+    def test_move_game_installation_succeeds_when_game_manifest_already_exists_on_target_drive(self):
+        from umutron.game_assets import regenerate_manifest
+        external_drive = self.root / 'external_drive_source'
+        external_drive.mkdir()
+        ext_root = external_drive / 'CustomGames' / 'MyExtGame2'
+        ext_root.mkdir(parents=True)
+        exe = ext_root / 'game.exe'
+        exe.write_text('bin')
+        managed_base = self.drive / 'UmuLibrary' / 'umuapps'
+        prefix = managed_base / 'compatdata' / 'MyExtGame2'
+        prefix.mkdir(parents=True)
+        game = {
+            'id': 'test-uuid-move-same-drive',
+            'title': 'MyExtGame2',
+            'metadata_app_id': 54321,
+            'executable': str(exe),
+            'working_dir': str(ext_root),
+            'launch': {'prefix': str(prefix), 'proton': str(self.proton)},
+            'installation': {'root': str(ext_root), 'prefix': str(prefix)},
+        }
+        updated = regenerate_manifest(game)
+        self.assertTrue(Path(updated['installation']['manifest']).is_file())
+        moved = move_game_installation(updated, drive_root=self.drive)
+        self.assertEqual(moved['root'], str(managed_base / 'common' / 'MyExtGame2'))
+        self.assertTrue(Path(moved['executable']).is_file())
+        self.assertTrue(Path(moved['manifest']).is_file())
+        self.assertFalse(ext_root.exists())
+
     def test_restore_game_succeeds_when_prefix_and_manifest_already_exist(self):
         linked_game = self._linked_game()
         backup_parent = self.root / 'backups'
