@@ -1105,6 +1105,8 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             except ValueError:
                 self.error(ValueError('The launcher executable must be inside the selected game folder.'));return
             selected_proton=protons[proton_choice.get_selected()]
+            from .launcher import detect_steam_appid, MARKER
+            detected_appid = detect_steam_appid(launcher_path)
             drives=self._managed_drives()
             target_drive=None
             if drives:
@@ -1119,12 +1121,49 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             if target_drive:
                 prefix=layout_root(target_drive['root'])/'compatdata'/folder_name
             else:
-                prefix=Path(self.library.root)/'prefixes'/folder_name
+                found_compatdata=None
+                for p in [source_root,*source_root.parents]:
+                    cand=p/'UmuLibrary'/'umuapps'/'compatdata'
+                    if cand.is_dir():
+                        found_compatdata=cand
+                        break
+                if not found_compatdata:
+                    for mnt in Path('/mnt').glob('*/UmuLibrary/umuapps/compatdata'):
+                        if mnt.is_dir():
+                            found_compatdata=mnt
+                            break
+                if found_compatdata:
+                    prefix=found_compatdata/folder_name
+                else:
+                    prefix=Path(self.library.root)/'prefixes'/folder_name
             prefix.mkdir(parents=True,exist_ok=True,mode=0o700)
+            marker=prefix/MARKER
+            if not marker.exists():
+                try:marker.write_text(f"game={self.game['id']}\n")
+                except OSError:pass
             updated=deepcopy(self.ensure_saved_game())
             updated.update(executable=str(launcher_path),working_dir=str(launcher_path.parent))
+            if detected_appid and not updated.get('metadata_app_id'):
+                try:updated['metadata_app_id']=int(detected_appid)
+                except ValueError:updated['metadata_app_id']=detected_appid
             updated['launch']={**updated.get('launch',{}),'prefix':str(prefix),'proton':selected_proton}
             updated['installation']={'mode':'installed','root':str(source_root),'prefix':str(prefix),'confirmed':True}
+            if detected_appid:
+                steam_compat=None
+                for p in launcher_path.parents:
+                    if p.name=='common' and p.parent.name=='steamapps':
+                        cand=p.parent/'compatdata'/str(detected_appid)/'pfx'
+                        if cand.is_dir():
+                            steam_compat=cand
+                            break
+                if steam_compat:
+                    steam_docs=steam_compat/'drive_c'/'users'/'steamuser'/'Documents'
+                    our_docs=prefix/'drive_c'/'users'/'steamuser'/'Documents'
+                    if steam_docs.is_dir() and not our_docs.is_dir():
+                        try:
+                            our_docs.parent.mkdir(parents=True,exist_ok=True)
+                            shutil.copytree(steam_docs,our_docs,symlinks=True)
+                        except OSError:pass
             saved=self.library.save_setup(updated)
             self.game=saved
             self.show_game(saved)

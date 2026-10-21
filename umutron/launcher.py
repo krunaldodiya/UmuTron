@@ -70,6 +70,36 @@ def is_gamemode_enabled(root):
     except Exception:pass
     return False
 
+def detect_steam_appid(exe_path: Path | str | None) -> str | None:
+    if not exe_path:
+        return None
+    try:
+        path = Path(exe_path).resolve()
+        appid_txt = path.parent / 'steam_appid.txt'
+        if appid_txt.is_file():
+            val = appid_txt.read_text().strip()
+            if val.isdigit():
+                return val
+        steamapps = None
+        for p in path.parents:
+            if p.name == 'common' and p.parent.name == 'steamapps':
+                steamapps = p.parent
+                break
+            if p.name == 'steamapps':
+                steamapps = p
+                break
+        if steamapps and steamapps.is_dir():
+            folder_name = path.parent.name.lower()
+            for acf in steamapps.glob('appmanifest_*.acf'):
+                text = acf.read_text(errors='ignore')
+                m_dir = re.search(r'\"installdir\"\s+\"([^\"]+)\"', text)
+                m_id = re.search(r'\"appid\"\s+\"([^\"]+)\"', text)
+                if m_dir and m_id and m_dir.group(1).lower() == folder_name:
+                    return m_id.group(1)
+    except Exception:
+        pass
+    return None
+
 def detected_dll_overrides(exe_path):
     if not exe_path:return ''
     try:
@@ -134,7 +164,23 @@ def build_command(game,root,inherited=None,allow_prepare=False,gamemode=None):
     env.update(WINEPREFIX=str(prefix),PROTONPATH=proton,UMU_LOG='debug',PYTHONUNBUFFERED='1')
     env.update(PROTON_LOG='-all,err+all,warn+seh',PROTON_LOG_DIR=str(Path(root)/'diagnostics'/game['id']))
     if settings['dll_overrides']:env['WINEDLLOVERRIDES']=settings['dll_overrides']
-    if game.get('metadata_app_id'):env['GAMEID']=str(game['metadata_app_id'])
+    app_id = game.get('metadata_app_id') or detect_steam_appid(exe)
+    if app_id:
+        app_id_str = str(app_id)
+        env['GAMEID'] = app_id_str
+        env['SteamAppId'] = app_id_str
+        env['SteamGameId'] = app_id_str
+        env['STEAM_COMPAT_DATA_PATH'] = str(prefix)
+        for sp in (Path.home() / '.local/share/Steam', Path.home() / '.steam/steam', Path.home() / '.steam/root'):
+            if sp.is_dir():
+                env['STEAM_COMPAT_CLIENT_INSTALL_PATH'] = str(sp)
+                break
+        try:
+            appid_file = cwd / 'steam_appid.txt'
+            if not appid_file.exists():
+                appid_file.write_text(f"{app_id_str}\n")
+        except OSError:
+            pass
     if gamemode is None:gamemode=is_gamemode_enabled(root)
     cmd=[str(runner),str(exe),*settings['arguments']]
     if gamemode and gamemode_binary():cmd=[gamemode_binary(),*cmd]
