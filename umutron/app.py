@@ -377,7 +377,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         collection=box(spacing=0);collection.add_css_class('tv-collection');self.home_stage.append(collection)
         heading=box(False);heading.append(label('Recently played','tv-section-heading',xalign=0,hexpand=True));self.tv_counter=label('','tv-counter');heading.append(self.tv_counter);collection.append(heading)
         self.tv_rail=box(False,20);margins(self.tv_rail,12);self.tv_rail.set_margin_start(48);self.tv_rail.set_margin_end(48)
-        self.tv_scroll=Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER,vscrollbar_policy=Gtk.PolicyType.NEVER);self.tv_scroll.set_child(self.tv_rail);self.tv_scroll.get_child().set_hscroll_policy(Gtk.ScrollablePolicy.NATURAL);collection.append(self.tv_scroll)
+        self.tv_scroll=Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.EXTERNAL,vscrollbar_policy=Gtk.PolicyType.NEVER);self.tv_scroll.set_child(self.tv_rail);self.tv_scroll.get_child().set_hscroll_policy(Gtk.ScrollablePolicy.NATURAL);collection.append(self.tv_scroll)
         self.tv_scroll.get_hadjustment().connect('changed',lambda adjustment:GLib.idle_add(self.pad_tv_rail,adjustment))
         for game in self.tv_games:
             tile=self.tv_tile(game);self.tv_rail.append(tile);self.tv_tiles.append((game['id'],tile))
@@ -391,7 +391,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         if not self.home_setup_games:self.home_setup_section.append(label('Completed setups will appear here. Saving metadata does not count as setup.','tv-meta',xalign=0,wrap=True))
         if self.home_setup_games:
             self.home_setup_rail=box(False,20);margins(self.home_setup_rail,12);self.home_setup_rail.set_margin_start(0);self.home_setup_rail.set_margin_end(0)
-            self.home_setup_scroll=Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER,vscrollbar_policy=Gtk.PolicyType.NEVER);self.home_setup_scroll.set_child(self.home_setup_rail);self.home_setup_scroll.get_child().set_hscroll_policy(Gtk.ScrollablePolicy.NATURAL);self.home_setup_section.append(self.home_setup_scroll)
+            self.home_setup_scroll=Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.EXTERNAL,vscrollbar_policy=Gtk.PolicyType.NEVER);self.home_setup_scroll.set_child(self.home_setup_rail);self.home_setup_scroll.get_child().set_hscroll_policy(Gtk.ScrollablePolicy.NATURAL);self.home_setup_section.append(self.home_setup_scroll)
             for entry in self.home_setup_games:
                 tile=self.tv_tile(entry,grid=True);tile.home_section='setup';tile.add_css_class('home-setup-card')
                 state=setup_state(entry)
