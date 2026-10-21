@@ -118,6 +118,13 @@ class LibraryTests(unittest.TestCase):
         other=Library(self.root/'restored'); other.import_zip(archive)
         self.assertEqual(other.data['settings']['theme'],'light')
 
+    def test_custom_theme_identifier_reopens_and_unsafe_ids_are_rejected(self):
+        self.lib.set_theme('steamos-dark')
+        reopened=Library(self.root/'data')
+        self.assertEqual(reopened.data['settings']['theme'],'steamos-dark')
+        self.assertEqual(reopened.data['settings']['theme_id'],'steamos-dark')
+        with self.assertRaises(ValueError):self.lib.set_theme('../unsafe')
+
     def test_image_backup_round_trip_and_corruption_rejected(self):
         import base64
         png=base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1kAAAAASUVORK5CYII=')

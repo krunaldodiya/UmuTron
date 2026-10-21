@@ -22,6 +22,12 @@ TEXT_FIELDS = ('title','executable','working_dir','arguments','description','rel
 MAX_IMAGE = 20 * 1024 * 1024
 MAX_ARCHIVE = 512 * 1024 * 1024
 
+_THEME_ID=re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z')
+
+
+def _valid_theme(value):
+    return value in ('system','light','dark') or (isinstance(value,str) and bool(_THEME_ID.fullmatch(value)))
+
 
 def atomic_write(path, data):
     path = Path(path)
@@ -156,7 +162,10 @@ class Library:
             validate_game(game)
             if game['id'] in ids: raise ValueError('Duplicate game identity.')
             ids.add(game['id'])
-        if not isinstance(data.get('settings'),dict) or data['settings'].get('theme','system') not in ('system','light','dark'):
+        settings=data.get('settings')
+        theme=settings.get('theme','system') if isinstance(settings,dict) else None
+        theme_id=settings.get('theme_id','') if isinstance(settings,dict) else None
+        if not isinstance(settings,dict) or not _valid_theme(theme) or (theme_id != '' and not _valid_theme(theme_id)):
             raise ValueError('Invalid appearance settings.')
         if data['settings'].get('default_display_mode','desktop') not in ('desktop','fullscreen'):raise ValueError('Invalid default display mode.')
         if data['settings'].get('ui_scale','auto') not in ('auto','100','125','150','175','200'):raise ValueError('Invalid UI scale setting.')
@@ -199,7 +208,7 @@ class Library:
             self.data=previous; raise
 
     def set_theme(self, theme):
-        if not isinstance(theme, str) or not theme.strip(): raise ValueError('Unknown theme.')
+        if not _valid_theme(theme): raise ValueError('Unknown theme.')
         self.data['settings']['theme']=theme
         self.data['settings']['theme_id']=theme
         self._write()

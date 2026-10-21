@@ -54,6 +54,15 @@ class ThemeSwitchingTests(unittest.TestCase):
             window.pool.shutdown(wait=False)
             window.destroy()
 
+    def test_window_starts_with_persisted_theme_identifier(self):
+        self.library.set_theme('steamos-dark')
+        window = Window(self.app, self.library, demo=True)
+        try:
+            self.assertEqual(window.theme_engine.active_theme_id, 'steamos-dark')
+        finally:
+            window.pool.shutdown(wait=False)
+            window.destroy()
+
 
 if __name__ == '__main__':
     unittest.main()
