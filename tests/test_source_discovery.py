@@ -95,7 +95,7 @@ class SourceDiscoveryTests(unittest.TestCase):
             calls.append(url)
             self.assertEqual(parsed.path, '/api/downloads')
             self.assertEqual(parse_qs(parsed.query)['page'], ['1'])
-            return {'data': releases, 'has_more': True}
+            return {'data': releases, 'has_more': False}
 
         with tempfile.TemporaryDirectory() as temp:
             cache = DownloadSourceCache(Path(temp) / 'releases.json')
@@ -108,6 +108,37 @@ class SourceDiscoveryTests(unittest.TestCase):
                 self.assertEqual([item.provider_id for item in repeated],
                                  [source['id'] for source in SOURCES])
         self.assertEqual(len(calls), 1)
+
+    def test_search_aggregates_every_bounded_page_and_title_variant(self):
+        registry = SourceProviderRegistry()
+        calls = []
+
+        def transport(url):
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            query = params['q'][0]
+            page = int(params['page'][0])
+            calls.append((query, page))
+            if query == 'Grand Theft Auto V' and page == 1:
+                return {'data': [release('source-a', 'GTA V')], 'has_more': True}
+            if query == 'Grand Theft Auto V' and page == 2:
+                return {'data': [release('source-b', 'GTA V')], 'has_more': False}
+            if query == 'Grand Theft Auto 5' and page == 1:
+                return {'data': [release('source-c', 'GTA 5')], 'has_more': False}
+            self.fail(f'unexpected request: {query!r} page {page}')
+
+        with tempfile.TemporaryDirectory() as temp:
+            cache = DownloadSourceCache(Path(temp) / 'releases.json')
+            with patch('umutron.sources.cache.source_registry', registry), \
+                    patch('umutron.sources.cache.source_cache', cache):
+                found = search_game_releases('https://api.example', 'Grand Theft Auto V', transport=transport)
+
+        self.assertEqual([item.provider_id for item in found], ['source-a', 'source-b', 'source-c'])
+        self.assertEqual(calls, [
+            ('Grand Theft Auto V', 1),
+            ('Grand Theft Auto V', 2),
+            ('Grand Theft Auto 5', 1),
+        ])
 
     def test_search_uses_title_variant_only_when_exact_query_has_no_results(self):
         registry = SourceProviderRegistry()

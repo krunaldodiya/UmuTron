@@ -157,13 +157,14 @@ def search_game_releases(base_url, title, transport=None, provider_id=None, forc
             queries.append(query)
     found = {}
     for query in queries:
-        payload = _request(base_url, '/api/downloads', {'q': query, 'page': 1}, transport)
-        results, _has_more = _releases_from_response(payload, None, provider_id)
-        for release in results:
-            identity = (release.provider_id, release.get('id'), release.title, tuple(release.uris))
-            found.setdefault(identity, release)
-        if found:
-            break
+        for page in range(1, MAX_SEARCH_PAGES + 1):
+            payload = _request(base_url, '/api/downloads', {'q': query, 'page': page}, transport)
+            results, has_more = _releases_from_response(payload, None, provider_id)
+            for release in results:
+                identity = (release.provider_id, release.get('id'), release.title, tuple(release.uris))
+                found.setdefault(identity, release)
+            if not has_more:
+                break
 
     releases = list(found.values())
     if use_cache:
