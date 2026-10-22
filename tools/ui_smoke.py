@@ -92,6 +92,8 @@ with tempfile.TemporaryDirectory() as temp:
     proton=Path(temp)/'Proton';proton.mkdir();(proton/'proton').write_text('inert')
     w.proton_manager.installed=lambda:[str(proton)]
     w.show_game(uninstalled_game);settle()
+    assert w.back.get_visible() and not w.tv_back.get_visible()
+    assert all(button.get_label()!='Back' for button in buttons(w.body))
     assert w.detail_primary.get_label()=='Link a game'
     w.detail_gear.emit('clicked');settings=next(window for window in Gtk.Window.get_toplevels() if isinstance(window,Gtk.Window) and window.get_title().startswith('Game Settings'))
     w.detail_gear.emit('clicked');settle()
@@ -174,10 +176,12 @@ with tempfile.TemporaryDirectory() as temp:
         finally:w.navigation_window=actual
     # Home uses fixture play-history evidence; Library remains the full collection.
     for index,entry in enumerate(library.games()[:3]):record(library.root,entry['id'],str(uuid4()),100+index)
-    w.show_home();w.set_tv_mode(True);settle(500)
+    w.set_tv_mode(False);settle(500);w.show_home();settle();w.tv_page.get_vadjustment().set_value(w.tv_page.get_vadjustment().get_lower());settle();screenshot('desktop-home-dark.png');w.set_tv_mode(True);settle(500)
     assert w.route=='home' and len(w.tv_games)==3 and w.backdrop.get_paintable() is not None
     screenshot('fullscreen-library-dark.png')
     selected=w.tv_games[0];w.show_game(selected);settle();assert w.detail_origin=='home'
+    assert not w.back.get_visible() and w.tv_back.get_visible()
+    assert all(button.get_label()!='Back' for button in buttons(w.body))
     screenshot('fullscreen-details-dark.png');w.return_from_detail();settle();assert w.route=='home'
     w.show_library();settle();assert len(w.collection_tiles)==len(library.games())
     screenshot('fullscreen-installed-grid-dark.png')

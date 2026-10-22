@@ -224,7 +224,7 @@ class CatalogUI:
         _,_,_,_,clear=ui();clear(self.body)
         self.game=None;self.original=None;self.detail_item=None;self.fields={};self.launch_fields={};self.description=None
         self.play_buttons={};self.tv_tiles=[];self.tv_section='library';self.body.remove_css_class('home-surface')
-        self.back.set_visible(False);self.backdrop.set_paintable(None)
+        self.back.set_visible(False);self.tv_back.set_visible(False);self.backdrop.set_paintable(None)
         self.heading.set_title('UmuTron');self.heading.set_subtitle('Your games · UMU and Proton')
         for control,key in ((self.tv_home_tab,'home'),(self.home_nav,'home'),(self.tv_library_tab,'library'),(self.tv_games_tab,'store'),(self.library_nav,'library'),(self.store_nav,'store')):
             control.remove_css_class('tv-tab-active')
@@ -631,10 +631,10 @@ class CatalogUI:
         self.game=deepcopy(game);self.original=deepcopy(game);self.fields={};self.launch_fields={};self.description=None;self.play_buttons={};self.tv_tiles=[]
         self.detail_install_status=None;self.last_launch_output=None
         if hasattr(self,'launch_output'):del self.launch_output
-        clear(self.body);self.back.set_visible(not self.tv_mode);self.back.set_tooltip_text('Back to '+self.detail_origin.title())
+        clear(self.body);self.back.set_visible(not self.tv_mode);self.tv_back.set_visible(self.tv_mode)
+        back_tooltip='Back to '+self.detail_origin.title();self.back.set_tooltip_text(back_tooltip);self.tv_back.set_tooltip_text(back_tooltip)
         self.heading.set_title(game['title']);self.heading.set_subtitle('In your library' if self.saved_detail() else 'Store · IGDB')
         outer=box(spacing=24 if self.tv_mode else 16);outer.set_vexpand(True);margins(outer,24)
-        back=button('Back',self.return_from_detail,icon='go-previous-symbolic');back.set_halign(Gtk.Align.START);back.set_visible(self.tv_mode);outer.append(back)
         outer.append(Gtk.Box(vexpand=True))
         panel=box(spacing=24);panel.add_css_class('shared-detail')
         scale=getattr(self,'ui_scale_factor',lambda:1.0)()

@@ -106,9 +106,10 @@ CSS = b'''
 '''
 
 CSS += b'''
-/* Desktop keeps its action icons, but shares the fullscreen control-bar
-   palette, navigation states, and brand treatment. */
+/* Desktop retains window-only actions, while all shared controls use the
+   fullscreen measurements and visual language. */
 .desktop-mode .desktop-header {
+  padding: 5px 26px;
   background: alpha(#0b101a, .72);
   color: #f3f6ff;
   font-size: 18px;
@@ -140,35 +141,59 @@ CSS += b'''
   font-size: 23px;
   font-weight: 800;
 }
-.desktop-mode .desktop-brand-title {
-  color: #f3f6ff;
-}
+.desktop-mode.scale-large .desktop-header { padding: 7px 36px; }
+.desktop-mode.scale-large .desktop-header button { min-height: 42px; padding: 10px 22px; font-size: 19px; }
+.desktop-mode.scale-large .desktop-brand { font-size: 28px; }
+.desktop-mode.scale-xlarge .desktop-header { padding: 10px 50px; }
+.desktop-mode.scale-xlarge .desktop-header button { min-height: 48px; padding: 12px 26px; font-size: 22px; }
+.desktop-mode.scale-xlarge .desktop-brand { font-size: 34px; }
+.desktop-mode.tv-compact .desktop-header button { min-height: 30px; padding: 8px 16px; }
+.desktop-mode.tv-compact .desktop-brand { font-size: 20px; margin-right: 18px; }
 '''
 
 
 CSS += b'''
-/* Desktop Home deliberately shares the art-led hierarchy, not the fullscreen
-   control sizing. The local hero remains visible when the overlay scene is
-   inactive in a decorated window. */
+/* Desktop and fullscreen share the same Home hierarchy; only their action
+   sets differ. */
 .desktop-mode .home-surface .home-hero { min-height: 380px; background: #111b29; }
 .desktop-mode .home-surface .home-hero-art { opacity: .76; }
-.desktop-mode .home-surface .tv-summary { margin: 28px 40px; }
-.desktop-mode .home-surface .tv-title { font-size: 44px; font-weight: 800; letter-spacing: -1px; line-height: 1.08; color: #f3f6ff; }
-.desktop-mode .home-surface .tv-eyebrow { color: #85efd4; font-size: 13px; font-weight: 700; letter-spacing: 1.6px; }
-.desktop-mode .home-surface .tv-description { color: #d5ddea; font-size: 17px; line-height: 1.4; }
-.desktop-mode .home-surface .tv-meta { color: #acb9ce; font-size: 15px; }
-.desktop-mode .home-surface .tv-play { min-width: 124px; background: #85efd4; color: #092b2c; font-weight: 800; }
-.desktop-mode .home-surface .tv-collection { background: #0b101a; padding-top: 18px; }
-.desktop-mode .home-surface .tv-section-heading { font-size: 21px; font-weight: 700; margin: 0 40px 6px; }
-.desktop-mode .home-surface .tv-counter { color: #acb9ce; margin-right: 40px; }
-.desktop-mode .home-surface .tv-rail-scrollbar { min-height: 12px; margin: 0 40px 10px; }
-.desktop-mode .home-surface .tv-card { padding: 8px; border: 2px solid transparent; background: #141d2b; border-radius: 12px; outline: none; }
+.desktop-mode .home-surface .tv-summary { margin: 24px 48px; }
+.desktop-mode .home-surface .tv-title { font-size: 52px; font-weight: 800; letter-spacing: -1px; line-height: 1.06; color: #f3f6ff; }
+.desktop-mode .home-surface .tv-eyebrow { color: #85efd4; font-size: 14px; font-weight: 700; letter-spacing: 2px; }
+.desktop-mode .home-surface .tv-description { color: #d5ddea; font-size: 20px; line-height: 1.4; }
+.desktop-mode .home-surface .tv-meta { color: #acb9ce; font-size: 17px; }
+.desktop-mode .home-surface .tv-play { min-width: 140px; min-height: 40px; background: #85efd4; color: #092b2c; font-weight: 800; }
+.desktop-mode .home-surface .tv-collection { background: alpha(#0b101a,.88); padding-top: 14px; }
+.desktop-mode .home-surface .tv-section-heading { font-size: 22px; font-weight: 700; margin: 0 48px 4px; }
+.desktop-mode .home-surface .tv-counter { color: #acb9ce; font-size: 15px; margin-right: 48px; }
+.desktop-mode .home-surface .tv-card { padding: 7px; border: 2px solid transparent; background: #141d2b; border-radius: 12px; outline: none; }
 .desktop-mode .home-surface .tv-card:hover, .desktop-mode .home-surface .tv-card:focus, .desktop-mode .home-surface .tv-card.selected-game { border-color: #85efd4; background: #223349; }
-.desktop-mode .home-surface .tv-card-title { font-size: 16px; font-weight: 600; color: #edf3ff; }
+.desktop-mode .home-surface .tv-card-title { font-size: 17px; font-weight: 600; color: #edf3ff; }
 .desktop-mode .home-surface .tv-cover { background: #202b3c; border-radius: 7px; }
-.desktop-mode .home-surface .home-setups { padding: 28px 40px 40px; background: #0b101a; }
+.desktop-mode .home-surface .home-setups { padding: 32px 48px 48px; background: #0b101a; }
 .desktop-mode .home-surface .home-setups .tv-section-heading { margin: 0; }
 .desktop-mode .home-surface .home-setup-state { color: #acb9ce; font-size: 14px; min-height: 34px; }
+.desktop-mode.tv-compact .home-surface .tv-summary { margin: 12px 32px; }
+.desktop-mode.tv-compact .home-surface .tv-title { font-size: 36px; }
+.desktop-mode.tv-compact .home-surface .tv-description { font-size: 17px; }
+.desktop-mode.tv-compact .home-surface .tv-section-heading { margin-left: 32px; font-size: 20px; }
+.desktop-mode.tv-compact .home-surface .tv-card-title { font-size: 15px; }
+.desktop-mode.tv-compact .home-surface .home-setups { padding: 24px 32px 36px; }
+.desktop-mode.tv-compact .home-surface .home-setup-state { font-size: 13px; }
+.desktop-mode.scale-large .home-surface .tv-title { font-size: 64px; }
+.desktop-mode.scale-large .home-surface .tv-eyebrow { font-size: 17px; }
+.desktop-mode.scale-large .home-surface .tv-description { font-size: 23px; line-height: 1.45; }
+.desktop-mode.scale-large .home-surface .tv-meta { font-size: 19px; }
+.desktop-mode.scale-large .home-surface .tv-play { min-width: 170px; min-height: 48px; font-size: 20px; }
+.desktop-mode.scale-large .home-surface .tv-section-heading { font-size: 28px; margin: 0 54px 6px; }
+.desktop-mode.scale-large .home-surface .tv-counter { font-size: 18px; margin-right: 54px; }
+.desktop-mode.scale-xlarge .home-surface .tv-title { font-size: 78px; }
+.desktop-mode.scale-xlarge .home-surface .tv-eyebrow { font-size: 20px; }
+.desktop-mode.scale-xlarge .home-surface .tv-description { font-size: 27px; line-height: 1.45; }
+.desktop-mode.scale-xlarge .home-surface .tv-meta { font-size: 23px; }
+.desktop-mode.scale-xlarge .home-surface .tv-play { min-width: 210px; min-height: 56px; font-size: 24px; }
+.desktop-mode.scale-xlarge .home-surface .tv-section-heading { font-size: 34px; margin: 0 64px 8px; }
+.desktop-mode.scale-xlarge .home-surface .tv-counter { font-size: 22px; margin-right: 64px; }
 '''
 
 
