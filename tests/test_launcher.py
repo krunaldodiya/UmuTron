@@ -35,6 +35,14 @@ class LaunchTests(unittest.TestCase):
         for key in ('GAMEID','STORE','SteamAppId'): self.assertNotIn(key,env)
         self.assertEqual(env['PROTONPATH'],str(self.proton)); self.assertFalse(Path(env['WINEPREFIX']).exists())
 
+    def test_cachyos_runner_disables_forced_game_drive(self):
+        cachyos = self.root/'proton-cachyos-fixture'
+        cachyos.mkdir()
+        (cachyos/'proton').write_text('inert')
+        self.game['launch']['proton'] = str(cachyos)
+        _, _, env = build_command(self.game, self.lib.root)
+        self.assertEqual(env['PROTON_SET_GAME_DRIVE'], '0')
+
     def test_gamemode_command_prefix_when_enabled_and_available(self):
         with patch('game_library.launcher.gamemode_binary',return_value='/usr/games/gamemoderun'):
             argv,_,_=build_command(self.game,self.lib.root,gamemode=True)
