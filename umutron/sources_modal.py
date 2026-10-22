@@ -11,7 +11,7 @@ from urllib.request import Request, build_opener, ProxyHandler
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
 
 from .download_service import source_registry
-from .sources.model import source_link_kind
+from .sources.model import DownloadRelease, filter_source_links, source_link_kind
 from .sources.cache import search_game_releases
 from . import metadata
 
@@ -149,6 +149,9 @@ class LinksPage(Adw.PreferencesPage):
         self._result_rows = []
         self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix='umutron-links-search')
         self.link_filter = 'all'
+        self._filter_buttons = {}
+        self._all_releases = None
+        self._last_display_title = ''
 
         # Search box group
         search_group = Adw.PreferencesGroup(
@@ -170,11 +173,13 @@ class LinksPage(Adw.PreferencesPage):
         previous = None
         for value, label in (('all', 'ALL'), ('p2p', 'P2P'), ('direct', 'Direct')):
             button = Gtk.ToggleButton(label=label)
+            button.add_css_class('pill')
             button.set_group(previous)
-            button.set_active(value == 'all')
             button.connect('toggled', self._on_filter_toggled, value)
             filter_box.append(button)
+            self._filter_buttons[value] = button
             previous = button
+        self._set_link_filter('all')
         search_row.add_suffix(filter_box)
 
         self.search_btn = Gtk.Button(label='Search', valign=Gtk.Align.CENTER)
@@ -214,31 +219,39 @@ class LinksPage(Adw.PreferencesPage):
         self.results_group.add(row)
         self._result_rows.append(row)
 
-    def _on_filter_toggled(self, button, link_filter: str):
-        if not button.get_active() or self.link_filter == link_filter:
-            return
+    def _set_link_filter(self, link_filter: str, *, rerender: bool = False):
         self.link_filter = link_filter
-        if self.search_entry.get_text().strip():
-            self.start_search()
+        for value, button in self._filter_buttons.items():
+            active = value == link_filter
+            if button.get_active() != active:
+                button.set_active(active)
+            (button.add_css_class if active else button.remove_css_class)('suggested-action')
+        if rerender and self._all_releases is not None:
+            self._render_results()
+
+    def _on_filter_toggled(self, button, link_filter: str):
+        if button.get_active() and self.link_filter != link_filter:
+            self._set_link_filter(link_filter, rerender=True)
 
     def start_search(self):
         raw_query = self.search_entry.get_text().strip()
         if not raw_query:
             self._set_results_status('Enter a game title or Steam/IGDB ID to search.')
             return
+        self._set_link_filter('all')
+        self._all_releases = None
         self._search_generation += 1
         gen = self._search_generation
-        link_filter = self.link_filter
         if raw_query.isdecimal():
-            self._set_results_status(f'Resolving ID {raw_query} and searching {link_filter.upper()} links…', spinning=True)
+            self._set_results_status(f'Resolving ID {raw_query} and searching configured sources…', spinning=True)
         else:
-            self._set_results_status(f'Searching {link_filter.upper()} links for "{raw_query}"…', spinning=True)
+            self._set_results_status(f'Searching configured sources for "{raw_query}"…', spinning=True)
         base_url = self._base_url()
 
-        future = self._pool.submit(self._execute_search, base_url, raw_query, link_filter)
+        future = self._pool.submit(self._execute_search, base_url, raw_query)
         future.add_done_callback(lambda done: GLib.idle_add(self._search_done, done, gen, raw_query))
 
-    def _execute_search(self, base_url: str, raw_query: str, link_filter: str = 'all'):
+    def _execute_search(self, base_url: str, raw_query: str):
         search_title = raw_query
         resolved_title = None
         if raw_query.isdecimal():
@@ -253,7 +266,7 @@ class LinksPage(Adw.PreferencesPage):
         results = []
         seen = set()
         for q in queries_to_try:
-            releases = search_game_releases(base_url, q, force_refresh=True, link_filter=link_filter)
+            releases = search_game_releases(base_url, q, force_refresh=True)
             for r in releases:
                 key = (r.provider_id, r.title, tuple(r.uris))
                 if key not in seen:
@@ -269,13 +282,28 @@ class LinksPage(Adw.PreferencesPage):
         except Exception as error:
             self._set_results_status(f'Search error: {error}')
             return False
+        self._all_releases = releases
+        self._last_display_title = f'{resolved_title} (ID: {query})' if resolved_title else query
+        return self._render_results()
+
+    def _render_results(self):
         self._clear_results()
-        display_title = f'{resolved_title} (ID: {query})' if resolved_title else query
+        releases = []
+        for release in self._all_releases or []:
+            uris = filter_source_links(release.uris, self.link_filter)
+            if not uris:
+                continue
+            if uris == release.uris:
+                releases.append(release)
+                continue
+            data = release.to_dict()
+            data['uris'] = uris
+            data['magnet'] = next((uri for uri in uris if source_link_kind(uri) == 'Magnet'), '')
+            filtered = DownloadRelease.from_dict(data)
+            if filtered is not None:
+                releases.append(filtered)
         if not releases:
-            self._set_results_status(
-                f'No download links found for "{display_title}". '
-                'Verify the title or update enabled sources in the FastAPI service.'
-            )
+            self._set_results_status(f'No {self.link_filter.upper()} links found for "{self._last_display_title}".')
             return False
         sources_map = {}
         for release in releases:
@@ -293,7 +321,7 @@ class LinksPage(Adw.PreferencesPage):
         for (provider_id, provider_name), source_releases in sorted(sources_map.items(), key=lambda item: item[0][1].lower()):
             group = Adw.PreferencesGroup()
             for release in source_releases:
-                title = GLib.markup_escape_text(release.title or query)
+                title = GLib.markup_escape_text(release.title or self._last_display_title)
                 size = (release.file_size or 'Unknown size').strip()
                 uris = list(release.uris) if release.uris else []
                 links_count = len(uris)

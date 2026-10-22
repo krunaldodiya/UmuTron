@@ -17,6 +17,15 @@ def source_link_kind(uri):
     return 'Link'
 
 
+def filter_source_links(uris, link_filter):
+    if link_filter == 'all':
+        return list(uris)
+    allowed = {'Magnet', 'Torrent file'} if link_filter == 'p2p' else {'Link'} if link_filter == 'direct' else None
+    if allowed is None:
+        raise ValueError('Unsupported source link filter.')
+    return [uri for uri in uris if source_link_kind(uri) in allowed]
+
+
 def parse_size_bytes(size_str):
     if not size_str or not isinstance(size_str, str):
         return 0

@@ -5,7 +5,7 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, quote, urlparse
 
 from umutron.sources.cache import DownloadSourceCache, _releases_from_response, search_game_releases
-from umutron.sources.model import DownloadRelease
+from umutron.sources.model import DownloadRelease, filter_source_links
 from umutron.sources.registry import DownloadSource, SourceProviderRegistry
 from umutron.download_service import download_manager
 from umutron.sources.base import is_multipart_link, is_multipart_release, is_multipart_title
@@ -109,42 +109,34 @@ class SourceDiscoveryTests(unittest.TestCase):
                                  [source['id'] for source in SOURCES])
         self.assertEqual(len(calls), 1)
 
-    def test_search_link_filter_is_forwarded_and_cache_scoped(self):
+    def test_link_filter_uses_already_fetched_releases(self):
         registry = SourceProviderRegistry()
         magnet_release = release('source-a', 'Game')
         direct_release = release('source-b', 'Game')
         direct_release['uris'] = ['https://downloads.example/game.zip']
-        filters = []
+        calls = []
 
         def transport(url):
-            params = parse_qs(urlparse(url).query)
-            link_filter = params['link_type'][0]
-            filters.append(link_filter)
-            rows = {
-                'all': [magnet_release, direct_release],
-                'p2p': [magnet_release],
-                'direct': [direct_release],
-            }[link_filter]
-            return {'data': rows, 'has_more': False}
+            calls.append(url)
+            return {'data': [magnet_release, direct_release], 'has_more': False}
 
         with tempfile.TemporaryDirectory() as temp:
             cache = DownloadSourceCache(Path(temp) / 'releases.json')
             with patch('umutron.sources.cache.source_registry', registry), \
                     patch('umutron.sources.cache.source_cache', cache):
-                self.assertEqual(
-                    [item.provider_id for item in search_game_releases(
-                        'https://api.example', 'Game', transport=transport, link_filter='p2p')],
-                    ['source-a'],
-                )
-                self.assertEqual(
-                    [item.provider_id for item in search_game_releases(
-                        'https://api.example', 'Game', transport=transport, link_filter='direct')],
-                    ['source-b'],
-                )
-                with self.assertRaises(ValueError):
-                    search_game_releases('https://api.example', 'Game', transport=transport, link_filter='invalid')
+                releases = search_game_releases('https://api.example', 'Game', transport=transport)
 
-        self.assertEqual(filters, ['p2p', 'direct'])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(
+            [filter_source_links(release.uris, 'p2p') for release in releases],
+            [[magnet_release['uris'][0]], []],
+        )
+        self.assertEqual(
+            [filter_source_links(release.uris, 'direct') for release in releases],
+            [[], direct_release['uris']],
+        )
+        with self.assertRaises(ValueError):
+            filter_source_links(releases[0].uris, 'invalid')
 
     def test_search_aggregates_every_bounded_page_and_title_variant(self):
         registry = SourceProviderRegistry()
