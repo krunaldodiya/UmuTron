@@ -12,6 +12,8 @@ from ..providers import api_request
 
 MAX_SEARCH_PAGES = 4
 
+LINK_FILTERS = {'all', 'p2p', 'direct'}
+
 
 class DownloadSourceCache:
     def __init__(self, cache_file=None):
@@ -33,15 +35,15 @@ class DownloadSourceCache:
             pass
 
     @staticmethod
-    def _key(title, source_identity, base_url=None):
+    def _key(title, source_identity, base_url=None, link_filter='all'):
         identity = json.dumps(list(source_identity), ensure_ascii=True, separators=(',', ':'))
         origin = (base_url or '').strip().rstrip('/').lower()
-        return f"public-links-v2|origin:{origin}|{title.strip().lower()}|sources:{identity}"
+        return f"public-links-v3|origin:{origin}|filter:{link_filter}|{title.strip().lower()}|sources:{identity}"
 
-    def get(self, title, source_identity, base_url=None):
+    def get(self, title, source_identity, base_url=None, link_filter='all'):
         if not title:
             return None
-        value = self.data.get(self._key(title, source_identity, base_url))
+        value = self.data.get(self._key(title, source_identity, base_url, link_filter))
         if value is None:
             return None
         if value is False:
@@ -52,10 +54,10 @@ class DownloadSourceCache:
             return None
         return [release for entry in value if (release := DownloadRelease.from_dict(entry))]
 
-    def set(self, title, releases, source_identity, base_url=None):
+    def set(self, title, releases, source_identity, base_url=None, link_filter='all'):
         if not title:
             return
-        key = self._key(title, source_identity, base_url)
+        key = self._key(title, source_identity, base_url, link_filter)
         if releases is False:
             self.data[key] = False
         elif isinstance(releases, DownloadRelease):
@@ -136,15 +138,17 @@ def _releases_from_response(payload, source_ids=None, provider_id=None):
     return releases, payload['has_more']
 
 
-def search_game_releases(base_url, title, transport=None, provider_id=None, force_refresh=False):
+def search_game_releases(base_url, title, transport=None, provider_id=None, force_refresh=False, link_filter='all'):
     if not isinstance(title, str) or not title.strip():
         return []
+    if link_filter not in LINK_FILTERS:
+        raise ValueError('Unsupported source link filter.')
     title = title.strip()
     sources = source_registry.providers()
     source_identity = tuple((source.id, source.name) for source in sources)
     use_cache = provider_id is None
     cached = None if force_refresh or not use_cache else source_cache.get(
-        title, source_identity, base_url)
+        title, source_identity, base_url, link_filter)
     if cached is False:
         return []
     if cached is not None:
@@ -158,7 +162,7 @@ def search_game_releases(base_url, title, transport=None, provider_id=None, forc
     found = {}
     for query in queries:
         for page in range(1, MAX_SEARCH_PAGES + 1):
-            payload = _request(base_url, '/api/downloads', {'q': query, 'page': page}, transport)
+            payload = _request(base_url, '/api/downloads', {'q': query, 'page': page, 'link_type': link_filter}, transport)
             results, has_more = _releases_from_response(payload, None, provider_id)
             for release in results:
                 identity = (release.provider_id, release.get('id'), release.title, tuple(release.uris))
@@ -168,7 +172,7 @@ def search_game_releases(base_url, title, transport=None, provider_id=None, forc
 
     releases = list(found.values())
     if use_cache:
-        source_cache.set(title, releases if releases else False, source_identity, base_url)
+        source_cache.set(title, releases if releases else False, source_identity, base_url, link_filter)
     return releases
 
 

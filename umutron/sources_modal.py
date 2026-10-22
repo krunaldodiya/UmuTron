@@ -148,6 +148,7 @@ class LinksPage(Adw.PreferencesPage):
         self._search_generation = 0
         self._result_rows = []
         self._pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix='umutron-links-search')
+        self.link_filter = 'all'
 
         # Search box group
         search_group = Adw.PreferencesGroup(
@@ -164,6 +165,17 @@ class LinksPage(Adw.PreferencesPage):
         self.search_entry.set_valign(Gtk.Align.CENTER)
         self.search_entry.connect('activate', lambda *_: self.start_search())
         search_row.add_suffix(self.search_entry)
+
+        filter_box = Gtk.Box(spacing=4, valign=Gtk.Align.CENTER)
+        previous = None
+        for value, label in (('all', 'ALL'), ('p2p', 'P2P'), ('direct', 'Direct')):
+            button = Gtk.ToggleButton(label=label)
+            button.set_group(previous)
+            button.set_active(value == 'all')
+            button.connect('toggled', self._on_filter_toggled, value)
+            filter_box.append(button)
+            previous = button
+        search_row.add_suffix(filter_box)
 
         self.search_btn = Gtk.Button(label='Search', valign=Gtk.Align.CENTER)
         self.search_btn.add_css_class('suggested-action')
@@ -202,6 +214,13 @@ class LinksPage(Adw.PreferencesPage):
         self.results_group.add(row)
         self._result_rows.append(row)
 
+    def _on_filter_toggled(self, button, link_filter: str):
+        if not button.get_active() or self.link_filter == link_filter:
+            return
+        self.link_filter = link_filter
+        if self.search_entry.get_text().strip():
+            self.start_search()
+
     def start_search(self):
         raw_query = self.search_entry.get_text().strip()
         if not raw_query:
@@ -209,16 +228,17 @@ class LinksPage(Adw.PreferencesPage):
             return
         self._search_generation += 1
         gen = self._search_generation
+        link_filter = self.link_filter
         if raw_query.isdecimal():
-            self._set_results_status(f'Resolving ID {raw_query} and searching configured sources…', spinning=True)
+            self._set_results_status(f'Resolving ID {raw_query} and searching {link_filter.upper()} links…', spinning=True)
         else:
-            self._set_results_status(f'Searching configured sources for "{raw_query}"…', spinning=True)
+            self._set_results_status(f'Searching {link_filter.upper()} links for "{raw_query}"…', spinning=True)
         base_url = self._base_url()
 
-        future = self._pool.submit(self._execute_search, base_url, raw_query)
+        future = self._pool.submit(self._execute_search, base_url, raw_query, link_filter)
         future.add_done_callback(lambda done: GLib.idle_add(self._search_done, done, gen, raw_query))
 
-    def _execute_search(self, base_url: str, raw_query: str):
+    def _execute_search(self, base_url: str, raw_query: str, link_filter: str = 'all'):
         search_title = raw_query
         resolved_title = None
         if raw_query.isdecimal():
@@ -233,7 +253,7 @@ class LinksPage(Adw.PreferencesPage):
         results = []
         seen = set()
         for q in queries_to_try:
-            releases = search_game_releases(base_url, q, force_refresh=True)
+            releases = search_game_releases(base_url, q, force_refresh=True, link_filter=link_filter)
             for r in releases:
                 key = (r.provider_id, r.title, tuple(r.uris))
                 if key not in seen:

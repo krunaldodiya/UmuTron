@@ -109,6 +109,43 @@ class SourceDiscoveryTests(unittest.TestCase):
                                  [source['id'] for source in SOURCES])
         self.assertEqual(len(calls), 1)
 
+    def test_search_link_filter_is_forwarded_and_cache_scoped(self):
+        registry = SourceProviderRegistry()
+        magnet_release = release('source-a', 'Game')
+        direct_release = release('source-b', 'Game')
+        direct_release['uris'] = ['https://downloads.example/game.zip']
+        filters = []
+
+        def transport(url):
+            params = parse_qs(urlparse(url).query)
+            link_filter = params['link_type'][0]
+            filters.append(link_filter)
+            rows = {
+                'all': [magnet_release, direct_release],
+                'p2p': [magnet_release],
+                'direct': [direct_release],
+            }[link_filter]
+            return {'data': rows, 'has_more': False}
+
+        with tempfile.TemporaryDirectory() as temp:
+            cache = DownloadSourceCache(Path(temp) / 'releases.json')
+            with patch('umutron.sources.cache.source_registry', registry), \
+                    patch('umutron.sources.cache.source_cache', cache):
+                self.assertEqual(
+                    [item.provider_id for item in search_game_releases(
+                        'https://api.example', 'Game', transport=transport, link_filter='p2p')],
+                    ['source-a'],
+                )
+                self.assertEqual(
+                    [item.provider_id for item in search_game_releases(
+                        'https://api.example', 'Game', transport=transport, link_filter='direct')],
+                    ['source-b'],
+                )
+                with self.assertRaises(ValueError):
+                    search_game_releases('https://api.example', 'Game', transport=transport, link_filter='invalid')
+
+        self.assertEqual(filters, ['p2p', 'direct'])
+
     def test_search_aggregates_every_bounded_page_and_title_variant(self):
         registry = SourceProviderRegistry()
         calls = []
