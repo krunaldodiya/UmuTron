@@ -141,12 +141,15 @@ CSS += b'''
   font-size: 23px;
   font-weight: 800;
 }
-.desktop-mode.scale-large .desktop-header { padding: 7px 36px; }
+.desktop-mode.scale-large .desktop-header { padding: 15px 39px; }
 .desktop-mode.scale-large .desktop-header button { min-height: 42px; padding: 10px 22px; font-size: 19px; }
-.desktop-mode.scale-large .desktop-brand { font-size: 28px; }
+.desktop-mode.scale-large .desktop-brand { font-size: 28px; margin-right: 9px; }
 .desktop-mode.scale-xlarge .desktop-header { padding: 10px 50px; }
 .desktop-mode.scale-xlarge .desktop-header button { min-height: 48px; padding: 12px 26px; font-size: 22px; }
 .desktop-mode.scale-xlarge .desktop-brand { font-size: 34px; }
+.desktop-mode .desktop-brand label { font-size: 23px; font-weight: 800; }
+.desktop-mode.scale-large .desktop-brand label { font-size: 28px; }
+.desktop-mode.scale-xlarge .desktop-brand label { font-size: 34px; }
 .desktop-mode.tv-compact .desktop-header button { min-height: 30px; padding: 8px 16px; }
 .desktop-mode.tv-compact .desktop-brand { font-size: 20px; margin-right: 18px; }
 '''

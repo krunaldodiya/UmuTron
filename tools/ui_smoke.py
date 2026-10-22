@@ -56,6 +56,7 @@ def click(target,text):next(b for b in buttons(target) if b.get_label()==text).e
 with tempfile.TemporaryDirectory() as temp:
     os.environ['XDG_CACHE_HOME']=temp
     library=prepare_demo(seed=True)
+    library.data['settings']['ui_scale']='150'
     app=Application(demo=True);app.set_flags(Gio.ApplicationFlags.NON_UNIQUE);app.register(None)
     with patch('game_library.app.Controller') as controller:
         controller.return_value.name = ''
