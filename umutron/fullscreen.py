@@ -105,6 +105,46 @@ CSS = b'''
 .scale-xlarge .tv-hints { font-size: 20px; margin: 18px 56px 24px; }
 '''
 
+CSS += b'''
+/* Desktop keeps its action icons, but shares the fullscreen control-bar
+   palette, navigation states, and brand treatment. */
+.desktop-mode .desktop-header {
+  background: alpha(#0b101a, .72);
+  color: #f3f6ff;
+  font-size: 18px;
+  box-shadow: inset 0 -1px alpha(#b4c7e5, .10);
+}
+.desktop-mode.desktop-dark .desktop-header {
+  background: alpha(#0b101a, .72);
+}
+.desktop-mode .desktop-header button {
+  min-height: 32px;
+  padding: 8px 18px;
+  border-radius: 12px;
+  background: transparent;
+  color: #f3f6ff;
+  font-weight: 600;
+}
+.desktop-mode .desktop-header button:hover {
+  background: alpha(#becde4, .10);
+}
+.desktop-mode .desktop-header .desktop-nav {
+  padding: 8px 18px;
+}
+.desktop-mode .desktop-header .desktop-nav.suggested-action {
+  background: alpha(#85efd4, .10);
+  color: #85efd4;
+  font-weight: 600;
+}
+.desktop-mode .desktop-brand {
+  font-size: 23px;
+  font-weight: 800;
+}
+.desktop-mode .desktop-brand-title {
+  color: #f3f6ff;
+}
+'''
+
 
 CSS += b'''
 /* Desktop Home deliberately shares the art-led hierarchy, not the fullscreen
