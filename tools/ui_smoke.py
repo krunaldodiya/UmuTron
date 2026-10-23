@@ -67,6 +67,9 @@ with tempfile.TemporaryDirectory() as temp:
     search_left=w.collection_search.compute_bounds(w)[1].get_x()
     card_left=first_card.compute_bounds(w)[1].get_x()
     assert abs(search_left-card_left)<=1, (search_left,card_left)
+    search_button_bounds=w.collection_search_button.compute_bounds(w)[1]
+    flow_bounds=w.collection_flow.compute_bounds(w)[1]
+    assert abs(search_button_bounds.get_x()+search_button_bounds.get_width()-flow_bounds.get_x()-flow_bounds.get_width())<=1
     def screenshot(name,target=None):
         target=target or w;focus=target.get_focus();target.set_visible(False);target.present();settle(800)
         captured=[]
@@ -192,6 +195,9 @@ with tempfile.TemporaryDirectory() as temp:
     card_w,_=w.collection_card_dimensions()
     first_card=next(iter(w.collection_tiles.values()))
     assert first_card.measure(Gtk.Orientation.HORIZONTAL,-1).minimum==card_w+18
+    search_button_bounds=w.collection_search_button.compute_bounds(w)[1]
+    flow_bounds=w.collection_flow.compute_bounds(w)[1]
+    assert abs(search_button_bounds.get_x()+search_button_bounds.get_width()-flow_bounds.get_x()-flow_bounds.get_width())<=1
     screenshot('fullscreen-installed-grid-dark.png')
     chosen=next(iter(w.collection_tiles));w.collection_tiles[chosen].grab_focus();settle();navigate('right');settle()
     assert w.routes['library']['focus']!=chosen

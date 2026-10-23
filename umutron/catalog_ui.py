@@ -254,6 +254,7 @@ class CatalogUI:
         self.collection_search.connect('stop-search',lambda *_:search.set_text(''))
         self.collection_search_button=button('Search',search_changed);search_row.append(self.collection_search_button)
         filters=box(False,12);toolbar.append(filters)
+        filters.set_visible(False)
         def resize_toolbar(widget,clock):
             if self.collection_toolbar is not filters or self.route!=route:return False
             compact=self.get_width()<1180 or (self.tv_mode and self.get_width()<1440)
@@ -485,6 +486,7 @@ class CatalogUI:
         cur_sort=state.get('sort','popular')
         sort_idx=self.store_sort_keys.index(cur_sort) if cur_sort in self.store_sort_keys else 0
         self.collection_sort.set_selected(sort_idx);self.collection_sort.set_tooltip_text('Store sort order');self.collection_toolbar.append(self.collection_sort)
+        self.collection_toolbar.set_visible(True)
         def sort_changed(*_):
             idx=self.collection_sort.get_selected()
             if 0<=idx<len(self.store_sort_keys):
