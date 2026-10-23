@@ -128,6 +128,8 @@ with tempfile.TemporaryDirectory(prefix='umutron-parity-checks-') as temporary:
                 w.routes['library'].update(query='', genre=None, page=1, scroll=0, focus=None)
                 w.show_library(); frame(w)
                 ready(w, lambda: len(w.collection_tiles) == len(original_games), 'All saved fixtures on one local Library page')
+                first = next(iter(w.collection_tiles.values()))
+                check(abs(bounds(w.collection_search, w)[0] - bounds(first, w)[0]) <= 1, prefix + ' card grid aligns with search toolbar')
                 last = list(w.collection_tiles.values())[-1]
                 w.mark_browse_input(); last.grab_focus(); w.reveal_browse_control(last)
                 ready(w, lambda: visible_in(last, w.collection_scroll), 'Last card revealed')

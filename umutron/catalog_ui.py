@@ -270,6 +270,8 @@ class CatalogUI:
             else:self.collection_flow.remove_css_class('collection-short')
             scale=getattr(self,'ui_scale_factor',lambda:1.0)()
             inset=self.collection_grid_inset()
+            if self.collection_flow.get_margin_start()!=inset:
+                self.collection_flow.set_margin_start(inset);self.collection_flow.set_margin_end(inset)
             card_w,card_h=self.collection_card_dimensions()
             card_key=(card_w,card_h,short)
             for _,tile in self.tv_tiles:
@@ -296,7 +298,9 @@ class CatalogUI:
         self.collection_flow.set_valign(Gtk.Align.START)
         self.collection_flow.add_css_class('collection-flow')
         self.collection_flow.set_halign(Gtk.Align.START)
-        self.collection_flow.set_margin_start(48 if is_tv else 24);self.collection_flow.set_margin_end(48 if is_tv else 24)
+        # Match .collection-page horizontal padding so cards align with search.
+        inset=self.collection_grid_inset()
+        self.collection_flow.set_margin_start(inset);self.collection_flow.set_margin_end(inset)
         # Let the heading/search scroll with the cards. A fixed toolbar can
         # otherwise leave less room than one complete card in a short window.
         content=box(spacing=0);content.append(page);content.append(self.collection_flow)

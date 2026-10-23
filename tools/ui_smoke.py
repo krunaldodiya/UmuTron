@@ -63,6 +63,10 @@ with tempfile.TemporaryDirectory() as temp:
         controller.return_value.error = ''
         w=Window(app,library,demo=True,catalog_provider=FixtureCatalog())
     w.proton_manager.releases=lambda *args,**kwargs:[];app.window=w;w.controller.close();w.present();settle(1000)
+    first_card=next(iter(w.collection_tiles.values()))
+    search_left=w.collection_search.compute_bounds(w)[1].get_x()
+    card_left=first_card.compute_bounds(w)[1].get_x()
+    assert abs(search_left-card_left)<=1, (search_left,card_left)
     def screenshot(name,target=None):
         target=target or w;focus=target.get_focus();target.set_visible(False);target.present();settle(800)
         captured=[]
