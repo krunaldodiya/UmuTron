@@ -52,6 +52,8 @@ with tempfile.TemporaryDirectory(prefix='umutron-desktop-arrows-') as temporary:
             w.home_nav.grab_focus();handled=key(w,Gdk.KEY_Right)
             check(handled and w.focused_control(w) is w.library_nav,route+': header Right reaches Library')
             key(w,Gdk.KEY_Right);check(w.focused_control(w) is w.store_nav,route+': header Right reaches Store')
+            key(w,Gdk.KEY_Right);check(w.focused_control(w) is w.add_installer_btn,route+': header Right reaches display actions')
+            key(w,Gdk.KEY_Left);check(w.focused_control(w) is w.store_nav,route+': header Left returns from display actions')
             key(w,Gdk.KEY_Left);check(w.focused_control(w) is w.library_nav,route+': header Left returns')
             key(w,Gdk.KEY_Down)
             check(w.focused_control(w) is w.collection_search if route!='home' else w.focused_control(w) in [t for _,t in w.tv_tiles],route+': header Down enters search or Home cards')

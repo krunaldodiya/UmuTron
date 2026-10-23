@@ -99,7 +99,8 @@ with tempfile.TemporaryDirectory(prefix='umutron-browse-navigation-') as tempora
                         compact=(height<700,width<1000)
                         cover_height=(120 if compact[1] else 144) if compact[0] else 204
                         ready(w,lambda:all(getattr(t,'collection_compact',None)==compact and t.console_cover.get_height()==cover_height for _,t in w.tv_tiles),prefix+' current responsive card allocation')
-                    header=[w.tv_home_tab,w.tv_library_tab,w.tv_games_tab,w.tv_menu] if tv else [w.home_nav,w.library_nav,w.store_nav]
+                    header=([w.tv_home_tab,w.tv_library_tab,w.tv_games_tab,w.tv_desktop_btn,w.tv_menu] if tv
+                            else [w.home_nav,w.library_nav,w.store_nav,w.add_installer_btn,w.sources_links_btn,w.desktop_toggle_btn,w.settings_button])
                     active=header[('home','library','store').index(route)]
                     scroll=w.tv_page if route=='home' else w.collection_scroll
                     tiles=w.home_setup_tiles if route=='home' else w.tv_tiles

@@ -81,6 +81,9 @@ with tempfile.TemporaryDirectory(prefix='umutron-route-checks-') as temp:
     assert w.home_selected_id==selection['id']
     w.tv_home_tab.grab_focus();w.controller_action('right');assert w.focused_control(w) is w.tv_library_tab
     w.controller_action('right');assert w.focused_control(w) is w.tv_games_tab
+    w.controller_action('right');assert w.focused_control(w) is w.tv_desktop_btn
+    w.controller_action('right');assert w.focused_control(w) is w.tv_menu
+    w.controller_action('left');assert w.focused_control(w) is w.tv_desktop_btn
     # Missing artwork must clear the previous game's scene.
     missing=library.new_game();missing['title']='Missing artwork';library.save(missing);w.show_game(missing);settle()
     assert w.backdrop.get_paintable() is None and w.detail_backdrop.get_paintable() is None

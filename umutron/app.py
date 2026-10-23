@@ -493,7 +493,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
                     popover=control.get_popover()
                     if popover and popover.get_visible():return popover
         gear=getattr(self,'detail_gear',None)
-        if target is self and self.route=='detail' and gear and gear.get_root() is self:
+        if target is self and self.route=='detail' and isinstance(gear,Gtk.MenuButton) and gear.get_root() is self:
             popover=gear.get_popover()
             if popover and popover.get_visible():return popover
         return None
@@ -704,6 +704,15 @@ class Window(CatalogUI, Adw.ApplicationWindow):
         return not self.busy and target is not None and (self.tv_mode or
             (target is self and not self.editor and self.route in ('home','library','store','detail')))
 
+    def header_controls(self):
+        """Visible header actions in native left-to-right focus order."""
+        if self.tv_mode:
+            controls=[self.tv_back,self.tv_home_tab,self.tv_library_tab,self.tv_games_tab,self.tv_desktop_btn,self.tv_menu]
+        else:
+            controls=[self.back,self.home_nav,self.library_nav,self.store_nav,
+                      self.add_installer_btn,self.sources_links_btn,self.desktop_toggle_btn,self.settings_button]
+        return [control for control in controls if control.get_visible() and control.is_sensitive()]
+
     def controller_action(self,action):
         if not self.controller_enabled():return
         target=self.navigation_window()
@@ -769,7 +778,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             return
         if action in ('left','right','up','down','next','previous'):
             focus=self.focused_control(target)
-            header=[self.tv_home_tab,self.tv_library_tab,self.tv_games_tab,self.tv_menu] if self.tv_mode else [self.home_nav,self.library_nav,self.store_nav]
+            header=self.header_controls()
             if target is self and self.route in self.routes and self.browse_toolbar_focus(action):return
             if target is self and focus in header:
                 if action in ('left','right'):
@@ -811,7 +820,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
 
     def desktop_arrow(self,action):
         if self.route not in ('home','library','store'):return False
-        focus=self.focused_control(self);header=[self.home_nav,self.library_nav,self.store_nav]
+        focus=self.focused_control(self);header=self.header_controls()
         if self.route in self.routes and self.browse_toolbar_focus(action):return True
         if focus in header:
             if action in ('left','right'):

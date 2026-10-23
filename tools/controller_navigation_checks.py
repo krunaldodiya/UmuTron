@@ -17,7 +17,7 @@ source = root / 'game_library/app.py'
 contents = source.read_bytes()
 tree = ast.parse(contents)
 cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'Window')
-methods = [n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name in ('focused_control', 'move_control_focus', 'controller_action', 'controller_popover', 'mark_browse_input')]
+methods = [n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name in ('focused_control', 'move_control_focus', 'controller_action', 'controller_popover', 'header_controls', 'mark_browse_input')]
 namespace = {'Gtk': Gtk}
 exec(compile(ast.Module(body=methods, type_ignores=[]), str(source), 'exec'), namespace)
 
@@ -26,6 +26,7 @@ class Probe(Gtk.Window):
     move_control_focus = namespace['move_control_focus']
     controller_action = namespace['controller_action']
     controller_popover = namespace['controller_popover']
+    header_controls = namespace['header_controls']
     mark_browse_input = namespace['mark_browse_input']
 
 def settle():
@@ -64,6 +65,9 @@ window.navigation_window = lambda: target[0]
 window.route = 'detail'
 window.game = {'id': 'inert-fixture'}
 window.tv_home_tab, window.tv_library_tab, window.tv_games_tab, window.tv_menu = [Gtk.Button() for _ in range(4)]
+window.tv_back, window.tv_desktop_btn = [Gtk.Button() for _ in range(2)]
+window.back, window.home_nav, window.library_nav, window.store_nav = [Gtk.Button() for _ in range(4)]
+window.add_installer_btn, window.sources_links_btn, window.desktop_toggle_btn, window.settings_button = [Gtk.Button() for _ in range(4)]
 window.editor = None
 window.tv_mode = True
 window.routes = {}
@@ -164,6 +168,8 @@ try:
     row.remove(gear)
     # Retain the old gear exactly as a route rebuild can after detaching it.
     check(gear.get_root() is None and window.controller_popover(window) is None, 'Detached old gear cannot intercept')
+    window.detail_gear=Gtk.Button()  # Settings actions use a plain button, not a menu.
+    check(window.controller_popover(window) is None, 'Plain detail settings button cannot intercept controller input')
 
     check(source.read_bytes() == contents, 'Candidate bytes unchanged during probe')
 finally:

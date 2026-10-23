@@ -110,9 +110,14 @@ with tempfile.TemporaryDirectory(prefix='umutron-header-action-') as temp:
         assert not hasattr(w,'tv_search') and not hasattr(w,'search_library')
         assert all(not isinstance(c,Gtk.SearchEntry) for c in descendants(w.tv_controls))
         w.navigation_window=lambda:w
-        w.tv_games_tab.grab_focus();w.controller_action('right');assert w.focused_control(w) is w.tv_menu
+        w.tv_games_tab.grab_focus();w.controller_action('right');assert w.focused_control(w) is w.tv_desktop_btn
+        w.controller_action('right');assert w.focused_control(w) is w.tv_menu
+        w.controller_action('left');assert w.focused_control(w) is w.tv_desktop_btn
         w.controller_action('left');assert w.focused_control(w) is w.tv_games_tab
         w.tv_menu.grab_focus();w.controller_action('right');assert w.focused_control(w) is w.tv_menu
+        w.set_tv_mode(False);settle();w.show_library();settle();w.store_nav.grab_focus()
+        for expected in (w.add_installer_btn,w.sources_links_btn,w.desktop_toggle_btn,w.settings_button):
+            w.controller_action('right');assert w.focused_control(w) is expected
         w.show_library();settle();w.collection_search.set_text(seed['title']);w.collection_search.emit('activate');settle()
         assert w.routes['library']['query']==seed['title'] and len(w.collection_tiles)==1
         w.show_store();settle(600);w.collection_search.set_text('Fixture game 010');w.collection_search.emit('activate');settle(600)
