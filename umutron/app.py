@@ -953,10 +953,10 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             return False
         future.add_done_callback(lambda _:GLib.idle_add(finish))
 
-    def confirm(self,title,body,action,callback,destructive=False,parent=None,cancel=None):
+    def confirm(self,title,body,action,callback,destructive=False,parent=None,cancel=None,default='cancel'):
         owner=parent or getattr(self,'archive_dialog',None) or getattr(self,'game_settings_dialog',None) or getattr(self,'installer_dialog',None) or self.editor or self
         dialog=message_dialog(owner,title,body,
-            responses=(('cancel','Cancel'),('confirm',action)),default='cancel',close='cancel',
+            responses=(('cancel','Cancel'),('confirm',action)),default=default,close='cancel',
             destructive='confirm' if destructive else None,suggested=None if destructive else 'confirm')
         def on_response(_,response):
             if response=='confirm':callback()
@@ -2357,7 +2357,7 @@ class Window(CatalogUI, Adw.ApplicationWindow):
             def launch():
                 try:self.launcher.start(game);self.refresh_launch_state()
                 except Exception as error:self.error(error)
-            self.confirm('Play '+game['title']+'?', '', 'Play',launch)
+            self.confirm('Play '+game['title']+'?', '', 'Play',launch,default='confirm')
         except Exception as error:self.error(error)
 
     def stop_game(self,game_id):

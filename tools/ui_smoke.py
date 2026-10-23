@@ -145,6 +145,8 @@ with tempfile.TemporaryDirectory() as temp:
     settle()
     confirmation=next(d for d in Gtk.Window.get_toplevels() if isinstance(d,Adw.MessageDialog) and d.get_heading()=='Play '+game['title']+'?')
     assert confirmation.get_body()=='' and confirmation.get_response_label('confirm')=='Play' and confirmation.get_response_label('cancel')=='Cancel'
+    assert confirmation.get_default_response()=='confirm' and confirmation.get_close_response()=='cancel'
+    assert confirmation.get_focus() is not None and confirmation.get_focus().get_label()=='Play'
     screenshot('play-confirmation-dark.png',confirmation)
     confirmation.emit('response','cancel');settle();assert not fake.active();w.demo=True
     partial=Path(temp)/'runtime.tar.gz.parts';partial.write_bytes(b'x'*1048576)
