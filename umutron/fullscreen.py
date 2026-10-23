@@ -9,6 +9,8 @@ CSS = b'''
 .tv-mode { background: #0b101a; color: #f3f6ff; font-size: 18px; }
 .tv-mode button { min-height: 40px; padding: 10px 20px; border-radius: 12px; font-weight: 600; }
 .tv-mode button.collection-card { padding: 7px; }
+/* Scale rules enlarge action buttons, not fixed-chrome collection cards. */
+.tv-mode.scale-large button.collection-card, .tv-mode.scale-xlarge button.collection-card { padding: 7px; }
 .tv-mode .tv-controls { margin: 0; padding: 20px 40px; background: alpha(#0b101a, .72); }
 .tv-mode .tv-controls button { min-height: 32px; padding: 8px 18px; }
 .tv-mode .tv-brand { font-size: 23px; font-weight: 800; margin-right: 34px; }

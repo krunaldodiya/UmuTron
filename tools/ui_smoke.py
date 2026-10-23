@@ -189,6 +189,9 @@ with tempfile.TemporaryDirectory() as temp:
     assert all(button.get_label()!='Back' for button in buttons(w.body))
     screenshot('fullscreen-details-dark.png');w.return_from_detail();settle();assert w.route=='home'
     w.show_library();settle();assert len(w.collection_tiles)==len(library.games())
+    card_w,_=w.collection_card_dimensions()
+    first_card=next(iter(w.collection_tiles.values()))
+    assert first_card.measure(Gtk.Orientation.HORIZONTAL,-1).minimum==card_w+18
     screenshot('fullscreen-installed-grid-dark.png')
     chosen=next(iter(w.collection_tiles));w.collection_tiles[chosen].grab_focus();settle();navigate('right');settle()
     assert w.routes['library']['focus']!=chosen
